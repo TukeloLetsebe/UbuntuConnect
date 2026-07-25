@@ -3,7 +3,9 @@ using Microsoft.AspNetCore.Mvc;
 using Microsoft.EntityFrameworkCore;
 using System.Security.Claims;
 using UbuntuConnectAPI.Data;
+using UbuntuConnectAPI.DTOs.Requests;
 using UbuntuConnectAPI.Models;
+
 
 namespace UbuntuConnectAPI.Controllers;
 

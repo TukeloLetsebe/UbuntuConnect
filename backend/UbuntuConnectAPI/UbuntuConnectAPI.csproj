@@ -7,6 +7,15 @@
   </PropertyGroup>
 
   <ItemGroup>
+    <Compile Include="D:\UbuntuConnect-master (1)\UbuntuConnect-master\backend\UbuntuConnectAPI\DTOs\Requests\CreatePostRequest.cs" Link="DTOs\Requests\CreatePostRequest.cs" />
+    <Compile Include="D:\UbuntuConnect-master (1)\UbuntuConnect-master\backend\UbuntuConnectAPI\DTOs\Requests\CreateVolunteerOpportunityRequest.cs" Link="DTOs\Requests\CreateVolunteerOpportunityRequest.cs" />
+    <Compile Include="D:\UbuntuConnect-master (1)\UbuntuConnect-master\backend\UbuntuConnectAPI\DTOs\Requests\UpdateNPORequest.cs" Link="DTOs\Requests\UpdateNPORequest.cs" />
+    <Compile Include="D:\UbuntuConnect-master (1)\UbuntuConnect-master\backend\UbuntuConnectAPI\DTOs\Requests\UpdatePostRequest.cs" Link="DTOs\Requests\UpdatePostRequest.cs" />
+    <Compile Include="D:\UbuntuConnect-master (1)\UbuntuConnect-master\backend\UbuntuConnectAPI\DTOs\Requests\UpdateVolunteerOpportunityRequest.cs" Link="DTOs\Requests\UpdateVolunteerOpportunityRequest.cs" />
+    <Compile Include="D:\UbuntuConnect-master (1)\UbuntuConnect-master\backend\UbuntuConnectAPI\DTOs\Requests\WithdrawFundsRequest.cs" Link="DTOs\Requests\WithdrawFundsRequest.cs" />
+  </ItemGroup>
+
+  <ItemGroup>
     <PackageReference Include="BCrypt.Net-Next" Version="4.2.0" />
     <PackageReference Include="Microsoft.AspNetCore.Authentication.JwtBearer" Version="10.0.10" />
     <PackageReference Include="Microsoft.AspNetCore.OpenApi" Version="10.0.9" />

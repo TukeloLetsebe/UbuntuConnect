@@ -1,4 +1,4 @@
-﻿namespace UbuntuConnectAPI.Controllers
+﻿namespace UbuntuConnectAPI.DTOs.Requests
 {
     public class DeactivateAccountDto
     {
