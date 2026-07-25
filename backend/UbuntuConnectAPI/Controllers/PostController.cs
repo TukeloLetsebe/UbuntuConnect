@@ -26,6 +26,17 @@ public class PostController : ControllerBase
         var list = await _context.Posts
             .Where(p => p.ActivityStatus == "Active")
             .OrderByDescending(p => p.Timestamp)
+            .Select(p => new
+            {
+                postId = p.PostId,
+                userId = p.UserId,
+                postTitle = p.PostTitle,
+                content = p.Content,
+                mediaUrl = p.MediaUrl,
+                likeCount = p.LikeCount,
+                activityStatus = p.ActivityStatus,
+                timestamp = p.Timestamp
+            })
             .ToListAsync();
         return Ok(list);
     }
@@ -33,7 +44,21 @@ public class PostController : ControllerBase
     [HttpGet("{id}")]
     public async Task<IActionResult> GetById(int id)
     {
-        var post = await _context.Posts.FindAsync(id);
+        var post = await _context.Posts
+            .Where(p => p.PostId == id)
+            .Select(p => new
+            {
+                postId = p.PostId,
+                userId = p.UserId,
+                postTitle = p.PostTitle,
+                content = p.Content,
+                mediaUrl = p.MediaUrl,
+                likeCount = p.LikeCount,
+                activityStatus = p.ActivityStatus,
+                timestamp = p.Timestamp
+            })
+            .FirstOrDefaultAsync();
+
         if (post == null) return NotFound();
         return Ok(post);
     }
@@ -41,7 +66,20 @@ public class PostController : ControllerBase
     [HttpGet("user/{userId}")]
     public async Task<IActionResult> GetByUserId(int userId)
     {
-        var posts = await _context.Posts.Where(p => p.UserId == userId).ToListAsync();
+        var posts = await _context.Posts
+            .Where(p => p.UserId == userId)
+            .Select(p => new
+            {
+                postId = p.PostId,
+                userId = p.UserId,
+                postTitle = p.PostTitle,
+                content = p.Content,
+                mediaUrl = p.MediaUrl,
+                likeCount = p.LikeCount,
+                activityStatus = p.ActivityStatus,
+                timestamp = p.Timestamp
+            })
+            .ToListAsync();
         return Ok(posts);
     }
 
@@ -75,7 +113,17 @@ public class PostController : ControllerBase
         _context.Posts.Add(post);
         await _context.SaveChangesAsync();
 
-        return CreatedAtAction(nameof(GetById), new { id = post.PostId }, post);
+        return CreatedAtAction(nameof(GetById), new { id = post.PostId }, new
+        {
+            postId = post.PostId,
+            userId = post.UserId,
+            postTitle = post.PostTitle,
+            content = post.Content,
+            mediaUrl = post.MediaUrl,
+            likeCount = post.LikeCount,
+            activityStatus = post.ActivityStatus,
+            timestamp = post.Timestamp
+        });
     }
 
     [Authorize]

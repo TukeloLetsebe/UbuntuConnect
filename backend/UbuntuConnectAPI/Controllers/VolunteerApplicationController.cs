@@ -22,11 +22,25 @@ public class VolunteerApplicationController : ControllerBase
     // to call. Locking it to NPO role — an NPO managing applicants across
     // opportunities. If you want a true cross-platform admin view later,
     // that belongs in an AdminController instead.
+    
     [Authorize(Roles = "NPO")]
     [HttpGet]
     public async Task<IActionResult> GetAll()
     {
-        var list = await _context.VolunteerApplications.OrderByDescending(v => v.ApplicationDate).ToListAsync();
+        var list = await _context.VolunteerApplications
+            .OrderByDescending(v => v.ApplicationDate)
+            .Select(a => new
+            {
+                applicationId = a.ApplicationId,
+                userId = a.UserId,
+                opportunityId = a.OpportunityId,
+                firstName = a.FirstName,
+                lastName = a.LastName,
+                email = a.Email,
+                status = a.Status,
+                applicationDate = a.ApplicationDate
+            })
+            .ToListAsync();
         return Ok(list);
     }
 
@@ -42,11 +56,24 @@ public class VolunteerApplicationController : ControllerBase
             .FirstOrDefaultAsync(o => o.OpportunityId == opportunityId);
         if (opportunity == null) return NotFound("Opportunity not found.");
 
-        // Ownership check — only the NPO that owns this opportunity can view its applicants
         if (opportunity.Npo.UserId != userId) return Forbid();
 
         var list = await _context.VolunteerApplications
             .Where(v => v.OpportunityId == opportunityId)
+            .Select(a => new
+            {
+                applicationId = a.ApplicationId,
+                userId = a.UserId,
+                firstName = a.FirstName,
+                lastName = a.LastName,
+                email = a.Email,
+                phoneNum = a.PhoneNum,
+                skills = a.Skills,
+                availability = a.Availability,
+                whyVolunteer = a.WhyVolunteer,
+                status = a.Status,
+                applicationDate = a.ApplicationDate
+            })
             .ToListAsync();
         return Ok(list);
     }
@@ -63,7 +90,16 @@ public class VolunteerApplicationController : ControllerBase
 
         if (callerId != userId) return Forbid();
 
-        var list = await _context.VolunteerApplications.Where(v => v.UserId == userId).ToListAsync();
+        var list = await _context.VolunteerApplications
+            .Where(v => v.UserId == userId)
+            .Select(a => new
+            {
+                applicationId = a.ApplicationId,
+                opportunityId = a.OpportunityId,
+                status = a.Status,
+                applicationDate = a.ApplicationDate
+            })
+            .ToListAsync();
         return Ok(list);
     }
 

@@ -22,14 +22,36 @@ public class NPOController : ControllerBase
     [HttpGet]
     public async Task<IActionResult> GetAll()
     {
-        var list = await _context.Npos.ToListAsync();
+        var list = await _context.Npos
+            .Select(n => new
+            {
+                npoId = n.NpoId,
+                userId = n.UserId,
+                nporegNum = n.NporegNum,
+                organizationName = n.OrganizationName,
+                npofocusArea = n.NpofocusArea,
+                npomission = n.Npomission
+            })
+            .ToListAsync();
         return Ok(list);
     }
 
     [HttpGet("{id}")]
     public async Task<IActionResult> GetNpoById(int id)
     {
-        var npo = await _context.Npos.FindAsync(id);
+        var npo = await _context.Npos
+            .Where(n => n.NpoId == id)
+            .Select(n => new
+            {
+                npoId = n.NpoId,
+                userId = n.UserId,
+                nporegNum = n.NporegNum,
+                organizationName = n.OrganizationName,
+                npofocusArea = n.NpofocusArea,
+                npomission = n.Npomission
+            })
+            .FirstOrDefaultAsync();
+
         if (npo == null) return NotFound();
         return Ok(npo);
     }
@@ -37,35 +59,21 @@ public class NPOController : ControllerBase
     [HttpGet("user/{userId}")]
     public async Task<IActionResult> GetByUserId(int userId)
     {
-        var npo = await _context.Npos.FirstOrDefaultAsync(n => n.UserId == userId);
+        var npo = await _context.Npos
+            .Where(n => n.UserId == userId)
+            .Select(n => new
+            {
+                npoId = n.NpoId,
+                userId = n.UserId,
+                nporegNum = n.NporegNum,
+                organizationName = n.OrganizationName,
+                npofocusArea = n.NpofocusArea,
+                npomission = n.Npomission
+            })
+            .FirstOrDefaultAsync();
+
         if (npo == null) return NotFound();
         return Ok(npo);
-    }
-
-    // NOTE: "Create" endpoint removed — NPO creation happens during
-    // AuthController.Register, which already creates the Users + NPO + Wallet
-    // rows together. A separate Create endpoint here would produce orphaned
-    // NPO rows with no linked User/Wallet.
-
-    [Authorize(Roles = "NPO")]
-    [HttpPut("{id}")]
-    public async Task<IActionResult> Update(int id, [FromBody] UpdateNPORequest req)
-    {
-        var userIdClaim = User.FindFirst(ClaimTypes.NameIdentifier)?.Value;
-        var userId = int.Parse(userIdClaim!);
-
-        var npo = await _context.Npos.FindAsync(id);
-        if (npo == null) return NotFound();
-
-        // Ownership check — only the NPO's own account can edit its profile
-        if (npo.UserId != userId) return Forbid();
-
-        if (req.OrganizationName != null) npo.OrganizationName = req.OrganizationName;
-        if (req.NPOFocusArea != null) npo.NpofocusArea = req.NPOFocusArea;
-        if (req.NPOMission != null) npo.Npomission = req.NPOMission;
-
-        await _context.SaveChangesAsync();
-        return NoContent();
     }
 
     // NOTE: Delete endpoint removed. Deleting an NPO would cascade-delete

@@ -26,12 +26,21 @@ public class TransactionController : ControllerBase
         var callerIdClaim = User.FindFirst(ClaimTypes.NameIdentifier)?.Value;
         var callerId = int.Parse(callerIdClaim!);
 
-        // Only view your own transaction history
         if (callerId != userId) return Forbid();
 
         var txs = await _context.Transactions
             .Where(t => t.SenderUserId == userId || t.ReceiverUserId == userId)
             .OrderByDescending(t => t.Timestamp)
+            .Select(t => new
+            {
+                transactionId = t.TransactionId,
+                senderUserId = t.SenderUserId,
+                receiverUserId = t.ReceiverUserId,
+                amount = t.Amount,
+                transactionType = t.TransactionType,
+                status = t.Status,
+                timestamp = t.Timestamp
+            })
             .ToListAsync();
 
         return Ok(txs);
@@ -47,10 +56,18 @@ public class TransactionController : ControllerBase
         var tx = await _context.Transactions.FindAsync(id);
         if (tx == null) return NotFound();
 
-        // Only the sender or receiver of this transaction can view it
         if (tx.SenderUserId != callerId && tx.ReceiverUserId != callerId) return Forbid();
 
-        return Ok(tx);
+        return Ok(new
+        {
+            transactionId = tx.TransactionId,
+            senderUserId = tx.SenderUserId,
+            receiverUserId = tx.ReceiverUserId,
+            amount = tx.Amount,
+            transactionType = tx.TransactionType,
+            status = tx.Status,
+            timestamp = tx.Timestamp
+        });
     }
 
     // Same atomic-transaction pattern as IndividualController.Donate,
@@ -102,7 +119,16 @@ public class TransactionController : ControllerBase
             await _context.SaveChangesAsync();
             await dbTransaction.CommitAsync();
 
-            return CreatedAtAction(nameof(GetById), new { id = tx.TransactionId }, tx);
+            return CreatedAtAction(nameof(GetById), new { id = tx.TransactionId }, new
+            {
+                transactionId = tx.TransactionId,
+                senderUserId = tx.SenderUserId,
+                receiverUserId = tx.ReceiverUserId,
+                amount = tx.Amount,
+                transactionType = tx.TransactionType,
+                status = tx.Status,
+                timestamp = tx.Timestamp
+            });
         }
         catch
         {

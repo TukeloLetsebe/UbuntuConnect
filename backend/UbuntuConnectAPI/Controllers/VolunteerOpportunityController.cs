@@ -23,14 +23,46 @@ public class VolunteerOpportunityController : ControllerBase
     [HttpGet]
     public async Task<IActionResult> GetAll()
     {
-        var list = await _context.VolunteerOpportunities.ToListAsync();
+        var list = await _context.VolunteerOpportunities
+            .Select(o => new
+            {
+                opportunityId = o.OpportunityId,
+                npoId = o.NpoId,
+                roleTitle = o.RoleTitle,
+                category = o.Category,
+                numOfPositions = o.NumOfPositions,
+                description = o.Description,
+                skillsRequired = o.SkillsRequired,
+                timeCommitment = o.TimeCommitment,
+                duration = o.Duration,
+                mediaUrl = o.MediaUrl
+            })
+            .ToListAsync();
+
         return Ok(list);
     }
 
+    
     [HttpGet("{id}")]
     public async Task<IActionResult> GetById(int id)
     {
-        var opp = await _context.VolunteerOpportunities.FindAsync(id);
+        var opp = await _context.VolunteerOpportunities
+            .Where(o => o.OpportunityId == id)
+            .Select(o => new
+            {
+                opportunityId = o.OpportunityId,
+                npoId = o.NpoId,
+                roleTitle = o.RoleTitle,
+                category = o.Category,
+                numOfPositions = o.NumOfPositions,
+                description = o.Description,
+                skillsRequired = o.SkillsRequired,
+                timeCommitment = o.TimeCommitment,
+                duration = o.Duration,
+                mediaUrl = o.MediaUrl
+            })
+            .FirstOrDefaultAsync();
+
         if (opp == null) return NotFound();
         return Ok(opp);
     }
@@ -38,7 +70,23 @@ public class VolunteerOpportunityController : ControllerBase
     [HttpGet("npo/{npoId}")]
     public async Task<IActionResult> GetByNpo(int npoId)
     {
-        var list = await _context.VolunteerOpportunities.Where(v => v.NpoId == npoId).ToListAsync();
+        var list = await _context.VolunteerOpportunities
+            .Where(v => v.NpoId == npoId)
+            .Select(o => new
+            {
+                opportunityId = o.OpportunityId,
+                npoId = o.NpoId,
+                roleTitle = o.RoleTitle,
+                category = o.Category,
+                numOfPositions = o.NumOfPositions,
+                description = o.Description,
+                skillsRequired = o.SkillsRequired,
+                timeCommitment = o.TimeCommitment,
+                duration = o.Duration,
+                mediaUrl = o.MediaUrl
+            })
+            .ToListAsync();
+
         return Ok(list);
     }
 
@@ -49,7 +97,6 @@ public class VolunteerOpportunityController : ControllerBase
         var userIdClaim = User.FindFirst(ClaimTypes.NameIdentifier)?.Value;
         var userId = int.Parse(userIdClaim!);
 
-        // Derive the caller's own NPO — never trust req.NpoId from the body
         var npo = await _context.Npos.FirstOrDefaultAsync(n => n.UserId == userId);
         if (npo == null) return BadRequest("No NPO profile linked to this account.");
 
@@ -70,7 +117,20 @@ public class VolunteerOpportunityController : ControllerBase
         _context.VolunteerOpportunities.Add(opp);
         await _context.SaveChangesAsync();
 
-        return CreatedAtAction(nameof(GetById), new { id = opp.OpportunityId }, opp);
+        // ← CHANGED — return a clean shape instead of the full EF entity
+        return CreatedAtAction(nameof(GetById), new { id = opp.OpportunityId }, new
+        {
+            opportunityId = opp.OpportunityId,
+            npoId = opp.NpoId,
+            roleTitle = opp.RoleTitle,
+            category = opp.Category,
+            numOfPositions = opp.NumOfPositions,
+            description = opp.Description,
+            skillsRequired = opp.SkillsRequired,
+            timeCommitment = opp.TimeCommitment,
+            duration = opp.Duration,
+            mediaUrl = opp.MediaUrl
+        });
     }
 
     [Authorize(Roles = "NPO")]
