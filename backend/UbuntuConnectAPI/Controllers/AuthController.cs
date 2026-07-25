@@ -1,12 +1,13 @@
-﻿using Microsoft.AspNetCore.Mvc;
+﻿using BCrypt.Net;
+using Microsoft.AspNetCore.Authorization;
+using Microsoft.AspNetCore.Mvc;
 using Microsoft.EntityFrameworkCore;
-using UbuntuConnectAPI.Data;
-using UbuntuConnectAPI.Models;
 using Microsoft.IdentityModel.Tokens;
 using System.IdentityModel.Tokens.Jwt;
 using System.Security.Claims;
 using System.Text;
-using BCrypt.Net;
+using UbuntuConnectAPI.Data;
+using UbuntuConnectAPI.Models;
 
 namespace UbuntuConnectAPI.Controllers;
 
@@ -48,6 +49,13 @@ public class AuthController : ControllerBase
         _context.Users.Add(user);
         await _context.SaveChangesAsync();
         // After SaveChangesAsync, user.UserId is now assigned by SQL Server
+        //Adding the wallet after each registration. 
+        var wallet = new Wallet
+        {
+            UserId = user.UserId,
+            Balance = 0
+        };
+        _context.Wallets.Add(wallet);
 
         //Create the subtype row based on UserType
         switch (dto.UserType)
@@ -123,8 +131,11 @@ public class AuthController : ControllerBase
 
         if (user == null)
             return Unauthorized("Invalid email or password.");
+        if (!user.IsActive)
+            return Unauthorized("This account has been deactivated.");
 
         bool passwordValid = BCrypt.Net.BCrypt.Verify(dto.Password, user.PasswordHash);
+
 
         if (!passwordValid)
             return Unauthorized("Invalid email or password.");
@@ -160,4 +171,6 @@ public class AuthController : ControllerBase
             isVerified = user.IsVerified
         });
     }
+    
+
 }

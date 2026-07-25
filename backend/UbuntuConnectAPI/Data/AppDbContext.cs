@@ -52,16 +52,16 @@ public partial class AppDbContext : DbContext
 
     public virtual DbSet<Wallet> Wallets { get; set; }
 
-   
+    
     protected override void OnModelCreating(ModelBuilder modelBuilder)
     {
         modelBuilder.Entity<Business>(entity =>
         {
-            entity.HasKey(e => e.BusinessId).HasName("PK__Business__F1EAA36EAA1D7545");
+            entity.HasKey(e => e.BusinessId).HasName("PK__Business__F1EAA36EE1003118");
 
             entity.ToTable("Business");
 
-            entity.HasIndex(e => e.BusinessRegNum, "UQ__Business__A7C15B7B4EC5E9C5").IsUnique();
+            entity.HasIndex(e => e.BusinessRegNum, "UQ__Business__A7C15B7BDA3D07EF").IsUnique();
 
             entity.Property(e => e.BusinessEmail).HasMaxLength(255);
             entity.Property(e => e.BusinessRegNum).HasMaxLength(50);
@@ -79,7 +79,7 @@ public partial class AppDbContext : DbContext
 
         modelBuilder.Entity<CampaignApplication>(entity =>
         {
-            entity.HasKey(e => e.ApplicationId).HasName("PK__Campaign__C93A4C9995634664");
+            entity.HasKey(e => e.ApplicationId).HasName("PK__Campaign__C93A4C99F7F6BC0A");
 
             entity.ToTable("CampaignApplication");
 
@@ -106,7 +106,7 @@ public partial class AppDbContext : DbContext
 
         modelBuilder.Entity<Follow>(entity =>
         {
-            entity.HasKey(e => e.FollowId).HasName("PK__Follow__2CE810AE4B4F05C4");
+            entity.HasKey(e => e.FollowId).HasName("PK__Follow__2CE810AED05B26BF");
 
             entity.ToTable("Follow");
 
@@ -130,7 +130,7 @@ public partial class AppDbContext : DbContext
 
         modelBuilder.Entity<FundingRequest>(entity =>
         {
-            entity.HasKey(e => e.RequestId).HasName("PK__FundingR__33A8517A138B75B0");
+            entity.HasKey(e => e.RequestId).HasName("PK__FundingR__33A8517A11A75383");
 
             entity.ToTable("FundingRequest");
 
@@ -148,7 +148,7 @@ public partial class AppDbContext : DbContext
 
         modelBuilder.Entity<ImpactTrack>(entity =>
         {
-            entity.HasKey(e => e.ImpactId).HasName("PK__ImpactTr__2297C5FDE35FEC36");
+            entity.HasKey(e => e.ImpactId).HasName("PK__ImpactTr__2297C5FD6213B8BD");
 
             entity.ToTable("ImpactTrack");
 
@@ -165,7 +165,7 @@ public partial class AppDbContext : DbContext
 
         modelBuilder.Entity<Individual>(entity =>
         {
-            entity.HasKey(e => e.IndividualId).HasName("PK__Individu__2DA106D6AA1B1A29");
+            entity.HasKey(e => e.IndividualId).HasName("PK__Individu__2DA106D647F0CE22");
 
             entity.ToTable("Individual");
 
@@ -180,11 +180,11 @@ public partial class AppDbContext : DbContext
 
         modelBuilder.Entity<Npo>(entity =>
         {
-            entity.HasKey(e => e.NpoId).HasName("PK__NPO__BBE2A2C62590DA1C");
+            entity.HasKey(e => e.NpoId).HasName("PK__NPO__BBE2A2C68A014DEF");
 
             entity.ToTable("NPO");
 
-            entity.HasIndex(e => e.NporegNum, "UQ__NPO__12A0E9A7974318B4").IsUnique();
+            entity.HasIndex(e => e.NporegNum, "UQ__NPO__12A0E9A7C973BA37").IsUnique();
 
             entity.Property(e => e.NpoId).HasColumnName("NPO_Id");
             entity.Property(e => e.NpofocusArea)
@@ -205,7 +205,7 @@ public partial class AppDbContext : DbContext
 
         modelBuilder.Entity<PartnershipCampaign>(entity =>
         {
-            entity.HasKey(e => e.CampaignId).HasName("PK__Partners__3F5E8A995B3FCCD9");
+            entity.HasKey(e => e.CampaignId).HasName("PK__Partners__3F5E8A994D003EB5");
 
             entity.ToTable("PartnershipCampaign");
 
@@ -222,7 +222,7 @@ public partial class AppDbContext : DbContext
 
         modelBuilder.Entity<Post>(entity =>
         {
-            entity.HasKey(e => e.PostId).HasName("PK__Post__AA1260187AB020B4");
+            entity.HasKey(e => e.PostId).HasName("PK__Post__AA12601825437C28");
 
             entity.ToTable("Post");
 
@@ -244,11 +244,11 @@ public partial class AppDbContext : DbContext
 
         modelBuilder.Entity<Profile>(entity =>
         {
-            entity.HasKey(e => e.ProfileId).HasName("PK__Profile__290C88E4EF4C5CC3");
+            entity.HasKey(e => e.ProfileId).HasName("PK__Profile__290C88E46B2DE127");
 
             entity.ToTable("Profile");
 
-            entity.HasIndex(e => e.UserId, "UQ__Profile__1788CC4D000DF8BF").IsUnique();
+            entity.HasIndex(e => e.UserId, "UQ__Profile__1788CC4D80628101").IsUnique();
 
             entity.Property(e => e.Bio).HasMaxLength(1000);
             entity.Property(e => e.ProfileImage).HasMaxLength(500);
@@ -261,7 +261,7 @@ public partial class AppDbContext : DbContext
 
         modelBuilder.Entity<Project>(entity =>
         {
-            entity.HasKey(e => e.ProjectId).HasName("PK__Projects__761ABEF0C20072C8");
+            entity.HasKey(e => e.ProjectId).HasName("PK__Projects__761ABEF0E7141F4E");
 
             entity.Property(e => e.NpoId).HasColumnName("NPO_Id");
             entity.Property(e => e.ProjectDesc).HasMaxLength(2000);
@@ -278,7 +278,7 @@ public partial class AppDbContext : DbContext
 
         modelBuilder.Entity<Transaction>(entity =>
         {
-            entity.HasKey(e => e.TransactionId).HasName("PK__Transact__55433A6BC9E4D9C5");
+            entity.HasKey(e => e.TransactionId).HasName("PK__Transact__55433A6B8358D73A");
 
             entity.Property(e => e.Amount).HasColumnType("decimal(12, 2)");
             entity.Property(e => e.Status)
@@ -300,10 +300,11 @@ public partial class AppDbContext : DbContext
 
         modelBuilder.Entity<User>(entity =>
         {
-            entity.HasKey(e => e.UserId).HasName("PK__Users__1788CC4CF5B12818");
+            entity.HasKey(e => e.UserId).HasName("PK__Users__1788CC4C39018686");
 
-            entity.HasIndex(e => e.UserEmail, "UQ__Users__08638DF83DD42A4E").IsUnique();
+            entity.HasIndex(e => e.UserEmail, "UQ__Users__08638DF8F974D3A9").IsUnique();
 
+            entity.Property(e => e.IsActive).HasDefaultValue(true);
             entity.Property(e => e.Location).HasMaxLength(255);
             entity.Property(e => e.PasswordHash).HasMaxLength(255);
             entity.Property(e => e.RegistrationDate)
@@ -316,7 +317,7 @@ public partial class AppDbContext : DbContext
 
         modelBuilder.Entity<Verification>(entity =>
         {
-            entity.HasKey(e => e.VerificationId).HasName("PK__Verifica__306D490701E58F7C");
+            entity.HasKey(e => e.VerificationId).HasName("PK__Verifica__306D49070C4B3F28");
 
             entity.ToTable("Verification");
 
@@ -346,7 +347,7 @@ public partial class AppDbContext : DbContext
 
         modelBuilder.Entity<VolunteerApplication>(entity =>
         {
-            entity.HasKey(e => e.ApplicationId).HasName("PK__Voluntee__C93A4C99F1EB37EF");
+            entity.HasKey(e => e.ApplicationId).HasName("PK__Voluntee__C93A4C99EB6DCA2A");
 
             entity.ToTable("VolunteerApplication");
 
@@ -384,7 +385,7 @@ public partial class AppDbContext : DbContext
 
         modelBuilder.Entity<VolunteerLog>(entity =>
         {
-            entity.HasKey(e => e.LogId).HasName("PK__Voluntee__5E548648C07BFA06");
+            entity.HasKey(e => e.LogId).HasName("PK__Voluntee__5E54864868A5BDFD");
 
             entity.ToTable("VolunteerLog");
 
@@ -398,7 +399,7 @@ public partial class AppDbContext : DbContext
 
         modelBuilder.Entity<VolunteerOpportunity>(entity =>
         {
-            entity.HasKey(e => e.OpportunityId).HasName("PK__Voluntee__0034ED91503E121E");
+            entity.HasKey(e => e.OpportunityId).HasName("PK__Voluntee__0034ED91C70C71E5");
 
             entity.ToTable("VolunteerOpportunity");
 
@@ -425,11 +426,11 @@ public partial class AppDbContext : DbContext
 
         modelBuilder.Entity<Wallet>(entity =>
         {
-            entity.HasKey(e => e.WalletId).HasName("PK__Wallet__84D4F90EF6110186");
+            entity.HasKey(e => e.WalletId).HasName("PK__Wallet__84D4F90E677A24AF");
 
             entity.ToTable("Wallet");
 
-            entity.HasIndex(e => e.UserId, "UQ__Wallet__1788CC4DBD91EBB4").IsUnique();
+            entity.HasIndex(e => e.UserId, "UQ__Wallet__1788CC4D3AAF2012").IsUnique();
 
             entity.Property(e => e.Balance).HasColumnType("decimal(12, 2)");
 

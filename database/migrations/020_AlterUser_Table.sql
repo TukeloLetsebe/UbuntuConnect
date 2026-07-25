@@ -1,0 +1,4 @@
+USE UbuntuConnect_DB;
+
+ALTER TABLE Users
+ADD IsActive BIT NOT NULL DEFAULT 1;

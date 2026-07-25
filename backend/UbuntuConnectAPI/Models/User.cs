@@ -21,6 +21,8 @@ public partial class User
 
     public DateTime RegistrationDate { get; set; }
 
+    public bool IsActive { get; set; }
+
     public virtual ICollection<Business> Businesses { get; set; } = new List<Business>();
 
     public virtual ICollection<Follow> Follows { get; set; } = new List<Follow>();
