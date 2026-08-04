@@ -1,0 +1,1271 @@
+{
+  "pbtResults": {},
+  "executionHistory": {
+    "1.1 Create `frontend/src/services/individualService.ts` — all typed API functions, DTOs, and `getErrorMessage` utility": [
+      {
+        "executionId": "5a0b85da-2645-459b-9802-4d94eb5e49fc",
+        "chatSessionId": "sess_dc93afb5-d424-4618-9461-851ee6f6fd9d",
+        "timestamp": 1785872199714
+      },
+      {
+        "executionId": "5a0b85da-2645-459b-9802-4d94eb5e49fc",
+        "chatSessionId": "sess_dc93afb5-d424-4618-9461-851ee6f6fd9d",
+        "timestamp": 1785872222932
+      },
+      {
+        "executionId": "5a0b85da-2645-459b-9802-4d94eb5e49fc",
+        "chatSessionId": "sess_dc93afb5-d424-4618-9461-851ee6f6fd9d",
+        "timestamp": 1785872307150
+      }
+    ],
+    "1.2 Modify `frontend/src/app/routes.ts` — wrap `/individual-dashboard` with `<ProtectedRoute allowedRoles={[\"Individual\"]}>`": [
+      {
+        "executionId": "5a0b85da-2645-459b-9802-4d94eb5e49fc",
+        "chatSessionId": "sess_dc93afb5-d424-4618-9461-851ee6f6fd9d",
+        "timestamp": 1785872199908
+      },
+      {
+        "executionId": "5a0b85da-2645-459b-9802-4d94eb5e49fc",
+        "chatSessionId": "sess_dc93afb5-d424-4618-9461-851ee6f6fd9d",
+        "timestamp": 1785872317271
+      },
+      {
+        "executionId": "5a0b85da-2645-459b-9802-4d94eb5e49fc",
+        "chatSessionId": "sess_dc93afb5-d424-4618-9461-851ee6f6fd9d",
+        "timestamp": 1785872441840
+      }
+    ],
+    "1.3 Add `<Toaster />` from sonner to `Root.tsx` (verify if already present first)": [
+      {
+        "executionId": "5a0b85da-2645-459b-9802-4d94eb5e49fc",
+        "chatSessionId": "sess_dc93afb5-d424-4618-9461-851ee6f6fd9d",
+        "timestamp": 1785872199998
+      },
+      {
+        "executionId": "5a0b85da-2645-459b-9802-4d94eb5e49fc",
+        "chatSessionId": "sess_dc93afb5-d424-4618-9461-851ee6f6fd9d",
+        "timestamp": 1785872447129
+      },
+      {
+        "executionId": "5a0b85da-2645-459b-9802-4d94eb5e49fc",
+        "chatSessionId": "sess_dc93afb5-d424-4618-9461-851ee6f6fd9d",
+        "timestamp": 1785872502473
+      }
+    ],
+    "1.4 Wire Logout button in IndividualDashboard header to `AuthContext.logout()` (replace `window.location.href = \"/\"`)": [
+      {
+        "executionId": "5a0b85da-2645-459b-9802-4d94eb5e49fc",
+        "chatSessionId": "sess_dc93afb5-d424-4618-9461-851ee6f6fd9d",
+        "timestamp": 1785872200083
+      },
+      {
+        "executionId": "5a0b85da-2645-459b-9802-4d94eb5e49fc",
+        "chatSessionId": "sess_dc93afb5-d424-4618-9461-851ee6f6fd9d",
+        "timestamp": 1785872507942
+      },
+      {
+        "executionId": "5a0b85da-2645-459b-9802-4d94eb5e49fc",
+        "chatSessionId": "sess_dc93afb5-d424-4618-9461-851ee6f6fd9d",
+        "timestamp": 1785872587904
+      }
+    ],
+    "1.5 Replace hardcoded \"Sarah Mthembu\" in header with user email from AuthContext (or profile name once loaded)": [
+      {
+        "executionId": "5a0b85da-2645-459b-9802-4d94eb5e49fc",
+        "chatSessionId": "sess_dc93afb5-d424-4618-9461-851ee6f6fd9d",
+        "timestamp": 1785872200168
+      },
+      {
+        "executionId": "5a0b85da-2645-459b-9802-4d94eb5e49fc",
+        "chatSessionId": "sess_dc93afb5-d424-4618-9461-851ee6f6fd9d",
+        "timestamp": 1785872593083
+      },
+      {
+        "executionId": "5a0b85da-2645-459b-9802-4d94eb5e49fc",
+        "chatSessionId": "sess_dc93afb5-d424-4618-9461-851ee6f6fd9d",
+        "timestamp": 1785872599057
+      }
+    ],
+    "1.6 Verify build passes after infrastructure changes (`npm run build`)": [
+      {
+        "executionId": "5a0b85da-2645-459b-9802-4d94eb5e49fc",
+        "chatSessionId": "sess_dc93afb5-d424-4618-9461-851ee6f6fd9d",
+        "timestamp": 1785872200261
+      },
+      {
+        "executionId": "5a0b85da-2645-459b-9802-4d94eb5e49fc",
+        "chatSessionId": "sess_dc93afb5-d424-4618-9461-851ee6f6fd9d",
+        "timestamp": 1785872606394
+      },
+      {
+        "executionId": "5a0b85da-2645-459b-9802-4d94eb5e49fc",
+        "chatSessionId": "sess_dc93afb5-d424-4618-9461-851ee6f6fd9d",
+        "timestamp": 1785872663858
+      }
+    ],
+    "2.1 On Profile tab activation, call `individualService.getProfile()` and populate form fields with response data": [
+      {
+        "executionId": "5a0b85da-2645-459b-9802-4d94eb5e49fc",
+        "chatSessionId": "sess_dc93afb5-d424-4618-9461-851ee6f6fd9d",
+        "timestamp": 1785872200404
+      },
+      {
+        "executionId": "5a0b85da-2645-459b-9802-4d94eb5e49fc",
+        "chatSessionId": "sess_dc93afb5-d424-4618-9461-851ee6f6fd9d",
+        "timestamp": 1785872670010
+      },
+      {
+        "executionId": "5a0b85da-2645-459b-9802-4d94eb5e49fc",
+        "chatSessionId": "sess_dc93afb5-d424-4618-9461-851ee6f6fd9d",
+        "timestamp": 1785873451679
+      }
+    ],
+    "2.2 Add loading skeleton for profile form while fetching": [
+      {
+        "executionId": "5a0b85da-2645-459b-9802-4d94eb5e49fc",
+        "chatSessionId": "sess_dc93afb5-d424-4618-9461-851ee6f6fd9d",
+        "timestamp": 1785872200535
+      },
+      {
+        "executionId": "5a0b85da-2645-459b-9802-4d94eb5e49fc",
+        "chatSessionId": "sess_dc93afb5-d424-4618-9461-851ee6f6fd9d",
+        "timestamp": 1785873452596
+      },
+      {
+        "executionId": "5a0b85da-2645-459b-9802-4d94eb5e49fc",
+        "chatSessionId": "sess_dc93afb5-d424-4618-9461-851ee6f6fd9d",
+        "timestamp": 1785873458059
+      }
+    ],
+    "2.3 Add error state with retry if profile fetch fails": [
+      {
+        "executionId": "5a0b85da-2645-459b-9802-4d94eb5e49fc",
+        "chatSessionId": "sess_dc93afb5-d424-4618-9461-851ee6f6fd9d",
+        "timestamp": 1785872200626
+      },
+      {
+        "executionId": "5a0b85da-2645-459b-9802-4d94eb5e49fc",
+        "chatSessionId": "sess_dc93afb5-d424-4618-9461-851ee6f6fd9d",
+        "timestamp": 1785873463427
+      },
+      {
+        "executionId": "5a0b85da-2645-459b-9802-4d94eb5e49fc",
+        "chatSessionId": "sess_dc93afb5-d424-4618-9461-851ee6f6fd9d",
+        "timestamp": 1785873464091
+      }
+    ],
+    "2.4 Wire \"Update Profile\" form submission to `individualService.updateProfile(dto)` with loading state on button": [
+      {
+        "executionId": "5a0b85da-2645-459b-9802-4d94eb5e49fc",
+        "chatSessionId": "sess_dc93afb5-d424-4618-9461-851ee6f6fd9d",
+        "timestamp": 1785872200717
+      },
+      {
+        "executionId": "5a0b85da-2645-459b-9802-4d94eb5e49fc",
+        "chatSessionId": "sess_dc93afb5-d424-4618-9461-851ee6f6fd9d",
+        "timestamp": 1785873469706
+      },
+      {
+        "executionId": "5a0b85da-2645-459b-9802-4d94eb5e49fc",
+        "chatSessionId": "sess_dc93afb5-d424-4618-9461-851ee6f6fd9d",
+        "timestamp": 1785873470447
+      }
+    ],
+    "2.5 Show success toast on profile update; show error toast on failure": [
+      {
+        "executionId": "5a0b85da-2645-459b-9802-4d94eb5e49fc",
+        "chatSessionId": "sess_dc93afb5-d424-4618-9461-851ee6f6fd9d",
+        "timestamp": 1785872200803
+      },
+      {
+        "executionId": "5a0b85da-2645-459b-9802-4d94eb5e49fc",
+        "chatSessionId": "sess_dc93afb5-d424-4618-9461-851ee6f6fd9d",
+        "timestamp": 1785873475510
+      }
+    ],
+    "2.6 Wire \"Change Password\" form to `individualService.changePassword()` with validation (min 8 chars, confirm match)": [
+      {
+        "executionId": "5a0b85da-2645-459b-9802-4d94eb5e49fc",
+        "chatSessionId": "sess_dc93afb5-d424-4618-9461-851ee6f6fd9d",
+        "timestamp": 1785872200881
+      },
+      {
+        "executionId": "5a0b85da-2645-459b-9802-4d94eb5e49fc",
+        "chatSessionId": "sess_dc93afb5-d424-4618-9461-851ee6f6fd9d",
+        "timestamp": 1785873476428
+      }
+    ],
+    "2.7 Show success toast + clear form on password change; show backend error on failure": [
+      {
+        "executionId": "5a0b85da-2645-459b-9802-4d94eb5e49fc",
+        "chatSessionId": "sess_dc93afb5-d424-4618-9461-851ee6f6fd9d",
+        "timestamp": 1785872200954
+      },
+      {
+        "executionId": "5a0b85da-2645-459b-9802-4d94eb5e49fc",
+        "chatSessionId": "sess_dc93afb5-d424-4618-9461-851ee6f6fd9d",
+        "timestamp": 1785873477504
+      }
+    ],
+    "2.8 Replace \"Delete Account\" with \"Deactivate Account\" — wire to confirmation dialog requiring password": [
+      {
+        "executionId": "5a0b85da-2645-459b-9802-4d94eb5e49fc",
+        "chatSessionId": "sess_dc93afb5-d424-4618-9461-851ee6f6fd9d",
+        "timestamp": 1785872201031
+      },
+      {
+        "executionId": "5a0b85da-2645-459b-9802-4d94eb5e49fc",
+        "chatSessionId": "sess_dc93afb5-d424-4618-9461-851ee6f6fd9d",
+        "timestamp": 1785873478463
+      }
+    ],
+    "2.9 On deactivation success, call `AuthContext.logout()` to clear session and redirect to landing": [
+      {
+        "executionId": "5a0b85da-2645-459b-9802-4d94eb5e49fc",
+        "chatSessionId": "sess_dc93afb5-d424-4618-9461-851ee6f6fd9d",
+        "timestamp": 1785872201131
+      },
+      {
+        "executionId": "5a0b85da-2645-459b-9802-4d94eb5e49fc",
+        "chatSessionId": "sess_dc93afb5-d424-4618-9461-851ee6f6fd9d",
+        "timestamp": 1785873479460
+      }
+    ],
+    "2.10 Verify all profile operations work end-to-end": [
+      {
+        "executionId": "5a0b85da-2645-459b-9802-4d94eb5e49fc",
+        "chatSessionId": "sess_dc93afb5-d424-4618-9461-851ee6f6fd9d",
+        "timestamp": 1785872201319
+      },
+      {
+        "executionId": "5a0b85da-2645-459b-9802-4d94eb5e49fc",
+        "chatSessionId": "sess_dc93afb5-d424-4618-9461-851ee6f6fd9d",
+        "timestamp": 1785873484659
+      },
+      {
+        "executionId": "5a0b85da-2645-459b-9802-4d94eb5e49fc",
+        "chatSessionId": "sess_dc93afb5-d424-4618-9461-851ee6f6fd9d",
+        "timestamp": 1785873539126
+      }
+    ],
+    "3.1 On Discover tab activation, call `individualService.discoverNPOs()` and render NPO cards from response": [
+      {
+        "executionId": "5a0b85da-2645-459b-9802-4d94eb5e49fc",
+        "chatSessionId": "sess_dc93afb5-d424-4618-9461-851ee6f6fd9d",
+        "timestamp": 1785872201433
+      },
+      {
+        "executionId": "5a0b85da-2645-459b-9802-4d94eb5e49fc",
+        "chatSessionId": "sess_dc93afb5-d424-4618-9461-851ee6f6fd9d",
+        "timestamp": 1785873546474
+      },
+      {
+        "executionId": "5a0b85da-2645-459b-9802-4d94eb5e49fc",
+        "chatSessionId": "sess_dc93afb5-d424-4618-9461-851ee6f6fd9d",
+        "timestamp": 1785876143071
+      }
+    ],
+    "3.2 Add skeleton loading cards while fetching": [
+      {
+        "executionId": "5a0b85da-2645-459b-9802-4d94eb5e49fc",
+        "chatSessionId": "sess_dc93afb5-d424-4618-9461-851ee6f6fd9d",
+        "timestamp": 1785872201525
+      },
+      {
+        "executionId": "5a0b85da-2645-459b-9802-4d94eb5e49fc",
+        "chatSessionId": "sess_dc93afb5-d424-4618-9461-851ee6f6fd9d",
+        "timestamp": 1785876143768
+      }
+    ],
+    "3.3 Add error state with retry button if fetch fails": [
+      {
+        "executionId": "5a0b85da-2645-459b-9802-4d94eb5e49fc",
+        "chatSessionId": "sess_dc93afb5-d424-4618-9461-851ee6f6fd9d",
+        "timestamp": 1785872201617
+      },
+      {
+        "executionId": "5a0b85da-2645-459b-9802-4d94eb5e49fc",
+        "chatSessionId": "sess_dc93afb5-d424-4618-9461-851ee6f6fd9d",
+        "timestamp": 1785876144560
+      }
+    ],
+    "3.4 Add empty state if no NPOs returned": [
+      {
+        "executionId": "5a0b85da-2645-459b-9802-4d94eb5e49fc",
+        "chatSessionId": "sess_dc93afb5-d424-4618-9461-851ee6f6fd9d",
+        "timestamp": 1785872201711
+      },
+      {
+        "executionId": "5a0b85da-2645-459b-9802-4d94eb5e49fc",
+        "chatSessionId": "sess_dc93afb5-d424-4618-9461-851ee6f6fd9d",
+        "timestamp": 1785876145329
+      }
+    ],
+    "3.5 Implement client-side filtering: search by name/location/focusArea, filter by verification status": [
+      {
+        "executionId": "5a0b85da-2645-459b-9802-4d94eb5e49fc",
+        "chatSessionId": "sess_dc93afb5-d424-4618-9461-851ee6f6fd9d",
+        "timestamp": 1785872201808
+      },
+      {
+        "executionId": "5a0b85da-2645-459b-9802-4d94eb5e49fc",
+        "chatSessionId": "sess_dc93afb5-d424-4618-9461-851ee6f6fd9d",
+        "timestamp": 1785876146364
+      }
+    ],
+    "3.6 Remove mock data fields not available from API (images, province, campaigns, follower count on list)": [
+      {
+        "executionId": "5a0b85da-2645-459b-9802-4d94eb5e49fc",
+        "chatSessionId": "sess_dc93afb5-d424-4618-9461-851ee6f6fd9d",
+        "timestamp": 1785872201892
+      },
+      {
+        "executionId": "5a0b85da-2645-459b-9802-4d94eb5e49fc",
+        "chatSessionId": "sess_dc93afb5-d424-4618-9461-851ee6f6fd9d",
+        "timestamp": 1785876151312
+      }
+    ],
+    "3.7 Adapt NPO card layout to use available fields: organizationName, focusArea, mission, location, isVerified": [
+      {
+        "executionId": "5a0b85da-2645-459b-9802-4d94eb5e49fc",
+        "chatSessionId": "sess_dc93afb5-d424-4618-9461-851ee6f6fd9d",
+        "timestamp": 1785872201959
+      },
+      {
+        "executionId": "5a0b85da-2645-459b-9802-4d94eb5e49fc",
+        "chatSessionId": "sess_dc93afb5-d424-4618-9461-851ee6f6fd9d",
+        "timestamp": 1785876152389
+      }
+    ],
+    "3.8 Wire \"Follow\" button to `individualService.followNPO(npoId)` with optimistic UI toggle": [
+      {
+        "executionId": "5a0b85da-2645-459b-9802-4d94eb5e49fc",
+        "chatSessionId": "sess_dc93afb5-d424-4618-9461-851ee6f6fd9d",
+        "timestamp": 1785872202031
+      },
+      {
+        "executionId": "5a0b85da-2645-459b-9802-4d94eb5e49fc",
+        "chatSessionId": "sess_dc93afb5-d424-4618-9461-851ee6f6fd9d",
+        "timestamp": 1785876153490
+      }
+    ],
+    "3.9 Wire \"Unfollow\" button to `individualService.unfollowNPO(npoId)` with optimistic UI toggle": [
+      {
+        "executionId": "5a0b85da-2645-459b-9802-4d94eb5e49fc",
+        "chatSessionId": "sess_dc93afb5-d424-4618-9461-851ee6f6fd9d",
+        "timestamp": 1785872202118
+      },
+      {
+        "executionId": "5a0b85da-2645-459b-9802-4d94eb5e49fc",
+        "chatSessionId": "sess_dc93afb5-d424-4618-9461-851ee6f6fd9d",
+        "timestamp": 1785876154356
+      }
+    ],
+    "3.10 Handle follow/unfollow errors (400 already following, 404 not found) — revert optimistic state, show toast": [
+      {
+        "executionId": "5a0b85da-2645-459b-9802-4d94eb5e49fc",
+        "chatSessionId": "sess_dc93afb5-d424-4618-9461-851ee6f6fd9d",
+        "timestamp": 1785872202214
+      },
+      {
+        "executionId": "5a0b85da-2645-459b-9802-4d94eb5e49fc",
+        "chatSessionId": "sess_dc93afb5-d424-4618-9461-851ee6f6fd9d",
+        "timestamp": 1785876155815
+      }
+    ],
+    "3.11 Implement NPO detail modal/view: on card click, call `individualService.getNPODetail(npoId)` and display followerCount": [
+      {
+        "executionId": "5a0b85da-2645-459b-9802-4d94eb5e49fc",
+        "chatSessionId": "sess_dc93afb5-d424-4618-9461-851ee6f6fd9d",
+        "timestamp": 1785872202297
+      },
+      {
+        "executionId": "5a0b85da-2645-459b-9802-4d94eb5e49fc",
+        "chatSessionId": "sess_dc93afb5-d424-4618-9461-851ee6f6fd9d",
+        "timestamp": 1785876161201
+      }
+    ],
+    "3.12 Update \"Following\" tab to show NPOs followed during current session (with known limitation note)": [
+      {
+        "executionId": "5a0b85da-2645-459b-9802-4d94eb5e49fc",
+        "chatSessionId": "sess_dc93afb5-d424-4618-9461-851ee6f6fd9d",
+        "timestamp": 1785872202377
+      },
+      {
+        "executionId": "5a0b85da-2645-459b-9802-4d94eb5e49fc",
+        "chatSessionId": "sess_dc93afb5-d424-4618-9461-851ee6f6fd9d",
+        "timestamp": 1785876162313
+      }
+    ],
+    "3.13 Remove \"Active Campaigns\" and \"Recommended for You\" sections (data not available from API)": [
+      {
+        "executionId": "5a0b85da-2645-459b-9802-4d94eb5e49fc",
+        "chatSessionId": "sess_dc93afb5-d424-4618-9461-851ee6f6fd9d",
+        "timestamp": 1785872202459
+      },
+      {
+        "executionId": "5a0b85da-2645-459b-9802-4d94eb5e49fc",
+        "chatSessionId": "sess_dc93afb5-d424-4618-9461-851ee6f6fd9d",
+        "timestamp": 1785876163098
+      }
+    ],
+    "3.14 Verify discover + follow/unfollow works end-to-end": [
+      {
+        "executionId": "5a0b85da-2645-459b-9802-4d94eb5e49fc",
+        "chatSessionId": "sess_dc93afb5-d424-4618-9461-851ee6f6fd9d",
+        "timestamp": 1785872202559
+      },
+      {
+        "executionId": "5a0b85da-2645-459b-9802-4d94eb5e49fc",
+        "chatSessionId": "sess_dc93afb5-d424-4618-9461-851ee6f6fd9d",
+        "timestamp": 1785876163971
+      }
+    ],
+    "4.1 On dashboard mount, fetch wallet balance via `individualService.getWalletBalance(userId)` — store in shared state": [
+      {
+        "executionId": "5a0b85da-2645-459b-9802-4d94eb5e49fc",
+        "chatSessionId": "sess_dc93afb5-d424-4618-9461-851ee6f6fd9d",
+        "timestamp": 1785872202696
+      },
+      {
+        "executionId": "5a0b85da-2645-459b-9802-4d94eb5e49fc",
+        "chatSessionId": "sess_dc93afb5-d424-4618-9461-851ee6f6fd9d",
+        "timestamp": 1785876170493
+      },
+      {
+        "executionId": "5a0b85da-2645-459b-9802-4d94eb5e49fc",
+        "chatSessionId": "sess_dc93afb5-d424-4618-9461-851ee6f6fd9d",
+        "timestamp": 1785876399006
+      }
+    ],
+    "4.2 Display wallet balance in the donation modal header": [
+      {
+        "executionId": "5a0b85da-2645-459b-9802-4d94eb5e49fc",
+        "chatSessionId": "sess_dc93afb5-d424-4618-9461-851ee6f6fd9d",
+        "timestamp": 1785872202788
+      },
+      {
+        "executionId": "5a0b85da-2645-459b-9802-4d94eb5e49fc",
+        "chatSessionId": "sess_dc93afb5-d424-4618-9461-851ee6f6fd9d",
+        "timestamp": 1785876399737
+      }
+    ],
+    "4.3 Wire donate modal form submission to `individualService.donate(npoId, amount)` with amount validation": [
+      {
+        "executionId": "5a0b85da-2645-459b-9802-4d94eb5e49fc",
+        "chatSessionId": "sess_dc93afb5-d424-4618-9461-851ee6f6fd9d",
+        "timestamp": 1785872202889
+      },
+      {
+        "executionId": "5a0b85da-2645-459b-9802-4d94eb5e49fc",
+        "chatSessionId": "sess_dc93afb5-d424-4618-9461-851ee6f6fd9d",
+        "timestamp": 1785876400537
+      }
+    ],
+    "4.4 On donate success: update local wallet balance, show success toast, close modal": [
+      {
+        "executionId": "5a0b85da-2645-459b-9802-4d94eb5e49fc",
+        "chatSessionId": "sess_dc93afb5-d424-4618-9461-851ee6f6fd9d",
+        "timestamp": 1785872202989
+      },
+      {
+        "executionId": "5a0b85da-2645-459b-9802-4d94eb5e49fc",
+        "chatSessionId": "sess_dc93afb5-d424-4618-9461-851ee6f6fd9d",
+        "timestamp": 1785876401386
+      }
+    ],
+    "4.5 On donate failure (insufficient balance): show error message + offer top-up option within modal": [
+      {
+        "executionId": "5a0b85da-2645-459b-9802-4d94eb5e49fc",
+        "chatSessionId": "sess_dc93afb5-d424-4618-9461-851ee6f6fd9d",
+        "timestamp": 1785872203067
+      },
+      {
+        "executionId": "5a0b85da-2645-459b-9802-4d94eb5e49fc",
+        "chatSessionId": "sess_dc93afb5-d424-4618-9461-851ee6f6fd9d",
+        "timestamp": 1785876402322
+      }
+    ],
+    "4.6 Add top-up form/section (can be in donation modal or My Donations tab)": [
+      {
+        "executionId": "5a0b85da-2645-459b-9802-4d94eb5e49fc",
+        "chatSessionId": "sess_dc93afb5-d424-4618-9461-851ee6f6fd9d",
+        "timestamp": 1785872203142
+      },
+      {
+        "executionId": "5a0b85da-2645-459b-9802-4d94eb5e49fc",
+        "chatSessionId": "sess_dc93afb5-d424-4618-9461-851ee6f6fd9d",
+        "timestamp": 1785876407384
+      }
+    ],
+    "4.7 Wire top-up submission to `individualService.topUp(amount)` with loading state": [
+      {
+        "executionId": "5a0b85da-2645-459b-9802-4d94eb5e49fc",
+        "chatSessionId": "sess_dc93afb5-d424-4618-9461-851ee6f6fd9d",
+        "timestamp": 1785872203208
+      },
+      {
+        "executionId": "5a0b85da-2645-459b-9802-4d94eb5e49fc",
+        "chatSessionId": "sess_dc93afb5-d424-4618-9461-851ee6f6fd9d",
+        "timestamp": 1785876408062
+      }
+    ],
+    "4.8 On top-up success: update local wallet balance, show success toast": [
+      {
+        "executionId": "5a0b85da-2645-459b-9802-4d94eb5e49fc",
+        "chatSessionId": "sess_dc93afb5-d424-4618-9461-851ee6f6fd9d",
+        "timestamp": 1785872203280
+      },
+      {
+        "executionId": "5a0b85da-2645-459b-9802-4d94eb5e49fc",
+        "chatSessionId": "sess_dc93afb5-d424-4618-9461-851ee6f6fd9d",
+        "timestamp": 1785876408740
+      }
+    ],
+    "4.9 Client-side validation: amount must be > 0 for both donate and top-up": [
+      {
+        "executionId": "5a0b85da-2645-459b-9802-4d94eb5e49fc",
+        "chatSessionId": "sess_dc93afb5-d424-4618-9461-851ee6f6fd9d",
+        "timestamp": 1785872203364
+      },
+      {
+        "executionId": "5a0b85da-2645-459b-9802-4d94eb5e49fc",
+        "chatSessionId": "sess_dc93afb5-d424-4618-9461-851ee6f6fd9d",
+        "timestamp": 1785876409613
+      }
+    ],
+    "4.10 Verify wallet/donate/topup flow end-to-end": [
+      {
+        "executionId": "5a0b85da-2645-459b-9802-4d94eb5e49fc",
+        "chatSessionId": "sess_dc93afb5-d424-4618-9461-851ee6f6fd9d",
+        "timestamp": 1785872203446
+      },
+      {
+        "executionId": "5a0b85da-2645-459b-9802-4d94eb5e49fc",
+        "chatSessionId": "sess_dc93afb5-d424-4618-9461-851ee6f6fd9d",
+        "timestamp": 1785876410580
+      }
+    ],
+    "5.1 On Volunteer Opportunities tab activation, call `individualService.getOpportunities()` and render cards": [
+      {
+        "executionId": "5a0b85da-2645-459b-9802-4d94eb5e49fc",
+        "chatSessionId": "sess_dc93afb5-d424-4618-9461-851ee6f6fd9d",
+        "timestamp": 1785872203529
+      },
+      {
+        "executionId": "5a0b85da-2645-459b-9802-4d94eb5e49fc",
+        "chatSessionId": "sess_dc93afb5-d424-4618-9461-851ee6f6fd9d",
+        "timestamp": 1785876417580
+      },
+      {
+        "executionId": "5a0b85da-2645-459b-9802-4d94eb5e49fc",
+        "chatSessionId": "sess_dc93afb5-d424-4618-9461-851ee6f6fd9d",
+        "timestamp": 1785876843962
+      }
+    ],
+    "5.2 Add skeleton loading for opportunities": [
+      {
+        "executionId": "5a0b85da-2645-459b-9802-4d94eb5e49fc",
+        "chatSessionId": "sess_dc93afb5-d424-4618-9461-851ee6f6fd9d",
+        "timestamp": 1785872203600
+      },
+      {
+        "executionId": "5a0b85da-2645-459b-9802-4d94eb5e49fc",
+        "chatSessionId": "sess_dc93afb5-d424-4618-9461-851ee6f6fd9d",
+        "timestamp": 1785876844582
+      }
+    ],
+    "5.3 Add error/empty states": [
+      {
+        "executionId": "5a0b85da-2645-459b-9802-4d94eb5e49fc",
+        "chatSessionId": "sess_dc93afb5-d424-4618-9461-851ee6f6fd9d",
+        "timestamp": 1785872203682
+      },
+      {
+        "executionId": "5a0b85da-2645-459b-9802-4d94eb5e49fc",
+        "chatSessionId": "sess_dc93afb5-d424-4618-9461-851ee6f6fd9d",
+        "timestamp": 1785876845232
+      }
+    ],
+    "5.4 Adapt opportunity card to available fields (remove applicant count, schedule — not in API response)": [
+      {
+        "executionId": "5a0b85da-2645-459b-9802-4d94eb5e49fc",
+        "chatSessionId": "sess_dc93afb5-d424-4618-9461-851ee6f6fd9d",
+        "timestamp": 1785872203786
+      },
+      {
+        "executionId": "5a0b85da-2645-459b-9802-4d94eb5e49fc",
+        "chatSessionId": "sess_dc93afb5-d424-4618-9461-851ee6f6fd9d",
+        "timestamp": 1785876846291
+      }
+    ],
+    "5.5 Wire \"Apply\" button to open volunteer application modal": [
+      {
+        "executionId": "5a0b85da-2645-459b-9802-4d94eb5e49fc",
+        "chatSessionId": "sess_dc93afb5-d424-4618-9461-851ee6f6fd9d",
+        "timestamp": 1785872203879
+      },
+      {
+        "executionId": "5a0b85da-2645-459b-9802-4d94eb5e49fc",
+        "chatSessionId": "sess_dc93afb5-d424-4618-9461-851ee6f6fd9d",
+        "timestamp": 1785876847062
+      }
+    ],
+    "5.6 Wire modal form submission to `individualService.applyVolunteer(opportunityId, dto)` with loading state": [
+      {
+        "executionId": "5a0b85da-2645-459b-9802-4d94eb5e49fc",
+        "chatSessionId": "sess_dc93afb5-d424-4618-9461-851ee6f6fd9d",
+        "timestamp": 1785872204020
+      },
+      {
+        "executionId": "5a0b85da-2645-459b-9802-4d94eb5e49fc",
+        "chatSessionId": "sess_dc93afb5-d424-4618-9461-851ee6f6fd9d",
+        "timestamp": 1785876852652
+      }
+    ],
+    "5.7 On apply success: show success toast, mark opportunity as \"Applied\" in local state": [
+      {
+        "executionId": "5a0b85da-2645-459b-9802-4d94eb5e49fc",
+        "chatSessionId": "sess_dc93afb5-d424-4618-9461-851ee6f6fd9d",
+        "timestamp": 1785872204121
+      },
+      {
+        "executionId": "5a0b85da-2645-459b-9802-4d94eb5e49fc",
+        "chatSessionId": "sess_dc93afb5-d424-4618-9461-851ee6f6fd9d",
+        "timestamp": 1785876853678
+      }
+    ],
+    "5.8 Handle already-applied error (400) — show specific message": [
+      {
+        "executionId": "5a0b85da-2645-459b-9802-4d94eb5e49fc",
+        "chatSessionId": "sess_dc93afb5-d424-4618-9461-851ee6f6fd9d",
+        "timestamp": 1785872204204
+      },
+      {
+        "executionId": "5a0b85da-2645-459b-9802-4d94eb5e49fc",
+        "chatSessionId": "sess_dc93afb5-d424-4618-9461-851ee6f6fd9d",
+        "timestamp": 1785876854614
+      }
+    ],
+    "5.9 On My Volunteering tab activation, call `individualService.getMyVolunteering()` and render applications": [
+      {
+        "executionId": "5a0b85da-2645-459b-9802-4d94eb5e49fc",
+        "chatSessionId": "sess_dc93afb5-d424-4618-9461-851ee6f6fd9d",
+        "timestamp": 1785872204280
+      },
+      {
+        "executionId": "5a0b85da-2645-459b-9802-4d94eb5e49fc",
+        "chatSessionId": "sess_dc93afb5-d424-4618-9461-851ee6f6fd9d",
+        "timestamp": 1785876855582
+      }
+    ],
+    "5.10 Display application status badges with color coding (Pending=amber, Accepted=green, Rejected=red, Cancelled=gray)": [
+      {
+        "executionId": "5a0b85da-2645-459b-9802-4d94eb5e49fc",
+        "chatSessionId": "sess_dc93afb5-d424-4618-9461-851ee6f6fd9d",
+        "timestamp": 1785872204352
+      },
+      {
+        "executionId": "5a0b85da-2645-459b-9802-4d94eb5e49fc",
+        "chatSessionId": "sess_dc93afb5-d424-4618-9461-851ee6f6fd9d",
+        "timestamp": 1785876856464
+      }
+    ],
+    "5.11 Wire \"Withdraw\" button to confirmation dialog → `individualService.cancelApplication(applicationId)`": [
+      {
+        "executionId": "5a0b85da-2645-459b-9802-4d94eb5e49fc",
+        "chatSessionId": "sess_dc93afb5-d424-4618-9461-851ee6f6fd9d",
+        "timestamp": 1785872204432
+      },
+      {
+        "executionId": "5a0b85da-2645-459b-9802-4d94eb5e49fc",
+        "chatSessionId": "sess_dc93afb5-d424-4618-9461-851ee6f6fd9d",
+        "timestamp": 1785876861739
+      }
+    ],
+    "5.12 Handle cancel errors (400 already accepted, 403 not owner) — show toast": [
+      {
+        "executionId": "5a0b85da-2645-459b-9802-4d94eb5e49fc",
+        "chatSessionId": "sess_dc93afb5-d424-4618-9461-851ee6f6fd9d",
+        "timestamp": 1785872204513
+      },
+      {
+        "executionId": "5a0b85da-2645-459b-9802-4d94eb5e49fc",
+        "chatSessionId": "sess_dc93afb5-d424-4618-9461-851ee6f6fd9d",
+        "timestamp": 1785876862845
+      }
+    ],
+    "5.13 On cancel success: remove from list, show success toast": [
+      {
+        "executionId": "5a0b85da-2645-459b-9802-4d94eb5e49fc",
+        "chatSessionId": "sess_dc93afb5-d424-4618-9461-851ee6f6fd9d",
+        "timestamp": 1785872204652
+      },
+      {
+        "executionId": "5a0b85da-2645-459b-9802-4d94eb5e49fc",
+        "chatSessionId": "sess_dc93afb5-d424-4618-9461-851ee6f6fd9d",
+        "timestamp": 1785876863609
+      }
+    ],
+    "5.14 Verify volunteer flow end-to-end": [
+      {
+        "executionId": "5a0b85da-2645-459b-9802-4d94eb5e49fc",
+        "chatSessionId": "sess_dc93afb5-d424-4618-9461-851ee6f6fd9d",
+        "timestamp": 1785872204749
+      },
+      {
+        "executionId": "5a0b85da-2645-459b-9802-4d94eb5e49fc",
+        "chatSessionId": "sess_dc93afb5-d424-4618-9461-851ee6f6fd9d",
+        "timestamp": 1785876864551
+      }
+    ],
+    "6.1 On My Donations tab activation, call `individualService.getMyDonations()` and render donation history": [
+      {
+        "executionId": "5a0b85da-2645-459b-9802-4d94eb5e49fc",
+        "chatSessionId": "sess_dc93afb5-d424-4618-9461-851ee6f6fd9d",
+        "timestamp": 1785872204861
+      },
+      {
+        "executionId": "5a0b85da-2645-459b-9802-4d94eb5e49fc",
+        "chatSessionId": "sess_dc93afb5-d424-4618-9461-851ee6f6fd9d",
+        "timestamp": 1785876872162
+      },
+      {
+        "executionId": "5a0b85da-2645-459b-9802-4d94eb5e49fc",
+        "chatSessionId": "sess_dc93afb5-d424-4618-9461-851ee6f6fd9d",
+        "timestamp": 1785877198622
+      }
+    ],
+    "6.2 Display summary stats: totalDonated, count": [
+      {
+        "executionId": "5a0b85da-2645-459b-9802-4d94eb5e49fc",
+        "chatSessionId": "sess_dc93afb5-d424-4618-9461-851ee6f6fd9d",
+        "timestamp": 1785872204954
+      },
+      {
+        "executionId": "5a0b85da-2645-459b-9802-4d94eb5e49fc",
+        "chatSessionId": "sess_dc93afb5-d424-4618-9461-851ee6f6fd9d",
+        "timestamp": 1785877199461
+      }
+    ],
+    "6.3 Display wallet balance in donations tab header": [
+      {
+        "executionId": "5a0b85da-2645-459b-9802-4d94eb5e49fc",
+        "chatSessionId": "sess_dc93afb5-d424-4618-9461-851ee6f6fd9d",
+        "timestamp": 1785872205051
+      },
+      {
+        "executionId": "5a0b85da-2645-459b-9802-4d94eb5e49fc",
+        "chatSessionId": "sess_dc93afb5-d424-4618-9461-851ee6f6fd9d",
+        "timestamp": 1785877200228
+      }
+    ],
+    "6.4 Add skeleton loading and error/empty states for donations": [
+      {
+        "executionId": "5a0b85da-2645-459b-9802-4d94eb5e49fc",
+        "chatSessionId": "sess_dc93afb5-d424-4618-9461-851ee6f6fd9d",
+        "timestamp": 1785872205141
+      },
+      {
+        "executionId": "5a0b85da-2645-459b-9802-4d94eb5e49fc",
+        "chatSessionId": "sess_dc93afb5-d424-4618-9461-851ee6f6fd9d",
+        "timestamp": 1785877201182
+      }
+    ],
+    "6.5 On My Impact tab activation, call `individualService.getMyImpact()` and render stat cards": [
+      {
+        "executionId": "5a0b85da-2645-459b-9802-4d94eb5e49fc",
+        "chatSessionId": "sess_dc93afb5-d424-4618-9461-851ee6f6fd9d",
+        "timestamp": 1785872205232
+      },
+      {
+        "executionId": "5a0b85da-2645-459b-9802-4d94eb5e49fc",
+        "chatSessionId": "sess_dc93afb5-d424-4618-9461-851ee6f6fd9d",
+        "timestamp": 1785877202054
+      }
+    ],
+    "6.6 Display: totalDonated, totalHoursVolunteered, npoFollowing, volunteerRolesCompleted": [
+      {
+        "executionId": "5a0b85da-2645-459b-9802-4d94eb5e49fc",
+        "chatSessionId": "sess_dc93afb5-d424-4618-9461-851ee6f6fd9d",
+        "timestamp": 1785872205315
+      },
+      {
+        "executionId": "5a0b85da-2645-459b-9802-4d94eb5e49fc",
+        "chatSessionId": "sess_dc93afb5-d424-4618-9461-851ee6f6fd9d",
+        "timestamp": 1785877207662
+      }
+    ],
+    "6.7 Add skeleton loading and error states for impact": [
+      {
+        "executionId": "5a0b85da-2645-459b-9802-4d94eb5e49fc",
+        "chatSessionId": "sess_dc93afb5-d424-4618-9461-851ee6f6fd9d",
+        "timestamp": 1785872205419
+      },
+      {
+        "executionId": "5a0b85da-2645-459b-9802-4d94eb5e49fc",
+        "chatSessionId": "sess_dc93afb5-d424-4618-9461-851ee6f6fd9d",
+        "timestamp": 1785877208337
+      }
+    ],
+    "6.8 Remove hardcoded \"Combined Impact\" bullet points (no backend data for those)": [
+      {
+        "executionId": "5a0b85da-2645-459b-9802-4d94eb5e49fc",
+        "chatSessionId": "sess_dc93afb5-d424-4618-9461-851ee6f6fd9d",
+        "timestamp": 1785872205540
+      },
+      {
+        "executionId": "5a0b85da-2645-459b-9802-4d94eb5e49fc",
+        "chatSessionId": "sess_dc93afb5-d424-4618-9461-851ee6f6fd9d",
+        "timestamp": 1785877209423
+      }
+    ],
+    "6.9 Verify all history/impact tabs render correct real data": [
+      {
+        "executionId": "5a0b85da-2645-459b-9802-4d94eb5e49fc",
+        "chatSessionId": "sess_dc93afb5-d424-4618-9461-851ee6f6fd9d",
+        "timestamp": 1785872205636
+      },
+      {
+        "executionId": "5a0b85da-2645-459b-9802-4d94eb5e49fc",
+        "chatSessionId": "sess_dc93afb5-d424-4618-9461-851ee6f6fd9d",
+        "timestamp": 1785877210495
+      }
+    ],
+    "7.1 On Community Updates tab activation, call `individualService.getCommunityUpdates()` and render post cards": [
+      {
+        "executionId": "5a0b85da-2645-459b-9802-4d94eb5e49fc",
+        "chatSessionId": "sess_dc93afb5-d424-4618-9461-851ee6f6fd9d",
+        "timestamp": 1785872205847
+      },
+      {
+        "executionId": "5a0b85da-2645-459b-9802-4d94eb5e49fc",
+        "chatSessionId": "sess_dc93afb5-d424-4618-9461-851ee6f6fd9d",
+        "timestamp": 1785877211337
+      }
+    ],
+    "7.2 Display each post: authorName, postTitle, content, mediaUrl (conditional), likeCount, timestamp": [
+      {
+        "executionId": "5a0b85da-2645-459b-9802-4d94eb5e49fc",
+        "chatSessionId": "sess_dc93afb5-d424-4618-9461-851ee6f6fd9d",
+        "timestamp": 1785872205992
+      },
+      {
+        "executionId": "5a0b85da-2645-459b-9802-4d94eb5e49fc",
+        "chatSessionId": "sess_dc93afb5-d424-4618-9461-851ee6f6fd9d",
+        "timestamp": 1785877218194
+      }
+    ],
+    "7.3 Remove comments count display (no backend support)": [
+      {
+        "executionId": "5a0b85da-2645-459b-9802-4d94eb5e49fc",
+        "chatSessionId": "sess_dc93afb5-d424-4618-9461-851ee6f6fd9d",
+        "timestamp": 1785872206104
+      },
+      {
+        "executionId": "5a0b85da-2645-459b-9802-4d94eb5e49fc",
+        "chatSessionId": "sess_dc93afb5-d424-4618-9461-851ee6f6fd9d",
+        "timestamp": 1785877219103
+      }
+    ],
+    "7.4 Implement client-side search/filter by title, author name, content": [
+      {
+        "executionId": "5a0b85da-2645-459b-9802-4d94eb5e49fc",
+        "chatSessionId": "sess_dc93afb5-d424-4618-9461-851ee6f6fd9d",
+        "timestamp": 1785872206217
+      },
+      {
+        "executionId": "5a0b85da-2645-459b-9802-4d94eb5e49fc",
+        "chatSessionId": "sess_dc93afb5-d424-4618-9461-851ee6f6fd9d",
+        "timestamp": 1785877217439
+      }
+    ],
+    "7.5 Add skeleton loading, error, and empty states": [
+      {
+        "executionId": "5a0b85da-2645-459b-9802-4d94eb5e49fc",
+        "chatSessionId": "sess_dc93afb5-d424-4618-9461-851ee6f6fd9d",
+        "timestamp": 1785872206324
+      },
+      {
+        "executionId": "5a0b85da-2645-459b-9802-4d94eb5e49fc",
+        "chatSessionId": "sess_dc93afb5-d424-4618-9461-851ee6f6fd9d",
+        "timestamp": 1785877221227
+      }
+    ],
+    "7.6 Handle mediaUrl gracefully (show only when non-null, use placeholder when missing)": [
+      {
+        "executionId": "5a0b85da-2645-459b-9802-4d94eb5e49fc",
+        "chatSessionId": "sess_dc93afb5-d424-4618-9461-851ee6f6fd9d",
+        "timestamp": 1785872206428
+      },
+      {
+        "executionId": "5a0b85da-2645-459b-9802-4d94eb5e49fc",
+        "chatSessionId": "sess_dc93afb5-d424-4618-9461-851ee6f6fd9d",
+        "timestamp": 1785877220349
+      }
+    ],
+    "7.7 Verify community updates tab renders real posts": [
+      {
+        "executionId": "5a0b85da-2645-459b-9802-4d94eb5e49fc",
+        "chatSessionId": "sess_dc93afb5-d424-4618-9461-851ee6f6fd9d",
+        "timestamp": 1785872206518
+      },
+      {
+        "executionId": "5a0b85da-2645-459b-9802-4d94eb5e49fc",
+        "chatSessionId": "sess_dc93afb5-d424-4618-9461-851ee6f6fd9d",
+        "timestamp": 1785877226460
+      }
+    ],
+    "8.1 Audit all tabs for consistent loading skeleton patterns": [
+      {
+        "executionId": "5a0b85da-2645-459b-9802-4d94eb5e49fc",
+        "chatSessionId": "sess_dc93afb5-d424-4618-9461-851ee6f6fd9d",
+        "timestamp": 1785872206626
+      },
+      {
+        "executionId": "5a0b85da-2645-459b-9802-4d94eb5e49fc",
+        "chatSessionId": "sess_dc93afb5-d424-4618-9461-851ee6f6fd9d",
+        "timestamp": 1785877234055
+      },
+      {
+        "executionId": "5a0b85da-2645-459b-9802-4d94eb5e49fc",
+        "chatSessionId": "sess_dc93afb5-d424-4618-9461-851ee6f6fd9d",
+        "timestamp": 1785877414007
+      }
+    ],
+    "8.2 Audit all tabs for consistent error state patterns (card + message + retry)": [
+      {
+        "executionId": "5a0b85da-2645-459b-9802-4d94eb5e49fc",
+        "chatSessionId": "sess_dc93afb5-d424-4618-9461-851ee6f6fd9d",
+        "timestamp": 1785872206747
+      },
+      {
+        "executionId": "5a0b85da-2645-459b-9802-4d94eb5e49fc",
+        "chatSessionId": "sess_dc93afb5-d424-4618-9461-851ee6f6fd9d",
+        "timestamp": 1785877414776
+      }
+    ],
+    "8.3 Audit all tabs for consistent empty state patterns (icon + message + CTA)": [
+      {
+        "executionId": "5a0b85da-2645-459b-9802-4d94eb5e49fc",
+        "chatSessionId": "sess_dc93afb5-d424-4618-9461-851ee6f6fd9d",
+        "timestamp": 1785872206849
+      },
+      {
+        "executionId": "5a0b85da-2645-459b-9802-4d94eb5e49fc",
+        "chatSessionId": "sess_dc93afb5-d424-4618-9461-851ee6f6fd9d",
+        "timestamp": 1785877416381
+      }
+    ],
+    "8.4 Ensure all mutation buttons have loading spinners when in flight": [
+      {
+        "executionId": "5a0b85da-2645-459b-9802-4d94eb5e49fc",
+        "chatSessionId": "sess_dc93afb5-d424-4618-9461-851ee6f6fd9d",
+        "timestamp": 1785872206957
+      },
+      {
+        "executionId": "5a0b85da-2645-459b-9802-4d94eb5e49fc",
+        "chatSessionId": "sess_dc93afb5-d424-4618-9461-851ee6f6fd9d",
+        "timestamp": 1785877414073
+      }
+    ],
+    "8.5 Ensure all toasts use consistent styling (success = default, error = destructive)": [
+      {
+        "executionId": "5a0b85da-2645-459b-9802-4d94eb5e49fc",
+        "chatSessionId": "sess_dc93afb5-d424-4618-9461-851ee6f6fd9d",
+        "timestamp": 1785872207049
+      },
+      {
+        "executionId": "5a0b85da-2645-459b-9802-4d94eb5e49fc",
+        "chatSessionId": "sess_dc93afb5-d424-4618-9461-851ee6f6fd9d",
+        "timestamp": 1785877415610
+      }
+    ],
+    "8.6 Test responsive layout across desktop/tablet/mobile breakpoints": [
+      {
+        "executionId": "5a0b85da-2645-459b-9802-4d94eb5e49fc",
+        "chatSessionId": "sess_dc93afb5-d424-4618-9461-851ee6f6fd9d",
+        "timestamp": 1785872207153
+      },
+      {
+        "executionId": "5a0b85da-2645-459b-9802-4d94eb5e49fc",
+        "chatSessionId": "sess_dc93afb5-d424-4618-9461-851ee6f6fd9d",
+        "timestamp": 1785877422746
+      }
+    ],
+    "8.7 Remove all remaining mock/hardcoded data from the component": [
+      {
+        "executionId": "5a0b85da-2645-459b-9802-4d94eb5e49fc",
+        "chatSessionId": "sess_dc93afb5-d424-4618-9461-851ee6f6fd9d",
+        "timestamp": 1785872207271
+      },
+      {
+        "executionId": "5a0b85da-2645-459b-9802-4d94eb5e49fc",
+        "chatSessionId": "sess_dc93afb5-d424-4618-9461-851ee6f6fd9d",
+        "timestamp": 1785877424310
+      }
+    ],
+    "8.8 Verify no console errors or warnings in development": [
+      {
+        "executionId": "5a0b85da-2645-459b-9802-4d94eb5e49fc",
+        "chatSessionId": "sess_dc93afb5-d424-4618-9461-851ee6f6fd9d",
+        "timestamp": 1785872207365
+      },
+      {
+        "executionId": "5a0b85da-2645-459b-9802-4d94eb5e49fc",
+        "chatSessionId": "sess_dc93afb5-d424-4618-9461-851ee6f6fd9d",
+        "timestamp": 1785877423560
+      }
+    ],
+    "8.9 Run `npm run build` — ensure production build succeeds with no errors": [
+      {
+        "executionId": "5a0b85da-2645-459b-9802-4d94eb5e49fc",
+        "chatSessionId": "sess_dc93afb5-d424-4618-9461-851ee6f6fd9d",
+        "timestamp": 1785872207474
+      },
+      {
+        "executionId": "5a0b85da-2645-459b-9802-4d94eb5e49fc",
+        "chatSessionId": "sess_dc93afb5-d424-4618-9461-851ee6f6fd9d",
+        "timestamp": 1785877425123
+      }
+    ],
+    "9.1 Unauthenticated user visits /individual-dashboard → redirected to /login": [
+      {
+        "executionId": "5a0b85da-2645-459b-9802-4d94eb5e49fc",
+        "chatSessionId": "sess_dc93afb5-d424-4618-9461-851ee6f6fd9d",
+        "timestamp": 1785872207579
+      }
+    ],
+    "9.2 NPO user visits /individual-dashboard → redirected to /npo-dashboard": [
+      {
+        "executionId": "5a0b85da-2645-459b-9802-4d94eb5e49fc",
+        "chatSessionId": "sess_dc93afb5-d424-4618-9461-851ee6f6fd9d",
+        "timestamp": 1785872207681
+      }
+    ],
+    "9.3 Individual logs in → lands on /individual-dashboard": [
+      {
+        "executionId": "5a0b85da-2645-459b-9802-4d94eb5e49fc",
+        "chatSessionId": "sess_dc93afb5-d424-4618-9461-851ee6f6fd9d",
+        "timestamp": 1785872207781
+      }
+    ],
+    "9.4 Profile tab loads real profile data from API": [
+      {
+        "executionId": "5a0b85da-2645-459b-9802-4d94eb5e49fc",
+        "chatSessionId": "sess_dc93afb5-d424-4618-9461-851ee6f6fd9d",
+        "timestamp": 1785872207868
+      }
+    ],
+    "9.5 Update profile → success toast, data persists on tab switch": [
+      {
+        "executionId": "5a0b85da-2645-459b-9802-4d94eb5e49fc",
+        "chatSessionId": "sess_dc93afb5-d424-4618-9461-851ee6f6fd9d",
+        "timestamp": 1785872207954
+      }
+    ],
+    "9.6 Change password → success toast, form clears": [
+      {
+        "executionId": "5a0b85da-2645-459b-9802-4d94eb5e49fc",
+        "chatSessionId": "sess_dc93afb5-d424-4618-9461-851ee6f6fd9d",
+        "timestamp": 1785872208051
+      }
+    ],
+    "9.7 Discover tab loads real NPOs from API": [
+      {
+        "executionId": "5a0b85da-2645-459b-9802-4d94eb5e49fc",
+        "chatSessionId": "sess_dc93afb5-d424-4618-9461-851ee6f6fd9d",
+        "timestamp": 1785872208150
+      }
+    ],
+    "9.8 Follow an NPO → API call succeeds, button state changes": [
+      {
+        "executionId": "5a0b85da-2645-459b-9802-4d94eb5e49fc",
+        "chatSessionId": "sess_dc93afb5-d424-4618-9461-851ee6f6fd9d",
+        "timestamp": 1785872208253
+      }
+    ],
+    "9.9 Unfollow an NPO → API call succeeds, button reverts": [
+      {
+        "executionId": "5a0b85da-2645-459b-9802-4d94eb5e49fc",
+        "chatSessionId": "sess_dc93afb5-d424-4618-9461-851ee6f6fd9d",
+        "timestamp": 1785872208365
+      }
+    ],
+    "9.10 Donate to NPO → wallet deducted, success message": [
+      {
+        "executionId": "5a0b85da-2645-459b-9802-4d94eb5e49fc",
+        "chatSessionId": "sess_dc93afb5-d424-4618-9461-851ee6f6fd9d",
+        "timestamp": 1785872208466
+      }
+    ],
+    "9.11 Top up wallet → balance increases": [
+      {
+        "executionId": "5a0b85da-2645-459b-9802-4d94eb5e49fc",
+        "chatSessionId": "sess_dc93afb5-d424-4618-9461-851ee6f6fd9d",
+        "timestamp": 1785872208586
+      }
+    ],
+    "9.12 Apply to volunteer opportunity → success message, marked as applied": [
+      {
+        "executionId": "5a0b85da-2645-459b-9802-4d94eb5e49fc",
+        "chatSessionId": "sess_dc93afb5-d424-4618-9461-851ee6f6fd9d",
+        "timestamp": 1785872208700
+      }
+    ],
+    "9.13 View My Volunteering → shows real applications": [
+      {
+        "executionId": "5a0b85da-2645-459b-9802-4d94eb5e49fc",
+        "chatSessionId": "sess_dc93afb5-d424-4618-9461-851ee6f6fd9d",
+        "timestamp": 1785872208866
+      }
+    ],
+    "9.14 Cancel pending application → removed from list": [
+      {
+        "executionId": "5a0b85da-2645-459b-9802-4d94eb5e49fc",
+        "chatSessionId": "sess_dc93afb5-d424-4618-9461-851ee6f6fd9d",
+        "timestamp": 1785872209003
+      }
+    ],
+    "9.15 My Donations tab → shows real donation history": [
+      {
+        "executionId": "5a0b85da-2645-459b-9802-4d94eb5e49fc",
+        "chatSessionId": "sess_dc93afb5-d424-4618-9461-851ee6f6fd9d",
+        "timestamp": 1785872209150
+      }
+    ],
+    "9.16 My Impact tab → shows real aggregated stats": [
+      {
+        "executionId": "5a0b85da-2645-459b-9802-4d94eb5e49fc",
+        "chatSessionId": "sess_dc93afb5-d424-4618-9461-851ee6f6fd9d",
+        "timestamp": 1785872209279
+      }
+    ],
+    "9.17 Community Updates → shows real posts": [
+      {
+        "executionId": "5a0b85da-2645-459b-9802-4d94eb5e49fc",
+        "chatSessionId": "sess_dc93afb5-d424-4618-9461-851ee6f6fd9d",
+        "timestamp": 1785872209388
+      }
+    ],
+    "9.18 Logout → clears session, redirects to /login": [
+      {
+        "executionId": "5a0b85da-2645-459b-9802-4d94eb5e49fc",
+        "chatSessionId": "sess_dc93afb5-d424-4618-9461-851ee6f6fd9d",
+        "timestamp": 1785872209492
+      }
+    ],
+    "9.19 Deactivate account → logged out, redirected to landing": [
+      {
+        "executionId": "5a0b85da-2645-459b-9802-4d94eb5e49fc",
+        "chatSessionId": "sess_dc93afb5-d424-4618-9461-851ee6f6fd9d",
+        "timestamp": 1785872209585
+      }
+    ],
+    "9.20 Page refresh while logged in → session persists, dashboard accessible": [
+      {
+        "executionId": "5a0b85da-2645-459b-9802-4d94eb5e49fc",
+        "chatSessionId": "sess_dc93afb5-d424-4618-9461-851ee6f6fd9d",
+        "timestamp": 1785872209706
+      }
+    ],
+    "9.21 Build succeeds with no errors (`npm run build`)": [
+      {
+        "executionId": "5a0b85da-2645-459b-9802-4d94eb5e49fc",
+        "chatSessionId": "sess_dc93afb5-d424-4618-9461-851ee6f6fd9d",
+        "timestamp": 1785872209826
+      }
+    ],
+    "**Dedicated \"My Follows\" endpoint** — Request backend team to add `GET /api/individual/my-follows` returning list of followed NPO IDs/summaries (enables persistent Following tab across sessions)": [
+      {
+        "executionId": "5a0b85da-2645-459b-9802-4d94eb5e49fc",
+        "chatSessionId": "sess_dc93afb5-d424-4618-9461-851ee6f6fd9d",
+        "timestamp": 1785872209949
+      }
+    ],
+    "**NPO profile images** — Once image upload is implemented, add image display to NPO cards": [
+      {
+        "executionId": "5a0b85da-2645-459b-9802-4d94eb5e49fc",
+        "chatSessionId": "sess_dc93afb5-d424-4618-9461-851ee6f6fd9d",
+        "timestamp": 1785872210071
+      }
+    ],
+    "**Post media gallery** — Full-screen image viewer for post mediaUrl content": [
+      {
+        "executionId": "5a0b85da-2645-459b-9802-4d94eb5e49fc",
+        "chatSessionId": "sess_dc93afb5-d424-4618-9461-851ee6f6fd9d",
+        "timestamp": 1785872210205
+      }
+    ],
+    "**Pagination** — Once backend adds pagination support, implement infinite scroll or page controls": [
+      {
+        "executionId": "5a0b85da-2645-459b-9802-4d94eb5e49fc",
+        "chatSessionId": "sess_dc93afb5-d424-4618-9461-851ee6f6fd9d",
+        "timestamp": 1785872210331
+      }
+    ],
+    "**Followed-only feed** — Once `GET /api/feed/community-updates` is verified working, add a \"My Feed\" sub-tab showing posts only from followed NPOs": [
+      {
+        "executionId": "5a0b85da-2645-459b-9802-4d94eb5e49fc",
+        "chatSessionId": "sess_dc93afb5-d424-4618-9461-851ee6f6fd9d",
+        "timestamp": 1785872210477
+      }
+    ],
+    "**Like posts** — Once the PostLike table and endpoints are built ([PLANNED]), add like button functionality": [
+      {
+        "executionId": "5a0b85da-2645-459b-9802-4d94eb5e49fc",
+        "chatSessionId": "sess_dc93afb5-d424-4618-9461-851ee6f6fd9d",
+        "timestamp": 1785872210603
+      }
+    ],
+    "**Comment on posts** — Once comment endpoints exist ([PLANNED]), add comment sections": [
+      {
+        "executionId": "5a0b85da-2645-459b-9802-4d94eb5e49fc",
+        "chatSessionId": "sess_dc93afb5-d424-4618-9461-851ee6f6fd9d",
+        "timestamp": 1785872210727
+      }
+    ],
+    "**Real-time notifications** — Push notifications for follow activity, donation receipts, application status changes": [
+      {
+        "executionId": "5a0b85da-2645-459b-9802-4d94eb5e49fc",
+        "chatSessionId": "sess_dc93afb5-d424-4618-9461-851ee6f6fd9d",
+        "timestamp": 1785872210850
+      }
+    ],
+    "**Volunteer hour logging** — Display logged hours detail view (GET application/{id} includes logs)": [
+      {
+        "executionId": "5a0b85da-2645-459b-9802-4d94eb5e49fc",
+        "chatSessionId": "sess_dc93afb5-d424-4618-9461-851ee6f6fd9d",
+        "timestamp": 1785872210996
+      }
+    ],
+    "**NPO detail page** — Dedicated route `/npo/{id}` with full profile, opportunities, and posts": [
+      {
+        "executionId": "5a0b85da-2645-459b-9802-4d94eb5e49fc",
+        "chatSessionId": "sess_dc93afb5-d424-4618-9461-851ee6f6fd9d",
+        "timestamp": 1785872211126
+      }
+    ],
+    "**Donation receipts** — Downloadable/printable donation confirmation": [
+      {
+        "executionId": "5a0b85da-2645-459b-9802-4d94eb5e49fc",
+        "chatSessionId": "sess_dc93afb5-d424-4618-9461-851ee6f6fd9d",
+        "timestamp": 1785872211225
+      }
+    ],
+    "**Search endpoint** — Once backend search is implemented, replace client-side filtering": [
+      {
+        "executionId": "5a0b85da-2645-459b-9802-4d94eb5e49fc",
+        "chatSessionId": "sess_dc93afb5-d424-4618-9461-851ee6f6fd9d",
+        "timestamp": 1785872211346
+      }
+    ],
+    "**Token refresh** — Once backend supports refresh tokens, implement silent refresh": [
+      {
+        "executionId": "5a0b85da-2645-459b-9802-4d94eb5e49fc",
+        "chatSessionId": "sess_dc93afb5-d424-4618-9461-851ee6f6fd9d",
+        "timestamp": 1785872211465
+      }
+    ]
+  }
+}

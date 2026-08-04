@@ -28,7 +28,7 @@ public class AuthController : ControllerBase
 
     //REGISTER
     [HttpPost("register")]
-    public async Task<IActionResult> Register([FromBody] RegisterDto dto)
+    public async Task<IActionResult> Register([FromBody] RegisterRequest dto)
     {
         //Check if email already exists
         var emailExists = await _context.Users
@@ -37,96 +37,131 @@ public class AuthController : ControllerBase
         if (emailExists)
             return BadRequest("An account with this email already exists.");
 
-        //Create the Users row (shared for all types)
-        var user = new User
-        {
-            UserEmail = dto.UserEmail,
-            UserContact = dto.UserContact,
-            Location = dto.Location,
-            PasswordHash = BCrypt.Net.BCrypt.HashPassword(dto.Password),
-            UserType = dto.UserType,
-            IsVerified = false
-        };
+        // Validate UserType before starting any DB work
+        var validTypes = new[] { "Individual", "NPO", "Business", "Admin" };
+        if (!validTypes.Contains(dto.UserType))
+            return BadRequest("Invalid UserType. Must be Individual, NPO, Business, or Admin.");
 
-        _context.Users.Add(user);
-        await _context.SaveChangesAsync();
-        // After SaveChangesAsync, user.UserId is now assigned by SQL Server
-        //Adding the wallet after each registration. 
-        var wallet = new Wallet
-        {
-            UserId = user.UserId,
-            Balance = 0
-        };
-        _context.Wallets.Add(wallet);
-
-        //Create the subtype row based on UserType
+        // Validate subtype-specific required fields up front (before transaction)
         switch (dto.UserType)
         {
             case "Individual":
                 if (string.IsNullOrEmpty(dto.FirstName) || string.IsNullOrEmpty(dto.LastName))
                     return BadRequest("First name and last name are required for Individual registration.");
-
-                var individual = new Individual
-                {
-                    UserId = user.UserId,
-                    FirstName = dto.FirstName,
-                    LastName = dto.LastName,
-                    CauseOfCare = dto.CauseOfCare
-                };
-                _context.Individuals.Add(individual);
                 break;
-
             case "NPO":
                 if (string.IsNullOrEmpty(dto.NpoRegNum) || string.IsNullOrEmpty(dto.OrganizationName))
                     return BadRequest("NPO registration number and organisation name are required.");
-
-                var npo = new Npo
-                {
-                    UserId = user.UserId,
-                    NporegNum = dto.NpoRegNum,
-                    OrganizationName = dto.OrganizationName,
-                    NpofocusArea = dto.NpoFocusArea,
-                    Npomission = dto.NpoMission
-                };
-                _context.Npos.Add(npo);
                 break;
-
             case "Business":
                 if (string.IsNullOrEmpty(dto.BusinessRegNum))
                     return BadRequest("Business registration number is required.");
-
-                var business = new Business
-                {
-                    UserId = user.UserId,
-                    BusinessRegNum = dto.BusinessRegNum,
-                    Industry = dto.Industry,
-                    ContactPersonName = dto.ContactPersonName,
-                    ContactPersonTitle = dto.ContactPersonTitle,
-                    BusinessEmail = dto.BusinessEmail,
-                    CsrGoal = dto.CsrGoal
-                };
-                _context.Businesses.Add(business);
                 break;
-
-            default:
-                // If UserType is invalid, remove the user we just created
-                _context.Users.Remove(user);
-                await _context.SaveChangesAsync();
-                return BadRequest("Invalid UserType. Must be Individual, NPO, or Business.");
         }
 
-        await _context.SaveChangesAsync();
-
-        return Ok(new
+        // ── Atomic block — User + Wallet + Subtype + Profile: all or nothing ──
+        using var dbTransaction = await _context.Database.BeginTransactionAsync();
+        try
         {
-            message = "Registration successful.",
-            userId = user.UserId,
-            userType = user.UserType
-        });
+            var user = new User
+            {
+                UserEmail = dto.UserEmail,
+                UserContact = dto.UserContact,
+                Location = dto.Location,
+                PasswordHash = BCrypt.Net.BCrypt.HashPassword(dto.Password),
+                UserType = dto.UserType,
+                IsVerified = false,
+                IsActive = true
+            };
+
+            _context.Users.Add(user);
+            await _context.SaveChangesAsync(); // UserId assigned by SQL Server
+
+            // Wallet — auto-created for every user
+            _context.Wallets.Add(new Wallet { UserId = user.UserId, Balance = 0 });
+
+            // Subtype row
+            string profileName = dto.UserEmail;
+            switch (dto.UserType)
+            {
+                case "Individual":
+                    _context.Individuals.Add(new Individual
+                    {
+                        UserId = user.UserId,
+                        FirstName = dto.FirstName!,
+                        LastName = dto.LastName!,
+                        CauseOfCare = dto.CauseOfCare
+                    });
+                    profileName = $"{dto.FirstName} {dto.LastName}";
+                    break;
+
+                case "NPO":
+                    _context.Npos.Add(new Npo
+                    {
+                        UserId = user.UserId,
+                        NporegNum = dto.NpoRegNum!,
+                        OrganizationName = dto.OrganizationName!,
+                        NpofocusArea = dto.NpoFocusArea,
+                        Npomission = dto.NpoMission
+                    });
+                    profileName = dto.OrganizationName!;
+                    break;
+
+                case "Business":
+                    _context.Businesses.Add(new Business
+                    {
+                        UserId = user.UserId,
+                        BusinessRegNum = dto.BusinessRegNum!,
+                        Industry = dto.Industry,
+                        ContactPersonName = dto.ContactPersonName,
+                        ContactPersonTitle = dto.ContactPersonTitle,
+                        BusinessEmail = dto.BusinessEmail,
+                        CsrGoal = dto.CsrGoal
+                    });
+                    profileName = !string.IsNullOrEmpty(dto.ContactPersonName)
+                        ? dto.ContactPersonName
+                        : dto.UserEmail;
+                    break;
+
+                case "Admin":
+                    // No subtype table for Admin
+                    break;
+            }
+
+            // Profile — one per user regardless of type
+            _context.Profiles.Add(new Profile
+            {
+                UserId = user.UserId,
+                ProfileName = profileName,
+                Following = 0,
+                Followers = 0
+            });
+
+            await _context.SaveChangesAsync();
+            await dbTransaction.CommitAsync();
+
+            return Ok(new
+            {
+                message = "Registration successful.",
+                userId = user.UserId,
+                userType = user.UserType
+            });
+        }
+        catch (DbUpdateException ex) when (ex.InnerException?.Message.Contains("UNIQUE") == true ||
+                                            ex.InnerException?.Message.Contains("duplicate") == true)
+        {
+            await dbTransaction.RollbackAsync();
+            return BadRequest("A record with a duplicate unique value already exists (e.g., NPO registration number or email).");
+        }
+        catch
+        {
+            await dbTransaction.RollbackAsync();
+            return StatusCode(500, "Registration failed due to a server error. No data was saved.");
+        }
     }
     //LOGIN
     [HttpPost("login")]
-    public async Task<IActionResult> Login([FromBody] LoginDto dto)
+    public async Task<IActionResult> Login([FromBody] LoginRequest dto)
     {
         var user = await _context.Users
             .FirstOrDefaultAsync(u => u.UserEmail == dto.UserEmail);

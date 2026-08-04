@@ -34,6 +34,8 @@ public partial class AppDbContext : DbContext
 
     public virtual DbSet<Post> Posts { get; set; }
 
+    public virtual DbSet<PostLike> PostLikes { get; set; }
+
     public virtual DbSet<Profile> Profiles { get; set; }
 
     public virtual DbSet<Project> Projects { get; set; }
@@ -240,6 +242,28 @@ public partial class AppDbContext : DbContext
             entity.HasOne(d => d.User).WithMany(p => p.Posts)
                 .HasForeignKey(d => d.UserId)
                 .HasConstraintName("FK_Post_Users");
+        });
+
+        modelBuilder.Entity<PostLike>(entity =>
+        {
+            entity.HasKey(e => e.LikeId);
+
+            entity.ToTable("PostLike");
+
+            entity.HasIndex(e => new { e.PostId, e.UserId }, "UQ_PostLike").IsUnique();
+
+            entity.Property(e => e.LikedDate)
+                .HasDefaultValueSql("(getdate())")
+                .HasColumnType("datetime");
+
+            entity.HasOne(d => d.Post).WithMany(p => p.PostLikes)
+                .HasForeignKey(d => d.PostId)
+                .HasConstraintName("FK_PostLike_Post");
+
+            entity.HasOne(d => d.User).WithMany(p => p.PostLikes)
+                .HasForeignKey(d => d.UserId)
+                .OnDelete(DeleteBehavior.ClientSetNull)
+                .HasConstraintName("FK_PostLike_Users");
         });
 
         modelBuilder.Entity<Profile>(entity =>

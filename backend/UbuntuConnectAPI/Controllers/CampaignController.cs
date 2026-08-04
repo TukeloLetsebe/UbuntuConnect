@@ -1,5 +1,4 @@
 using Microsoft.AspNetCore.Authorization;
-using Microsoft.AspNetCore.Authorization;
 using Microsoft.AspNetCore.Mvc;
 using Microsoft.EntityFrameworkCore;
 using System.Security.Claims;
@@ -32,7 +31,9 @@ public class CampaignController : ControllerBase
                 title = c.Title,
                 description = c.Description,
                 category = c.Category,
-                budgetPerPartner = c.BudgetPerPartner
+                budgetPerPartner = c.BudgetPerPartner,
+                startDate = c.StartDate,
+                endDate = c.EndDate
             })
             .ToListAsync();
         return Ok(list);
@@ -51,7 +52,9 @@ public class CampaignController : ControllerBase
                 description = c.Description,
                 category = c.Category,
                 requirements = c.Requirements,
-                budgetPerPartner = c.BudgetPerPartner
+                budgetPerPartner = c.BudgetPerPartner,
+                startDate = c.StartDate,
+                endDate = c.EndDate
             })
             .FirstOrDefaultAsync();
 
@@ -76,7 +79,9 @@ public class CampaignController : ControllerBase
             Description = req.Description,
             Category = req.Category,
             Requirements = req.Requirements,
-            BudgetPerPartner = req.BudgetPerPartner
+            BudgetPerPartner = req.BudgetPerPartner,
+            StartDate = req.StartDate,
+            EndDate = req.EndDate
         };
 
         _context.PartnershipCampaigns.Add(campaign);

@@ -22,4 +22,6 @@ public partial class Post
     public DateTime Timestamp { get; set; }
 
     public virtual User User { get; set; } = null!;
+
+    public virtual ICollection<PostLike> PostLikes { get; set; } = new List<PostLike>();
 }

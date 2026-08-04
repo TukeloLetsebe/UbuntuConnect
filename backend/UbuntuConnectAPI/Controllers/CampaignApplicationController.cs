@@ -1,5 +1,5 @@
 using Microsoft.AspNetCore.Authorization;
-using Microsoft.AspNetCore.Authorization;
+//using Microsoft.AspNetCore.Authorization;
 using Microsoft.AspNetCore.Mvc;
 using Microsoft.EntityFrameworkCore;
 using System.Security.Claims;
@@ -98,7 +98,7 @@ public class CampaignApplicationController : ControllerBase
 
         if (app.Campaign.Business.UserId != userId) return Forbid();
 
-        app.Status = "Approved";
+        app.Status = "Accepted";
         await _context.SaveChangesAsync();
         return NoContent();
     }

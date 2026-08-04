@@ -76,6 +76,28 @@ public class NPOController : ControllerBase
         return Ok(npo);
     }
 
+    // Update own NPO profile — ownership-checked via JWT
+    [Authorize(Roles = "NPO")]
+    [HttpPut("{id}")]
+    public async Task<IActionResult> Update(int id, [FromBody] UpdateNPORequest req)
+    {
+        var userIdClaim = User.FindFirst(System.Security.Claims.ClaimTypes.NameIdentifier)?.Value;
+        var userId = int.Parse(userIdClaim!);
+
+        var npo = await _context.Npos.FirstOrDefaultAsync(n => n.NpoId == id);
+        if (npo == null) return NotFound();
+
+        // Ownership check — only the NPO's own user can update their profile
+        if (npo.UserId != userId) return Forbid();
+
+        if (req.OrganizationName != null) npo.OrganizationName = req.OrganizationName;
+        if (req.NPOFocusArea != null) npo.NpofocusArea = req.NPOFocusArea;
+        if (req.NPOMission != null) npo.Npomission = req.NPOMission;
+
+        await _context.SaveChangesAsync();
+        return NoContent();
+    }
+
     // NOTE: Delete endpoint removed. Deleting an NPO would cascade-delete
     // volunteer opportunities, applications, follows, etc. Same reasoning as
     // your soft-delete approach for Users — this should go through the

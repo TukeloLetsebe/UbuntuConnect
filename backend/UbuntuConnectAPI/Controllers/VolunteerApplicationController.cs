@@ -3,6 +3,7 @@ using Microsoft.AspNetCore.Mvc;
 using Microsoft.EntityFrameworkCore;
 using System.Security.Claims;
 using UbuntuConnectAPI.Data;
+using UbuntuConnectAPI.DTOs.Requests;
 
 namespace UbuntuConnectAPI.Controllers;
 
@@ -17,17 +18,21 @@ public class VolunteerApplicationController : ControllerBase
         _context = context;
     }
 
-    // NOTE: This "get all across the whole platform" endpoint is really an
-    // admin/NPO-management view, not something an Individual should be able
-    // to call. Locking it to NPO role — an NPO managing applicants across
-    // opportunities. If you want a true cross-platform admin view later,
-    // that belongs in an AdminController instead.
-    
+    // Returns volunteer applications for opportunities belonging to the caller's NPO only.
     [Authorize(Roles = "NPO")]
     [HttpGet]
     public async Task<IActionResult> GetAll()
     {
+        var userIdClaim = User.FindFirst(ClaimTypes.NameIdentifier)?.Value;
+        var userId = int.Parse(userIdClaim!);
+
+        // Find the caller's NPO
+        var npo = await _context.Npos.FirstOrDefaultAsync(n => n.UserId == userId);
+        if (npo == null) return BadRequest("No NPO profile linked to this account.");
+
+        // Only return applications for opportunities owned by this NPO
         var list = await _context.VolunteerApplications
+            .Where(a => a.Opportunity.NpoId == npo.NpoId)
             .OrderByDescending(v => v.ApplicationDate)
             .Select(a => new
             {
@@ -167,4 +172,51 @@ public class VolunteerApplicationController : ControllerBase
     // CancelVolunteerApplication, which soft-cancels (Status = "Cancelled")
     // rather than deleting the row. Keeping one path for this avoids two
     // different "remove an application" behaviors existing side by side.
+
+    // ── LOG VOLUNTEER HOURS ────────────────────────────────────
+    // NPO logs hours for a volunteer whose application was accepted.
+    // Only the NPO that owns the opportunity can log hours for it.
+    [Authorize(Roles = "NPO")]
+    [HttpPost("{id}/log-hours")]
+    public async Task<IActionResult> LogHours(int id, [FromBody] LogHoursRequest req)
+    {
+        var userIdClaim = User.FindFirst(ClaimTypes.NameIdentifier)?.Value;
+        var userId = int.Parse(userIdClaim!);
+
+        var app = await _context.VolunteerApplications
+            .Include(a => a.Opportunity)
+                .ThenInclude(o => o.Npo)
+            .FirstOrDefaultAsync(a => a.ApplicationId == id);
+        if (app == null) return NotFound("Application not found.");
+
+        // Ownership check — NPO must own the opportunity
+        if (app.Opportunity.Npo.UserId != userId) return Forbid();
+
+        // Only accepted volunteers can have hours logged
+        if (app.Status != "Accepted")
+            return BadRequest("Hours can only be logged for accepted volunteers.");
+
+        if (req.Hours <= 0)
+            return BadRequest("Hours must be greater than zero.");
+
+        var log = new Models.VolunteerLog
+        {
+            ApplicationId = id,
+            LogHours = req.Hours,
+            LogDate = req.Date ?? DateOnly.FromDateTime(DateTime.UtcNow),
+            Notes = req.Notes
+        };
+
+        _context.VolunteerLogs.Add(log);
+        await _context.SaveChangesAsync();
+
+        return Ok(new
+        {
+            logId = log.LogId,
+            applicationId = log.ApplicationId,
+            hours = log.LogHours,
+            date = log.LogDate,
+            notes = log.Notes
+        });
+    }
 }

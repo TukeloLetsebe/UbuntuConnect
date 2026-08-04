@@ -1,0 +1,173 @@
+import api from "../lib/api";
+
+// --- Types (matching backend DTOs from API Contract) ---
+
+export interface NPOSummary {
+  npoId: number;
+  organizationName: string;
+  focusArea: string | null;
+  mission: string | null;
+  location: string | null;
+  isVerified: boolean;
+}
+
+export interface NPODetail extends NPOSummary {
+  followerCount: number;
+}
+
+export interface FollowedNPO extends NPOSummary {
+  followDate: string;
+}
+
+export interface IndividualProfile {
+  userId: number;
+  firstName: string;
+  lastName: string;
+  causeOfCare: string | null;
+  email: string;
+  contact: string | null;
+  location: string | null;
+}
+
+export interface UpdateProfileDto {
+  firstName?: string | null;
+  lastName?: string | null;
+  causeOfCare?: string | null;
+  userContact?: string | null;
+  location?: string | null;
+}
+
+export interface VolunteerOpportunity {
+  opportunityId: number;
+  npo_Id: number;
+  roleTitle: string;
+  category: string | null;
+  numOfPositions: number;
+  description: string | null;
+  skillsRequired: string | null;
+  timeCommitment: string | null;
+  duration: string | null;
+  mediaURL: string | null;
+}
+
+export interface VolunteerApplicationDto {
+  firstName: string;
+  lastName: string;
+  email: string;
+  phoneNum?: string | null;
+  skills?: string | null;
+  availability?: string | null;
+  whyVolunteer?: string | null;
+  address?: string | null;
+  idnumber?: string | null;
+}
+
+export interface MyVolunteeringItem {
+  applicationId: number;
+  roleTitle: string;
+  npoName: string;
+  status: string;
+  applicationDate: string;
+  totalHoursLogged: number;
+}
+
+export interface MyDonationsResponse {
+  totalDonated: number;
+  count: number;
+  donations: Array<{
+    transactionId: number;
+    amount: number;
+    status: string;
+    timestamp: string;
+    receiverUserId: number;
+  }>;
+}
+
+export interface MyImpact {
+  totalDonated: number;
+  totalHoursVolunteered: number;
+  npoFollowing: number;
+  volunteerRolesCompleted: number;
+}
+
+export interface WalletBalance {
+  walletId: number;
+  userId: number;
+  balance: number;
+}
+
+export interface CommunityPost {
+  postId: number;
+  authorName: string;
+  postTitle: string;
+  content: string | null;
+  mediaUrl: string | null;
+  likeCount: number;
+  timestamp: string;
+}
+
+// --- Error Utility ---
+
+export function getErrorMessage(error: unknown): string {
+  if (error && typeof error === "object" && "isAxiosError" in error) {
+    const axiosError = error as {
+      response?: { data?: { message?: string } | string; status?: number };
+    };
+    if (axiosError.response?.data) {
+      if (typeof axiosError.response.data === "string") return axiosError.response.data;
+      if (axiosError.response.data.message) return axiosError.response.data.message;
+    }
+    if (axiosError.response?.status === 404) return "Resource not found.";
+    if (axiosError.response?.status === 403) return "You don't have permission for this action.";
+    if (axiosError.response?.status === 400) return "Invalid request. Please check your input.";
+    if (!axiosError.response) return "Unable to connect to server. Please check your connection.";
+    return "Something went wrong. Please try again.";
+  }
+  return "An unexpected error occurred.";
+}
+
+// --- API Functions ---
+
+export const individualService = {
+  // Profile
+  getProfile: () => api.get<IndividualProfile>("/api/individual/me"),
+  updateProfile: (dto: UpdateProfileDto) => api.put("/api/individual/me", dto),
+  changePassword: (currentPassword: string, newPassword: string) =>
+    api.put("/api/individual/change-password", { currentPassword, newPassword }),
+  deactivateAccount: (password: string) =>
+    api.put("/api/individual/deactivate", { password }),
+
+  // Discover & Follow
+  discoverNPOs: () => api.get<NPOSummary[]>("/api/individual/discover-NPOs"),
+  getNPODetail: (npoId: number) => api.get<NPODetail>(`/api/individual/npo/${npoId}`),
+  followNPO: (npoId: number) => api.post(`/api/individual/follow/${npoId}`),
+  unfollowNPO: (npoId: number) => api.delete(`/api/individual/unfollow/${npoId}`),
+  getMyFollows: () => api.get<FollowedNPO[]>("/api/individual/my-follows"),
+
+  // Volunteering
+  getOpportunities: () => api.get<VolunteerOpportunity[]>("/api/VolunteerOpportunity"),
+  applyVolunteer: (opportunityId: number, dto: VolunteerApplicationDto) =>
+    api.post(`/api/individual/volunteer/apply/${opportunityId}`, dto),
+  getApplication: (applicationId: number) =>
+    api.get(`/api/individual/volunteer/application/${applicationId}`),
+  cancelApplication: (applicationId: number) =>
+    api.delete(`/api/individual/volunteer/application/${applicationId}`),
+  getMyVolunteering: () => api.get<MyVolunteeringItem[]>("/api/individual/my-volunteering"),
+
+  // Wallet & Donations
+  getWalletBalance: (userId: number) =>
+    api.get<WalletBalance>(`/api/wallet/user/${userId}/balance`),
+  topUp: (amount: number) => api.post("/api/individual/topup", { amount }),
+  donate: (npoId: number, amount: number) =>
+    api.post(`/api/individual/donate/${npoId}`, { amount }),
+  getMyDonations: () => api.get<MyDonationsResponse>("/api/individual/my-donations"),
+
+  // Impact & Feed
+  getMyImpact: () => api.get<MyImpact>("/api/individual/my-impact"),
+  getCommunityUpdates: () => api.get<CommunityPost[]>("/api/individual/community-updates"),
+
+  // Posts (Likes)
+  likePost: (postId: number) => api.post(`/api/post/${postId}/like`),
+  unlikePost: (postId: number) => api.delete(`/api/post/${postId}/unlike`),
+  getMyLikes: () => api.get<number[]>("/api/post/my-likes"),
+};

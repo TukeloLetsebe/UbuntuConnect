@@ -1,7 +1,4 @@
 namespace UbuntuConnectAPI.DTOs.Requests;
-
-namespace UbuntuConnectAPI.DTOs.Requests;
-
 public class UpdateCampaignRequest
 {
     public string? Title { get; set; }

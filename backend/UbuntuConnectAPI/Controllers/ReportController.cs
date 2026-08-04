@@ -1,5 +1,4 @@
 using Microsoft.AspNetCore.Authorization;
-using Microsoft.AspNetCore.Authorization;
 using Microsoft.AspNetCore.Mvc;
 using Microsoft.EntityFrameworkCore;
 using System.Text;
@@ -27,14 +26,20 @@ public class ReportController : ControllerBase
         var callerIdClaim = User.FindFirst(System.Security.Claims.ClaimTypes.NameIdentifier)?.Value;
         var callerId = callerIdClaim != null ? int.Parse(callerIdClaim) : (int?)null;
 
-        // If npoId specified, ensure caller is admin or the owner of that NPO
-        if (npoId.HasValue)
+        // When npoId is omitted, this becomes a platform-wide report — Admin only
+        if (!npoId.HasValue)
         {
-            var npo = await _context.Npos.FindAsync(npoId.Value);
-            if (npo == null) return NotFound("NPO not found.");
+            if (!User.IsInRole("Admin"))
+                return Forbid();
+        }
+        else
+        {
+            // If npoId specified, ensure caller is admin or the owner of that NPO
+            var npoCheck = await _context.Npos.FindAsync(npoId.Value);
+            if (npoCheck == null) return NotFound("NPO not found.");
 
             var isAdmin = User.IsInRole("Admin");
-            if (!isAdmin && npo.UserId != callerId) return Forbid();
+            if (!isAdmin && npoCheck.UserId != callerId) return Forbid();
         }
 
         var q = _context.Transactions.Where(t => t.TransactionType == "Donation");
@@ -72,13 +77,19 @@ public class ReportController : ControllerBase
         var callerIdClaim = User.FindFirst(System.Security.Claims.ClaimTypes.NameIdentifier)?.Value;
         var callerId = callerIdClaim != null ? int.Parse(callerIdClaim) : (int?)null;
 
-        if (npoId.HasValue)
+        // When npoId is omitted, this becomes a platform-wide report — Admin only
+        if (!npoId.HasValue)
         {
-            var npo = await _context.Npos.FindAsync(npoId.Value);
-            if (npo == null) return NotFound("NPO not found.");
+            if (!User.IsInRole("Admin"))
+                return Forbid();
+        }
+        else
+        {
+            var npoCheck = await _context.Npos.FindAsync(npoId.Value);
+            if (npoCheck == null) return NotFound("NPO not found.");
 
             var isAdmin = User.IsInRole("Admin");
-            if (!isAdmin && npo.UserId != callerId) return Forbid();
+            if (!isAdmin && npoCheck.UserId != callerId) return Forbid();
         }
 
         var q = _context.Transactions.Where(t => t.TransactionType == "Donation");
