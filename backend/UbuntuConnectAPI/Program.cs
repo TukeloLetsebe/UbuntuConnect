@@ -43,6 +43,18 @@ builder.Services.AddAuthentication(options =>
 builder.Services.AddAuthorization();
 //END OF JWT AUTH
 
+// CORS — allow the React dev server origin only (not AllowAnyOrigin)
+builder.Services.AddCors(options =>
+{
+    options.AddPolicy("FrontendDev", policy =>
+    {
+        policy.WithOrigins("http://localhost:5173", "http://localhost:5174", "http://localhost:5175", "http://localhost:5176")
+              .AllowAnyHeader()
+              .AllowAnyMethod()
+              .AllowCredentials();
+    });
+});
+
 
 // Learn more about configuring OpenAPI at https://aka.ms/aspnet/openapi
 //builder.Services.AddOpenApi();
@@ -79,7 +91,11 @@ if (app.Environment.IsDevelopment())
     });
 }
 
-app.UseHttpsRedirection();
+if (!app.Environment.IsDevelopment())
+{
+    app.UseHttpsRedirection();
+}
+app.UseCors("FrontendDev");
 app.UseAuthentication();
 app.UseAuthorization();
 

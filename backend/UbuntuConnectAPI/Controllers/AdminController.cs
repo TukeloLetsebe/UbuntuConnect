@@ -1,5 +1,4 @@
 using Microsoft.AspNetCore.Authorization;
-using Microsoft.AspNetCore.Authorization;
 using Microsoft.AspNetCore.Mvc;
 using Microsoft.EntityFrameworkCore;
 using System.Security.Claims;
@@ -17,6 +16,38 @@ public class AdminController : ControllerBase
     public AdminController(AppDbContext context)
     {
         _context = context;
+    }
+
+    // ── PLATFORM STATS ─────────────────────────────────────────
+    [HttpGet("stats")]
+    public async Task<IActionResult> GetPlatformStats()
+    {
+        var totalUsers = await _context.Users.CountAsync();
+        var individuals = await _context.Users.CountAsync(u => u.UserType == "Individual");
+        var npos = await _context.Users.CountAsync(u => u.UserType == "NPO");
+        var businesses = await _context.Users.CountAsync(u => u.UserType == "Business");
+        var totalDonations = await _context.Transactions
+            .Where(t => t.TransactionType == "Donation" && t.Status == "Completed")
+            .SumAsync(t => t.Amount);
+        var totalTransactions = await _context.Transactions.CountAsync();
+        var activeCampaigns = await _context.PartnershipCampaigns.CountAsync();
+        var pendingVerifications = await _context.Verifications.CountAsync(v => v.Status == "Pending");
+        var activeUsers = await _context.Users.CountAsync(u => u.IsActive);
+        var inactiveUsers = totalUsers - activeUsers;
+
+        return Ok(new
+        {
+            totalUsers,
+            individuals,
+            npos,
+            businesses,
+            totalDonations,
+            totalTransactions,
+            activeCampaigns,
+            pendingVerifications,
+            activeUsers,
+            inactiveUsers
+        });
     }
 
     [HttpGet("users")]

@@ -145,6 +145,7 @@ public class PostController : ControllerBase
 
         post.PostTitle = req.PostTitle;
         post.Content = req.Content;
+        if (req.MediaUrl != null) post.MediaUrl = req.MediaUrl;
         if (req.ActivityStatus != null) post.ActivityStatus = req.ActivityStatus;
 
         await _context.SaveChangesAsync();
@@ -166,5 +167,76 @@ public class PostController : ControllerBase
         post.ActivityStatus = "Deleted"; // soft delete — same pattern as Users
         await _context.SaveChangesAsync();
         return NoContent();
+    }
+
+    // ── LIKE A POST ────────────────────────────────────────────
+    [Authorize]
+    [HttpPost("{id}/like")]
+    public async Task<IActionResult> LikePost(int id)
+    {
+        var userIdClaim = User.FindFirst(ClaimTypes.NameIdentifier)?.Value;
+        var userId = int.Parse(userIdClaim!);
+
+        var post = await _context.Posts.FindAsync(id);
+        if (post == null) return NotFound("Post not found.");
+
+        var alreadyLiked = await _context.PostLikes
+            .AnyAsync(pl => pl.PostId == id && pl.UserId == userId);
+
+        if (alreadyLiked)
+            return BadRequest("You have already liked this post.");
+
+        var like = new PostLike
+        {
+            PostId = id,
+            UserId = userId,
+            LikedDate = DateTime.UtcNow
+        };
+
+        _context.PostLikes.Add(like);
+        post.LikeCount++;
+        await _context.SaveChangesAsync();
+
+        return Ok(new { message = "Post liked.", likeCount = post.LikeCount });
+    }
+
+    // ── UNLIKE A POST ──────────────────────────────────────────
+    [Authorize]
+    [HttpDelete("{id}/unlike")]
+    public async Task<IActionResult> UnlikePost(int id)
+    {
+        var userIdClaim = User.FindFirst(ClaimTypes.NameIdentifier)?.Value;
+        var userId = int.Parse(userIdClaim!);
+
+        var post = await _context.Posts.FindAsync(id);
+        if (post == null) return NotFound("Post not found.");
+
+        var like = await _context.PostLikes
+            .FirstOrDefaultAsync(pl => pl.PostId == id && pl.UserId == userId);
+
+        if (like == null)
+            return BadRequest("You have not liked this post.");
+
+        _context.PostLikes.Remove(like);
+        if (post.LikeCount > 0) post.LikeCount--;
+        await _context.SaveChangesAsync();
+
+        return Ok(new { message = "Post unliked.", likeCount = post.LikeCount });
+    }
+
+    // ── GET MY LIKED POST IDs ──────────────────────────────────
+    [Authorize]
+    [HttpGet("my-likes")]
+    public async Task<IActionResult> GetMyLikes()
+    {
+        var userIdClaim = User.FindFirst(ClaimTypes.NameIdentifier)?.Value;
+        var userId = int.Parse(userIdClaim!);
+
+        var likedPostIds = await _context.PostLikes
+            .Where(pl => pl.UserId == userId)
+            .Select(pl => pl.PostId)
+            .ToListAsync();
+
+        return Ok(likedPostIds);
     }
 }

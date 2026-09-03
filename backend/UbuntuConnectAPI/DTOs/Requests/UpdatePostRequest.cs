@@ -6,5 +6,6 @@ public class UpdatePostRequest
 {
     public string PostTitle { get; set; } = null!;
     public string? Content { get; set; }
+    public string? MediaUrl { get; set; }
     public string? ActivityStatus { get; set; }
 }

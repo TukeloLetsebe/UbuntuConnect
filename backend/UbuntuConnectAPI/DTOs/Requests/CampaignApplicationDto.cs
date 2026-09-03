@@ -1,6 +1,6 @@
 namespace UbuntuConnectAPI.DTOs.Requests;
 
-namespace UbuntuConnectAPI.DTOs.Requests;
+//namespace UbuntuConnectAPI.DTOs.Requests;
 
 public class CampaignApplicationDto
 {

@@ -34,6 +34,10 @@ public partial class AppDbContext : DbContext
 
     public virtual DbSet<Post> Posts { get; set; }
 
+    public virtual DbSet<PostLike> PostLikes { get; set; }
+
+    public virtual DbSet<Comment> Comments { get; set; }
+
     public virtual DbSet<Profile> Profiles { get; set; }
 
     public virtual DbSet<Project> Projects { get; set; }
@@ -242,6 +246,49 @@ public partial class AppDbContext : DbContext
                 .HasConstraintName("FK_Post_Users");
         });
 
+        modelBuilder.Entity<PostLike>(entity =>
+        {
+            entity.HasKey(e => e.LikeId);
+
+            entity.ToTable("PostLike");
+
+            entity.HasIndex(e => new { e.PostId, e.UserId }, "UQ_PostLike").IsUnique();
+
+            entity.Property(e => e.LikedDate)
+                .HasDefaultValueSql("(getdate())")
+                .HasColumnType("datetime");
+
+            entity.HasOne(d => d.Post).WithMany(p => p.PostLikes)
+                .HasForeignKey(d => d.PostId)
+                .HasConstraintName("FK_PostLike_Post");
+
+            entity.HasOne(d => d.User).WithMany(p => p.PostLikes)
+                .HasForeignKey(d => d.UserId)
+                .OnDelete(DeleteBehavior.ClientSetNull)
+                .HasConstraintName("FK_PostLike_Users");
+        });
+
+        modelBuilder.Entity<Comment>(entity =>
+        {
+            entity.HasKey(e => e.CommentId);
+
+            entity.ToTable("Comment");
+
+            entity.Property(e => e.Content).HasMaxLength(2000);
+            entity.Property(e => e.Timestamp)
+                .HasDefaultValueSql("(getdate())")
+                .HasColumnType("datetime");
+
+            entity.HasOne(d => d.Post).WithMany(p => p.Comments)
+                .HasForeignKey(d => d.PostId)
+                .HasConstraintName("FK_Comment_Post");
+
+            entity.HasOne(d => d.User).WithMany(p => p.Comments)
+                .HasForeignKey(d => d.UserId)
+                .OnDelete(DeleteBehavior.ClientSetNull)
+                .HasConstraintName("FK_Comment_Users");
+        });
+
         modelBuilder.Entity<Profile>(entity =>
         {
             entity.HasKey(e => e.ProfileId).HasName("PK__Profile__290C88E46B2DE127");
@@ -270,6 +317,13 @@ public partial class AppDbContext : DbContext
             entity.Property(e => e.ProjectStatus)
                 .HasMaxLength(20)
                 .HasDefaultValue("Planning");
+            entity.Property(e => e.TargetAmount)
+                .HasColumnType("decimal(12, 2)")
+                .HasDefaultValue(0m);
+            entity.Property(e => e.RaisedAmount)
+                .HasColumnType("decimal(12, 2)")
+                .HasDefaultValue(0m);
+            entity.Property(e => e.Images).HasMaxLength(2000);
 
             entity.HasOne(d => d.Npo).WithMany(p => p.Projects)
                 .HasForeignKey(d => d.NpoId)

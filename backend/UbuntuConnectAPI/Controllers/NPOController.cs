@@ -76,8 +76,252 @@ public class NPOController : ControllerBase
         return Ok(npo);
     }
 
+    // Update own NPO profile — ownership-checked via JWT
+    [Authorize(Roles = "NPO")]
+    [HttpPut("{id}")]
+    public async Task<IActionResult> Update(int id, [FromBody] UpdateNPORequest req)
+    {
+        var userIdClaim = User.FindFirst(System.Security.Claims.ClaimTypes.NameIdentifier)?.Value;
+        var userId = int.Parse(userIdClaim!);
+
+        var npo = await _context.Npos.FirstOrDefaultAsync(n => n.NpoId == id);
+        if (npo == null) return NotFound();
+
+        // Ownership check — only the NPO's own user can update their profile
+        if (npo.UserId != userId) return Forbid();
+
+        if (req.OrganizationName != null) npo.OrganizationName = req.OrganizationName;
+        if (req.NPOFocusArea != null) npo.NpofocusArea = req.NPOFocusArea;
+        if (req.NPOMission != null) npo.Npomission = req.NPOMission;
+
+        await _context.SaveChangesAsync();
+        return NoContent();
+    }
+
+    // NOTE: NPO wallet Top-Up has been removed by design.
+    // NPOs receive funds through donations and campaign funding, not self top-up.
+    // Only Individuals and Businesses can top up their wallets.
+
     // NOTE: Delete endpoint removed. Deleting an NPO would cascade-delete
     // volunteer opportunities, applications, follows, etc. Same reasoning as
     // your soft-delete approach for Users — this should go through the
     // deactivate-account pattern instead, not a hard delete. Add later if needed.
+
+    // ── FOLLOW ANOTHER NPO ────────────────────────────────────
+    [Authorize(Roles = "NPO")]
+    [HttpPost("follow/{npoId}")]
+    public async Task<IActionResult> FollowNpo(int npoId)
+    {
+        var userIdClaim = User.FindFirst(ClaimTypes.NameIdentifier)?.Value;
+        var userId = int.Parse(userIdClaim!);
+
+        var npoExists = await _context.Npos.AnyAsync(n => n.NpoId == npoId);
+        if (!npoExists) return NotFound("NPO not found.");
+
+        // Prevent self-follow
+        var myNpo = await _context.Npos.FirstOrDefaultAsync(n => n.UserId == userId);
+        if (myNpo != null && myNpo.NpoId == npoId)
+            return BadRequest("You cannot follow yourself.");
+
+        var alreadyFollowing = await _context.Follows
+            .AnyAsync(f => f.UserId == userId && f.NpoId == npoId);
+        if (alreadyFollowing) return BadRequest("You already follow this NPO.");
+
+        _context.Follows.Add(new Models.Follow { UserId = userId, NpoId = npoId, FollowDate = DateTime.UtcNow });
+        await _context.SaveChangesAsync();
+        return Ok(new { message = "Now following this NPO." });
+    }
+
+    // ── UNFOLLOW AN NPO ───────────────────────────────────────
+    [Authorize(Roles = "NPO")]
+    [HttpDelete("unfollow/{npoId}")]
+    public async Task<IActionResult> UnfollowNpo(int npoId)
+    {
+        var userIdClaim = User.FindFirst(ClaimTypes.NameIdentifier)?.Value;
+        var userId = int.Parse(userIdClaim!);
+
+        var follow = await _context.Follows.FirstOrDefaultAsync(f => f.UserId == userId && f.NpoId == npoId);
+        if (follow == null) return BadRequest("You are not following this NPO.");
+
+        _context.Follows.Remove(follow);
+        await _context.SaveChangesAsync();
+        return Ok(new { message = "Unfollowed." });
+    }
+
+    // ── GET MY FOLLOWED NPOs ──────────────────────────────────
+    [Authorize(Roles = "NPO")]
+    [HttpGet("my-follows")]
+    public async Task<IActionResult> GetMyFollows()
+    {
+        var userIdClaim = User.FindFirst(ClaimTypes.NameIdentifier)?.Value;
+        var userId = int.Parse(userIdClaim!);
+
+        var follows = await _context.Follows
+            .Where(f => f.UserId == userId)
+            .Select(f => new
+            {
+                npoId = f.NpoId,
+                organizationName = f.Npo.OrganizationName,
+                npofocusArea = f.Npo.NpofocusArea,
+                npomission = f.Npo.Npomission,
+                followDate = f.FollowDate
+            })
+            .ToListAsync();
+
+        return Ok(follows);
+    }
+
+    // ── GET MY FOLLOWERS (who follows this NPO) ───────────────
+    [Authorize(Roles = "NPO")]
+    [HttpGet("my-followers")]
+    public async Task<IActionResult> GetMyFollowers()
+    {
+        var userIdClaim = User.FindFirst(ClaimTypes.NameIdentifier)?.Value;
+        var userId = int.Parse(userIdClaim!);
+
+        var npo = await _context.Npos.FirstOrDefaultAsync(n => n.UserId == userId);
+        if (npo == null) return BadRequest("No NPO profile linked.");
+
+        var followers = await _context.Follows
+            .Where(f => f.NpoId == npo.NpoId)
+            .Select(f => new
+            {
+                userId = f.UserId,
+                email = f.User.UserEmail,
+                name = f.User.Individuals.Any()
+                    ? f.User.Individuals.First().FirstName + " " + f.User.Individuals.First().LastName
+                    : f.User.Npos.Any()
+                        ? f.User.Npos.First().OrganizationName
+                        : f.User.UserEmail,
+                userType = f.User.UserType,
+                followDate = f.FollowDate
+            })
+            .OrderByDescending(f => f.followDate)
+            .ToListAsync();
+
+        return Ok(followers);
+    }
+
+    // ── GET MY DONORS (people who donated to this NPO) ────────
+    [Authorize(Roles = "NPO")]
+    [HttpGet("my-donors")]
+    public async Task<IActionResult> GetMyDonors()
+    {
+        var userIdClaim = User.FindFirst(ClaimTypes.NameIdentifier)?.Value;
+        var userId = int.Parse(userIdClaim!);
+
+        // Include both direct/fundraiser donations AND campaign contributions —
+        // all incoming completed funds count toward this NPO's supporters.
+        var donors = await _context.Transactions
+            .Where(t => t.ReceiverUserId == userId
+                        && (t.TransactionType == "Donation" || t.TransactionType == "CampaignContribution")
+                        && t.Status == "Completed")
+            .GroupBy(t => t.SenderUserId)
+            .Select(g => new
+            {
+                userId = g.Key,
+                totalDonated = g.Sum(t => t.Amount),
+                donationCount = g.Count(),
+                lastDonation = g.Max(t => t.Timestamp)
+            })
+            .OrderByDescending(d => d.totalDonated)
+            .ToListAsync();
+
+        // Enrich with names
+        var userIds = donors.Select(d => d.userId).Where(id => id.HasValue).Select(id => id!.Value).ToList();
+        var users = await _context.Users
+            .Where(u => userIds.Contains(u.UserId))
+            .Select(u => new
+            {
+                userId = u.UserId,
+                name = u.Individuals.Any()
+                    ? u.Individuals.First().FirstName + " " + u.Individuals.First().LastName
+                    : u.Npos.Any()
+                        ? u.Npos.First().OrganizationName
+                        : u.UserEmail,
+                userType = u.UserType
+            })
+            .ToListAsync();
+
+        var result = donors.Select(d => new
+        {
+            d.userId,
+            name = users.FirstOrDefault(u => u.userId == d.userId)?.name ?? "Anonymous",
+            userType = users.FirstOrDefault(u => u.userId == d.userId)?.userType ?? "Unknown",
+            d.totalDonated,
+            d.donationCount,
+            d.lastDonation
+        });
+
+        return Ok(result);
+    }
+
+    // ── DONATE TO A PROJECT/FUNDRAISER ────────────────────────
+    [Authorize]
+    [HttpPost("project/{projectId}/donate")]
+    public async Task<IActionResult> DonateToProject(int projectId, [FromBody] TopUpRequest dto)
+    {
+        var userIdClaim = User.FindFirst(ClaimTypes.NameIdentifier)?.Value;
+        var userId = int.Parse(userIdClaim!);
+
+        if (dto.Amount <= 0) return BadRequest("Amount must be greater than zero.");
+
+        var project = await _context.Projects.Include(p => p.Npo).FirstOrDefaultAsync(p => p.ProjectId == projectId);
+        if (project == null) return NotFound("Project not found.");
+
+        // Prevent donating to your own project
+        if (project.Npo.UserId == userId)
+            return BadRequest("You cannot donate to your own fundraiser.");
+
+        // Only allow donations to active fundraisers
+        if (project.ProjectStatus != "Active")
+            return BadRequest("This fundraiser is not currently accepting donations.");
+
+        var senderWallet = await _context.Wallets.FirstOrDefaultAsync(w => w.UserId == userId);
+        if (senderWallet == null) return BadRequest("You don't have a wallet set up yet.");
+        if (senderWallet.Balance < dto.Amount) return BadRequest("Insufficient wallet balance. Please top up your wallet.");
+
+        var receiverWallet = await _context.Wallets.FirstOrDefaultAsync(w => w.UserId == project.Npo.UserId);
+        if (receiverWallet == null) return BadRequest("The NPO's wallet is not set up. Donation cannot be processed.");
+
+        using var dbTx = await _context.Database.BeginTransactionAsync();
+        try
+        {
+            senderWallet.Balance -= dto.Amount;
+            receiverWallet.Balance += dto.Amount;
+
+            // Update project raised amount
+            project.RaisedAmount += dto.Amount;
+            if (project.TargetAmount > 0)
+                project.ProjectProgress = Math.Min(100, (project.RaisedAmount / project.TargetAmount) * 100);
+
+            var transaction = new Models.Transaction
+            {
+                SenderUserId = userId,
+                ReceiverUserId = project.Npo.UserId,
+                Amount = dto.Amount,
+                TransactionType = "Donation",
+                Status = "Completed",
+                Timestamp = DateTime.UtcNow
+            };
+            _context.Transactions.Add(transaction);
+
+            await _context.SaveChangesAsync();
+            await dbTx.CommitAsync();
+
+            return Ok(new
+            {
+                message = "Donation to project successful.",
+                transactionId = transaction.TransactionId,
+                newBalance = senderWallet.Balance,
+                projectRaisedAmount = project.RaisedAmount,
+                projectProgress = project.ProjectProgress
+            });
+        }
+        catch
+        {
+            await dbTx.RollbackAsync();
+            return StatusCode(500, "Donation failed.");
+        }
+    }
 }

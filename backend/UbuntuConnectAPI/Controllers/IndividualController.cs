@@ -95,6 +95,34 @@ public class IndividualController : ControllerBase
         return Ok(new { message = "You have unfollowed this NPO." });
     }
 
+    //GET MY FOLLOWED NPOs
+    [Authorize]
+    [HttpGet("my-follows")]
+    public async Task<IActionResult> GetMyFollows()
+    {
+        var userIdClaim = User.FindFirst(ClaimTypes.NameIdentifier)?.Value;
+        var userId = int.Parse(userIdClaim!);
+
+        var followedNpos = await _context.Follows
+            .Where(f => f.UserId == userId)
+            .Include(f => f.Npo)
+                .ThenInclude(n => n.User)
+            .Select(f => new
+            {
+                npoId = f.NpoId,
+                organizationName = f.Npo.OrganizationName,
+                focusArea = f.Npo.NpofocusArea,
+                mission = f.Npo.Npomission,
+                location = f.Npo.User.Location,
+                isVerified = f.Npo.User.IsVerified,
+                followDate = f.FollowDate
+            })
+            .OrderByDescending(f => f.followDate)
+            .ToListAsync();
+
+        return Ok(followedNpos);
+    }
+
     //VIEW SINGLE NPO PROFILE
     [HttpGet("npo/{npoId}")]
     public async Task<IActionResult> GetNpoProfile(int npoId)
@@ -415,42 +443,35 @@ public class IndividualController : ControllerBase
             .Include(a => a.Opportunity)
                 .ThenInclude(o => o.Npo)
             .Include(a => a.VolunteerLogs)
-            .Where(a => a.ApplicationId == applicationId)
-            .Select(a => new
-            {
-                applicationId = a.ApplicationId,
-                roleTitle = a.Opportunity.RoleTitle,
-                npoName = a.Opportunity.Npo.OrganizationName,
-                description = a.Opportunity.Description,
-                status = a.Status,
-                applicationDate = a.ApplicationDate,
-                skills = a.Skills,
-                availability = a.Availability,
-                whyVolunteer = a.WhyVolunteer,
-                totalHoursLogged = a.VolunteerLogs.Sum(l => l.LogHours),
-                logs = a.VolunteerLogs.Select(l => new
-                {
-                    logId = l.LogId,
-                    hours = l.LogHours,
-                    date = l.LogDate,
-                    notes = l.Notes
-                })
-            })
-            .FirstOrDefaultAsync();
+            .FirstOrDefaultAsync(a => a.ApplicationId == applicationId);
 
         if (application == null)
             return NotFound("Application not found.");
 
-        // security check — make sure this application belongs to the logged-in user
-        var ownerId = await _context.VolunteerApplications
-            .Where(a => a.ApplicationId == applicationId)
-            .Select(a => a.UserId)
-            .FirstOrDefaultAsync();
-
-        if (ownerId != userId)
+        // Ownership check — single query, no second round-trip
+        if (application.UserId != userId)
             return Forbid();
 
-        return Ok(application);
+        return Ok(new
+        {
+            applicationId = application.ApplicationId,
+            roleTitle = application.Opportunity.RoleTitle,
+            npoName = application.Opportunity.Npo.OrganizationName,
+            description = application.Opportunity.Description,
+            status = application.Status,
+            applicationDate = application.ApplicationDate,
+            skills = application.Skills,
+            availability = application.Availability,
+            whyVolunteer = application.WhyVolunteer,
+            totalHoursLogged = application.VolunteerLogs.Sum(l => l.LogHours),
+            logs = application.VolunteerLogs.Select(l => new
+            {
+                logId = l.LogId,
+                hours = l.LogHours,
+                date = l.LogDate,
+                notes = l.Notes
+            })
+        });
     }
     [Authorize]
     [HttpDelete("volunteer/application/{applicationId}")]
@@ -519,5 +540,56 @@ public class IndividualController : ControllerBase
         await _context.SaveChangesAsync();
 
         return Ok(new { message = "Your account has been deactivated." });
+    }
+
+    // ── TOP UP WALLET ──────────────────────────────────────────
+    // Adds funds to the caller's own wallet. In a real system this would
+    // integrate with a payment gateway; for now it directly credits the
+    // wallet and logs a completed Transaction (same atomic pattern as Donate).
+    [Authorize]
+    [HttpPost("topup")]
+    public async Task<IActionResult> TopUp([FromBody] TopUpRequest dto)
+    {
+        var userIdClaim = User.FindFirst(ClaimTypes.NameIdentifier)?.Value;
+        var userId = int.Parse(userIdClaim!);
+
+        if (dto.Amount <= 0)
+            return BadRequest("Top-up amount must be greater than zero.");
+
+        var wallet = await _context.Wallets.FirstOrDefaultAsync(w => w.UserId == userId);
+        if (wallet == null)
+            return BadRequest("You do not have a wallet set up yet.");
+
+        using var dbTransaction = await _context.Database.BeginTransactionAsync();
+        try
+        {
+            wallet.Balance += dto.Amount;
+
+            var transaction = new Transaction
+            {
+                SenderUserId = null,       // external source (no internal sender)
+                ReceiverUserId = userId,
+                Amount = dto.Amount,
+                TransactionType = "TopUp",
+                Status = "Completed",
+                Timestamp = DateTime.UtcNow
+            };
+            _context.Transactions.Add(transaction);
+
+            await _context.SaveChangesAsync();
+            await dbTransaction.CommitAsync();
+
+            return Ok(new
+            {
+                message = "Wallet topped up successfully.",
+                transactionId = transaction.TransactionId,
+                newBalance = wallet.Balance
+            });
+        }
+        catch
+        {
+            await dbTransaction.RollbackAsync();
+            return StatusCode(500, "Top-up failed due to a server error.");
+        }
     }
 }

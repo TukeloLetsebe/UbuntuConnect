@@ -1,4 +1,4 @@
-﻿using System;
+using System;
 using System.Collections.Generic;
 
 namespace UbuntuConnectAPI.Models;
@@ -16,6 +16,12 @@ public partial class Project
     public string ProjectStatus { get; set; } = null!;
 
     public decimal ProjectProgress { get; set; }
+
+    public decimal TargetAmount { get; set; }
+
+    public decimal RaisedAmount { get; set; }
+
+    public string? Images { get; set; }
 
     public virtual Npo Npo { get; set; } = null!;
 }

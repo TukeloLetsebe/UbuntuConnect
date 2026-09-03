@@ -33,6 +33,8 @@ public partial class User
 
     public virtual ICollection<Post> Posts { get; set; } = new List<Post>();
 
+    public virtual ICollection<PostLike> PostLikes { get; set; } = new List<PostLike>();
+
     public virtual Profile? Profile { get; set; }
 
     public virtual ICollection<Transaction> TransactionReceiverUsers { get; set; } = new List<Transaction>();
@@ -44,4 +46,6 @@ public partial class User
     public virtual ICollection<VolunteerApplication> VolunteerApplications { get; set; } = new List<VolunteerApplication>();
 
     public virtual Wallet? Wallet { get; set; }
+
+    public virtual ICollection<Comment> Comments { get; set; } = new List<Comment>();
 }

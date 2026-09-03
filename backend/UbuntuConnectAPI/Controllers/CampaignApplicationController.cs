@@ -1,5 +1,5 @@
 using Microsoft.AspNetCore.Authorization;
-using Microsoft.AspNetCore.Authorization;
+//using Microsoft.AspNetCore.Authorization;
 using Microsoft.AspNetCore.Mvc;
 using Microsoft.EntityFrameworkCore;
 using System.Security.Claims;
@@ -84,6 +84,10 @@ public class CampaignApplicationController : ControllerBase
     }
 
     [Authorize(Roles = "Business")]
+    // Approving a campaign application pays the campaign's BudgetPerPartner
+    // from the Business wallet into the accepted NPO's wallet, recorded as a
+    // 'CampaignContribution' transaction. This makes campaign funding show up
+    // in the NPO's wallet balance and be withdrawable — same as donations.
     [HttpPut("{id}/approve")]
     public async Task<IActionResult> Approve(int id)
     {
@@ -93,14 +97,85 @@ public class CampaignApplicationController : ControllerBase
         var app = await _context.CampaignApplications
             .Include(a => a.Campaign)
                 .ThenInclude(c => c.Business)
+            .Include(a => a.Npo)
             .FirstOrDefaultAsync(a => a.ApplicationId == id);
         if (app == null) return NotFound();
 
         if (app.Campaign.Business.UserId != userId) return Forbid();
 
-        app.Status = "Approved";
-        await _context.SaveChangesAsync();
-        return NoContent();
+        if (app.Status == "Accepted")
+            return BadRequest("This application has already been accepted.");
+
+        var budget = app.Campaign.BudgetPerPartner ?? 0m;
+
+        // No budget set → just accept, no money moves.
+        if (budget <= 0)
+        {
+            app.Status = "Accepted";
+            await _context.SaveChangesAsync();
+            return Ok(new { message = "Application accepted. No budget was set for this campaign, so no funds were transferred.", amountPaid = 0m });
+        }
+
+        var businessUserId = app.Campaign.Business.UserId;
+        var npoUserId = app.Npo.UserId;
+
+        var businessWallet = await _context.Wallets.FirstOrDefaultAsync(w => w.UserId == businessUserId);
+        var npoWallet = await _context.Wallets.FirstOrDefaultAsync(w => w.UserId == npoUserId);
+        if (businessWallet == null) return BadRequest("Your wallet is not set up.");
+        if (npoWallet == null) return BadRequest("The NPO's wallet is not set up.");
+
+        if (businessWallet.Balance < budget)
+        {
+            // Log the failed contribution attempt, still accept the application.
+            _context.Transactions.Add(new Transaction
+            {
+                SenderUserId = businessUserId,
+                ReceiverUserId = npoUserId,
+                Amount = budget,
+                TransactionType = "CampaignContribution",
+                Status = "Failed",
+                Timestamp = DateTime.UtcNow
+            });
+            app.Status = "Accepted";
+            await _context.SaveChangesAsync();
+            return BadRequest($"Application accepted, but your wallet balance (R {businessWallet.Balance}) is insufficient to fund the campaign budget (R {budget}). Please top up and the payment can be retried.");
+        }
+
+        using var dbTx = await _context.Database.BeginTransactionAsync();
+        try
+        {
+            businessWallet.Balance -= budget;
+            npoWallet.Balance += budget;
+
+            var tx = new Transaction
+            {
+                SenderUserId = businessUserId,
+                ReceiverUserId = npoUserId,
+                Amount = budget,
+                TransactionType = "CampaignContribution",
+                Status = "Completed",
+                Timestamp = DateTime.UtcNow
+            };
+            _context.Transactions.Add(tx);
+
+            app.Status = "Accepted";
+
+            await _context.SaveChangesAsync();
+            await dbTx.CommitAsync();
+
+            return Ok(new
+            {
+                message = "Application accepted and campaign budget transferred to the NPO.",
+                transactionId = tx.TransactionId,
+                amountPaid = budget,
+                newBalance = businessWallet.Balance
+            });
+        }
+        catch
+        {
+            await dbTx.RollbackAsync();
+            return StatusCode(500, "Approval succeeded but the fund transfer failed. No funds were moved.");
+        }
     }
 
     [Authorize(Roles = "Business")]

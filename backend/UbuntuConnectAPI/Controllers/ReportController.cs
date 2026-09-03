@@ -1,5 +1,4 @@
 using Microsoft.AspNetCore.Authorization;
-using Microsoft.AspNetCore.Authorization;
 using Microsoft.AspNetCore.Mvc;
 using Microsoft.EntityFrameworkCore;
 using System.Text;
@@ -27,14 +26,20 @@ public class ReportController : ControllerBase
         var callerIdClaim = User.FindFirst(System.Security.Claims.ClaimTypes.NameIdentifier)?.Value;
         var callerId = callerIdClaim != null ? int.Parse(callerIdClaim) : (int?)null;
 
-        // If npoId specified, ensure caller is admin or the owner of that NPO
-        if (npoId.HasValue)
+        // When npoId is omitted, this becomes a platform-wide report — Admin only
+        if (!npoId.HasValue)
         {
-            var npo = await _context.Npos.FindAsync(npoId.Value);
-            if (npo == null) return NotFound("NPO not found.");
+            if (!User.IsInRole("Admin"))
+                return Forbid();
+        }
+        else
+        {
+            // If npoId specified, ensure caller is admin or the owner of that NPO
+            var npoCheck = await _context.Npos.FindAsync(npoId.Value);
+            if (npoCheck == null) return NotFound("NPO not found.");
 
             var isAdmin = User.IsInRole("Admin");
-            if (!isAdmin && npo.UserId != callerId) return Forbid();
+            if (!isAdmin && npoCheck.UserId != callerId) return Forbid();
         }
 
         var q = _context.Transactions.Where(t => t.TransactionType == "Donation");
@@ -72,13 +77,19 @@ public class ReportController : ControllerBase
         var callerIdClaim = User.FindFirst(System.Security.Claims.ClaimTypes.NameIdentifier)?.Value;
         var callerId = callerIdClaim != null ? int.Parse(callerIdClaim) : (int?)null;
 
-        if (npoId.HasValue)
+        // When npoId is omitted, this becomes a platform-wide report — Admin only
+        if (!npoId.HasValue)
         {
-            var npo = await _context.Npos.FindAsync(npoId.Value);
-            if (npo == null) return NotFound("NPO not found.");
+            if (!User.IsInRole("Admin"))
+                return Forbid();
+        }
+        else
+        {
+            var npoCheck = await _context.Npos.FindAsync(npoId.Value);
+            if (npoCheck == null) return NotFound("NPO not found.");
 
             var isAdmin = User.IsInRole("Admin");
-            if (!isAdmin && npo.UserId != callerId) return Forbid();
+            if (!isAdmin && npoCheck.UserId != callerId) return Forbid();
         }
 
         var q = _context.Transactions.Where(t => t.TransactionType == "Donation");
@@ -114,6 +125,43 @@ public class ReportController : ControllerBase
 
         var bytes = Encoding.UTF8.GetBytes(sb.ToString());
         var filename = $"donations_{DateTime.UtcNow:yyyyMMddHHmmss}.csv";
+        return File(bytes, "text/csv", filename);
+    }
+
+    // ── MY DONATIONS CSV (any authenticated user exports their own) ──
+    [HttpGet("my-donations/csv")]
+    public async Task<IActionResult> MyDonationsCsv([FromQuery] DateTime? start, [FromQuery] DateTime? end)
+    {
+        var callerIdClaim = User.FindFirst(System.Security.Claims.ClaimTypes.NameIdentifier)?.Value;
+        var callerId = int.Parse(callerIdClaim!);
+
+        var q = _context.Transactions
+            .Where(t => t.SenderUserId == callerId && t.TransactionType == "Donation");
+        if (start.HasValue) q = q.Where(t => t.Timestamp >= start.Value);
+        if (end.HasValue) q = q.Where(t => t.Timestamp <= end.Value);
+
+        var rows = await q.OrderByDescending(t => t.Timestamp)
+            .Select(t => new
+            {
+                transactionId = t.TransactionId,
+                receiverUserId = t.ReceiverUserId,
+                amount = t.Amount,
+                status = t.Status,
+                timestamp = t.Timestamp
+            })
+            .ToListAsync();
+
+        var sb = new StringBuilder();
+        sb.AppendLine("transactionId,receiverUserId,amount,status,timestamp");
+        foreach (var r in rows)
+        {
+            var line = string.Format(CultureInfo.InvariantCulture, "{0},{1},{2:0.00},{3},{4:O}",
+                r.transactionId, r.receiverUserId, r.amount, r.status, r.timestamp);
+            sb.AppendLine(line);
+        }
+
+        var bytes = Encoding.UTF8.GetBytes(sb.ToString());
+        var filename = $"my_donations_{DateTime.UtcNow:yyyyMMddHHmmss}.csv";
         return File(bytes, "text/csv", filename);
     }
 }
