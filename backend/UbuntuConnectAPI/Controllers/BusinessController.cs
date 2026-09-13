@@ -5,6 +5,8 @@ using System.Security.Claims;
 using UbuntuConnectAPI.Data;
 using UbuntuConnectAPI.DTOs.Requests;
 using UbuntuConnectAPI.Models;
+using UbuntuConnectAPI.Services.Payments;
+using Microsoft.Extensions.Options;
 
 namespace UbuntuConnectAPI.Controllers;
 
@@ -13,10 +15,17 @@ namespace UbuntuConnectAPI.Controllers;
 public class BusinessController : ControllerBase
 {
     private readonly AppDbContext _context;
+    private readonly IPaymentSimulationService? _payments;
+    private readonly WalletLimitsOptions _limits;
 
-    public BusinessController(AppDbContext context)
+    public BusinessController(
+        AppDbContext context,
+        IPaymentSimulationService? payments = null,
+        IOptions<WalletLimitsOptions>? limits = null)
     {
         _context = context;
+        _payments = payments;
+        _limits = limits?.Value ?? new WalletLimitsOptions();
     }
 
     // ── GET MY PROFILE ─────────────────────────────────────────
@@ -188,6 +197,21 @@ public class BusinessController : ControllerBase
         var userId = int.Parse(userIdClaim!);
 
         if (dto.Amount <= 0) return BadRequest("Amount must be greater than zero.");
+
+        // Per-transaction top-up limits.
+        if (dto.Amount < _limits.MinTopUp)
+            return BadRequest($"Minimum top-up is R {_limits.MinTopUp:0.##}.");
+        if (dto.Amount > _limits.MaxTopUp)
+            return BadRequest($"Maximum top-up is R {_limits.MaxTopUp:0.##}.");
+
+        // Simulated card charge (validated when card details are supplied).
+        if (_payments != null &&
+            (!string.IsNullOrWhiteSpace(dto.CardNumber) || !string.IsNullOrWhiteSpace(dto.CardExpiry) || !string.IsNullOrWhiteSpace(dto.CardCvv)))
+        {
+            var charge = _payments.Charge(dto.CardNumber, dto.CardExpiry, dto.CardCvv);
+            if (!charge.Approved)
+                return BadRequest(charge.DeclineReason ?? "Card was declined.");
+        }
 
         var wallet = await _context.Wallets.FirstOrDefaultAsync(w => w.UserId == userId);
         if (wallet == null) return BadRequest("No wallet found.");

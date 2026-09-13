@@ -35,7 +35,9 @@ public class ProjectController : ControllerBase
                 projectProgress = p.ProjectProgress,
                 targetAmount = p.TargetAmount,
                 raisedAmount = p.RaisedAmount,
-                images = p.Images
+                images = p.Images,
+                startDate = p.StartDate,
+                endDate = p.EndDate
             })
             .ToListAsync();
         return Ok(projects);
@@ -58,7 +60,9 @@ public class ProjectController : ControllerBase
                 projectProgress = p.ProjectProgress,
                 targetAmount = p.TargetAmount,
                 raisedAmount = p.RaisedAmount,
-                images = p.Images
+                images = p.Images,
+                startDate = p.StartDate,
+                endDate = p.EndDate
             })
             .FirstOrDefaultAsync();
 
@@ -90,7 +94,9 @@ public class ProjectController : ControllerBase
                 projectProgress = p.ProjectProgress,
                 targetAmount = p.TargetAmount,
                 raisedAmount = p.RaisedAmount,
-                images = p.Images
+                images = p.Images,
+                startDate = p.StartDate,
+                endDate = p.EndDate
             })
             .ToListAsync();
 
@@ -116,6 +122,18 @@ public class ProjectController : ControllerBase
         if (!validStatuses.Contains(status))
             return BadRequest("ProjectStatus must be one of: Planning, Active, Completed, Suspended");
 
+        // Resolve fundraiser timing.
+        var startDate = req.StartDate ?? DateTime.UtcNow;
+        DateTime? endDate = req.EndDate;
+        if (endDate == null && req.DurationDays.HasValue)
+        {
+            if (req.DurationDays.Value <= 0)
+                return BadRequest("DurationDays must be greater than zero.");
+            endDate = startDate.AddDays(req.DurationDays.Value);
+        }
+        if (endDate.HasValue && endDate.Value <= startDate)
+            return BadRequest("EndDate must be after the start date.");
+
         var project = new Project
         {
             NpoId = npo.NpoId,
@@ -125,7 +143,9 @@ public class ProjectController : ControllerBase
             ProjectProgress = req.ProjectProgress ?? 0,
             TargetAmount = req.TargetAmount ?? 0,
             RaisedAmount = 0,
-            Images = req.Images
+            Images = req.Images,
+            StartDate = startDate,
+            EndDate = endDate
         };
 
         _context.Projects.Add(project);
@@ -141,7 +161,9 @@ public class ProjectController : ControllerBase
             projectProgress = project.ProjectProgress,
             targetAmount = project.TargetAmount,
             raisedAmount = project.RaisedAmount,
-            images = project.Images
+            images = project.Images,
+            startDate = project.StartDate,
+            endDate = project.EndDate
         });
     }
 
@@ -178,6 +200,21 @@ public class ProjectController : ControllerBase
         if (req.TargetAmount.HasValue) project.TargetAmount = req.TargetAmount.Value;
         if (req.Images != null) project.Images = req.Images;
 
+        if (req.StartDate.HasValue) project.StartDate = req.StartDate.Value;
+        if (req.EndDate.HasValue)
+        {
+            project.EndDate = req.EndDate.Value;
+        }
+        else if (req.DurationDays.HasValue)
+        {
+            if (req.DurationDays.Value <= 0)
+                return BadRequest("DurationDays must be greater than zero.");
+            var basis = project.StartDate ?? DateTime.UtcNow;
+            project.EndDate = basis.AddDays(req.DurationDays.Value);
+        }
+        if (project.EndDate.HasValue && project.StartDate.HasValue && project.EndDate.Value <= project.StartDate.Value)
+            return BadRequest("EndDate must be after the start date.");
+
         await _context.SaveChangesAsync();
         return Ok(new
         {
@@ -189,7 +226,9 @@ public class ProjectController : ControllerBase
             projectProgress = project.ProjectProgress,
             targetAmount = project.TargetAmount,
             raisedAmount = project.RaisedAmount,
-            images = project.Images
+            images = project.Images,
+            startDate = project.StartDate,
+            endDate = project.EndDate
         });
     }
 
@@ -223,6 +262,12 @@ public class CreateProjectRequest
     public decimal? ProjectProgress { get; set; }
     public decimal? TargetAmount { get; set; }
     public string? Images { get; set; }
+
+    // Timing (Task 18). Provide either an explicit EndDate or a DurationDays
+    // (relative to StartDate, or "now" when StartDate is omitted). EndDate wins if both given.
+    public DateTime? StartDate { get; set; }
+    public DateTime? EndDate { get; set; }
+    public int? DurationDays { get; set; }
 }
 
 public class UpdateProjectRequest
@@ -233,4 +278,8 @@ public class UpdateProjectRequest
     public decimal? ProjectProgress { get; set; }
     public decimal? TargetAmount { get; set; }
     public string? Images { get; set; }
+
+    public DateTime? StartDate { get; set; }
+    public DateTime? EndDate { get; set; }
+    public int? DurationDays { get; set; }
 }

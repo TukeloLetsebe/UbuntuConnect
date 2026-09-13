@@ -23,5 +23,9 @@ public partial class Project
 
     public string? Images { get; set; }
 
+    public DateTime? StartDate { get; set; }
+
+    public DateTime? EndDate { get; set; }
+
     public virtual Npo Npo { get; set; } = null!;
 }

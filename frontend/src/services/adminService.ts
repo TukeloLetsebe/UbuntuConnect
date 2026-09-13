@@ -93,4 +93,26 @@ export const adminService = {
   // Transactions
   getTransactions: (userId?: number) =>
     api.get<TransactionItem[]>("/api/admin/transactions", { params: userId ? { userId } : undefined }),
+
+  // Individual KYC review
+  getKycSubmissions: (status = "Pending") =>
+    api.get<KycSubmissionItem[]>("/api/admin/kyc", { params: { status } }),
+  approveKyc: (individualId: number) => api.put(`/api/admin/kyc/${individualId}/approve`),
+  rejectKyc: (individualId: number, reason?: string) =>
+    api.put(`/api/admin/kyc/${individualId}/reject`, { reason }),
 };
+
+export interface KycSubmissionItem {
+  individualId: number;
+  userId: number;
+  fullName: string;
+  email: string;
+  idNumber: string | null;
+  idDocumentUrl: string | null;
+  selfieUrl: string | null;
+  kycStatus: string;
+  kycRoute: string | null;
+  kycMatchScore: number | null;
+  submittedDate: string | null;
+  reviewedDate: string | null;
+}

@@ -3,6 +3,12 @@ import { Link } from "react-router";
 import { motion } from "motion/react";
 import { toast } from "sonner";
 import { useAuth } from "../../context/AuthContext";
+import NotificationBell from "./NotificationBell";
+import EmailVerificationBanner from "./EmailVerificationBanner";
+import IdentityVerificationBanner from "./IdentityVerificationBanner";
+import CardPaymentFields, { type CardDetails, emptyCard, validateCard } from "./CardPaymentFields";
+import ReportPostButton from "./ReportPostButton";
+import { resolveMediaUrl } from "../../lib/api";
 import { individualService, getErrorMessage, type IndividualProfile, type NPOSummary, type NPODetail, type VolunteerOpportunity, type MyVolunteeringItem, type MyDonationsResponse, type MyImpact, type CommunityPost, type FollowedNPO } from "../../services/individualService";
 import {
   Dialog,
@@ -92,6 +98,7 @@ export default function IndividualDashboard() {
   const [topUpAmount, setTopUpAmount] = useState<string>("");
   const [toppingUp, setToppingUp] = useState(false);
   const [topUpError, setTopUpError] = useState<string | null>(null);
+  const [topUpCard, setTopUpCard] = useState<CardDetails>(emptyCard);
 
   // Search and Filter states
   const [searchQuery, setSearchQuery] = useState("");
@@ -775,13 +782,24 @@ export default function IndividualDashboard() {
       return;
     }
 
+    const cardError = validateCard(topUpCard);
+    if (cardError) {
+      setTopUpError(cardError);
+      return;
+    }
+
     setToppingUp(true);
     try {
-      const response = await individualService.topUp(amount);
+      const response = await individualService.topUp(amount, {
+        cardNumber: topUpCard.cardNumber,
+        cardExpiry: topUpCard.cardExpiry,
+        cardCvv: topUpCard.cardCvv,
+      });
       const newBalance = response.data.newBalance;
       setWalletBalance(newBalance);
       toast.success(`Wallet topped up! New balance: R ${newBalance.toLocaleString()}`);
       setTopUpAmount("");
+      setTopUpCard(emptyCard);
       setTopUpError(null);
       setShowTopUp(false);
     } catch (err) {
@@ -827,7 +845,7 @@ export default function IndividualDashboard() {
   return (
     <div className="min-h-screen bg-neutral-50">
       {/* Header */}
-      <header className="bg-white border-b border-neutral-200 py-4 px-6">
+      <header className="bg-white border-b border-neutral-200 py-4 px-6 sticky top-0 z-40">
         <div className="container mx-auto max-w-7xl flex items-center justify-between">
           <div className="flex items-center gap-3">
             <button onClick={() => setSidebarOpen(true)} className="lg:hidden text-neutral-600">
@@ -838,9 +856,7 @@ export default function IndividualDashboard() {
             </button>
           </div>
           <div className="flex items-center gap-4">
-            <Button variant="ghost" size="sm">
-              <Bell className="w-4 h-4" />
-            </Button>
+            <NotificationBell />
             <span className="text-neutral-600 hidden sm:inline">
               {profile ? `${profile.firstName} ${profile.lastName}` : email || "User"}
             </span>
@@ -855,7 +871,7 @@ export default function IndividualDashboard() {
       <div className="flex">
         {/* Sidebar */}
         {sidebarOpen && <div className="fixed inset-0 bg-black/50 z-30 lg:hidden" onClick={() => setSidebarOpen(false)} />}
-        <aside className={`${sidebarOpen ? "translate-x-0" : "-translate-x-full"} lg:translate-x-0 transition-transform fixed lg:sticky top-0 left-0 z-40 w-64 bg-white border-r border-neutral-200 h-screen lg:min-h-[calc(100vh-73px)] p-6 overflow-y-auto`}>
+        <aside className={`${sidebarOpen ? "translate-x-0" : "-translate-x-full"} lg:translate-x-0 transition-transform fixed lg:sticky top-0 lg:top-[73px] left-0 z-40 lg:z-30 w-64 bg-white border-r border-neutral-200 h-screen lg:h-[calc(100vh-73px)] p-6 overflow-y-auto`}>
           <div className="flex justify-between items-center mb-4 lg:hidden"><span className="font-bold">Menu</span><button onClick={() => setSidebarOpen(false)}><X className="w-5 h-5" /></button></div>
           <nav className="space-y-2" onClick={() => setSidebarOpen(false)}>
             <button
@@ -1146,6 +1162,9 @@ export default function IndividualDashboard() {
                                 Donate
                               </Button>
                             </div>
+                            <Link to={`/npo/${npo.npoId}`} className="block text-center text-sm text-orange-600 hover:underline mt-3">
+                              View full profile
+                            </Link>
                           </div>
                         </Card>
                       ))}
@@ -1666,6 +1685,7 @@ export default function IndividualDashboard() {
                         <Button type="button" variant="outline" size="sm" onClick={() => setTopUpAmount("1000")}>R 1000</Button>
                       </div>
                     </div>
+                    <CardPaymentFields value={topUpCard} onChange={setTopUpCard} disabled={toppingUp} />
                     {topUpError && <p className="text-sm text-red-600">{topUpError}</p>}
                     <Button type="submit" className="bg-orange-600 hover:bg-orange-700" disabled={toppingUp}>
                       {toppingUp && <Loader2 className="w-4 h-4 mr-2 animate-spin" />}
@@ -1774,7 +1794,7 @@ export default function IndividualDashboard() {
                               {post.mediaUrl && post.mediaUrl.trim() !== "" ? (
                                 <div className="h-48">
                                   <img
-                                    src={post.mediaUrl}
+                                    src={resolveMediaUrl(post.mediaUrl)}
                                     alt={post.postTitle}
                                     className="w-full h-full object-cover"
                                     onError={(e) => {
@@ -1826,6 +1846,7 @@ export default function IndividualDashboard() {
                                       <MessageSquare className="w-4 h-4" />
                                       Comment
                                     </button>
+                                    <ReportPostButton postId={post.postId} />
                                   </div>
                                   <span className="text-neutral-500">
                                     {new Date(post.timestamp).toLocaleDateString("en-ZA", {
@@ -2340,6 +2361,8 @@ export default function IndividualDashboard() {
                   </div>
                 </div>
 
+                <CardPaymentFields value={topUpCard} onChange={setTopUpCard} disabled={toppingUp} />
+
                 {/* Top-Up Error */}
                 {topUpError && (
                   <p className="text-sm text-red-600">{topUpError}</p>
@@ -2522,6 +2545,9 @@ export default function IndividualDashboard() {
           </Card>
         </div>
       )}
+
+      <EmailVerificationBanner />
+      <IdentityVerificationBanner />
     </div>
   );
 }

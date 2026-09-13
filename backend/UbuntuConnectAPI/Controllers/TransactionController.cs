@@ -5,6 +5,8 @@ using System.Security.Claims;
 using UbuntuConnectAPI.Data;
 using UbuntuConnectAPI.DTOs.Requests;
 using UbuntuConnectAPI.Models;
+using UbuntuConnectAPI.Services.Payments;
+using Microsoft.Extensions.Options;
 
 namespace UbuntuConnectAPI.Controllers;
 
@@ -13,11 +15,25 @@ namespace UbuntuConnectAPI.Controllers;
 public class TransactionController : ControllerBase
 {
     private readonly AppDbContext _context;
+    private readonly WalletLimitsOptions _limits;
 
-    public TransactionController(AppDbContext context)
+    public TransactionController(AppDbContext context, IOptions<WalletLimitsOptions>? limits = null)
     {
         _context = context;
+        _limits = limits?.Value ?? new WalletLimitsOptions();
     }
+
+    // Exposes the effective wallet limits so the frontend can show/enforce them.
+    [Authorize]
+    [HttpGet("wallet-limits")]
+    public IActionResult GetWalletLimits() => Ok(new
+    {
+        minTopUp = _limits.MinTopUp,
+        maxTopUp = _limits.MaxTopUp,
+        minWithdrawal = _limits.MinWithdrawal,
+        maxWithdrawal = _limits.MaxWithdrawal,
+        maxWithdrawalPerDay = _limits.MaxWithdrawalPerDay
+    });
 
     [Authorize]
     [HttpGet("user/{userId}")]
@@ -80,6 +96,27 @@ public class TransactionController : ControllerBase
         var userId = int.Parse(userIdClaim!);
 
         if (req.Amount <= 0) return BadRequest("Amount must be greater than 0");
+
+        // Per-transaction withdrawal limits.
+        if (req.Amount < _limits.MinWithdrawal)
+            return BadRequest($"Minimum withdrawal is R {_limits.MinWithdrawal:0.##}.");
+        if (req.Amount > _limits.MaxWithdrawal)
+            return BadRequest($"Maximum withdrawal is R {_limits.MaxWithdrawal:0.##}.");
+
+        // Rolling 24-hour withdrawal cap (completed withdrawals only).
+        var since = DateTime.UtcNow.AddDays(-1);
+        var withdrawnLast24h = await _context.Transactions
+            .Where(t => t.SenderUserId == userId
+                && t.TransactionType == "Withdrawal"
+                && t.Status == "Completed"
+                && t.Timestamp >= since)
+            .SumAsync(t => (decimal?)t.Amount) ?? 0m;
+        if (withdrawnLast24h + req.Amount > _limits.MaxWithdrawalPerDay)
+        {
+            var remaining = _limits.MaxWithdrawalPerDay - withdrawnLast24h;
+            if (remaining < 0) remaining = 0;
+            return BadRequest($"Daily withdrawal limit reached. You can withdraw up to R {remaining:0.##} more in the next 24 hours.");
+        }
 
         var wallet = await _context.Wallets.FirstOrDefaultAsync(w => w.UserId == userId);
         if (wallet == null) return NotFound("Wallet not found");

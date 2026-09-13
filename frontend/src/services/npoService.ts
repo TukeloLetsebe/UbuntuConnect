@@ -42,12 +42,15 @@ export interface ProjectItem {
   targetAmount: number;
   raisedAmount: number;
   images: string | null;
+  startDate: string | null;
+  endDate: string | null;
 }
 
 export interface VolunteerApplicationItem {
   applicationId: number;
   userId: number;
   opportunityId: number;
+  roleTitle?: string | null;
   firstName: string;
   lastName: string;
   email: string;
@@ -186,9 +189,9 @@ export const npoService = {
   getMyProjects: () => api.get<ProjectItem[]>("/api/project/my-projects"),
   getAllProjects: () => api.get<ProjectItem[]>("/api/project"),
   getProject: (id: number) => api.get<ProjectItem>(`/api/project/${id}`),
-  createProject: (data: { projectName: string; projectDesc?: string; projectStatus?: string; projectProgress?: number; targetAmount?: number; images?: string }) =>
+  createProject: (data: { projectName: string; projectDesc?: string; projectStatus?: string; projectProgress?: number; targetAmount?: number; images?: string; endDate?: string; durationDays?: number }) =>
     api.post<ProjectItem>("/api/project", data),
-  updateProject: (id: number, data: { projectName?: string; projectDesc?: string; projectStatus?: string; projectProgress?: number; targetAmount?: number; images?: string }) =>
+  updateProject: (id: number, data: { projectName?: string; projectDesc?: string; projectStatus?: string; projectProgress?: number; targetAmount?: number; images?: string; endDate?: string; durationDays?: number }) =>
     api.put<ProjectItem>(`/api/project/${id}`, data),
   deleteProject: (id: number) => api.delete(`/api/project/${id}`),
 

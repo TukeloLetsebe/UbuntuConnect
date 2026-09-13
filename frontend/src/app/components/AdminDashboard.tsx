@@ -3,7 +3,11 @@ import { Link } from "react-router";
 import { motion } from "motion/react";
 import { toast } from "sonner";
 import { useAuth } from "../../context/AuthContext";
-import { adminService, getErrorMessage, type PlatformStats, type UserItem, type VerificationItem, type TransactionItem } from "../../services/adminService";
+import NotificationBell from "./NotificationBell";
+import AdminReportsPanel from "./reports/AdminReportsPanel";
+import { adminService, getErrorMessage, type PlatformStats, type UserItem, type VerificationItem, type TransactionItem, type KycSubmissionItem } from "../../services/adminService";
+import { moderationService, type ReportedPostItem } from "../../services/moderationService";
+import { resolveMediaUrl } from "../../lib/api";
 import { Button } from "./ui/button";
 import { Card } from "./ui/card";
 import { Badge } from "./ui/badge";
@@ -12,7 +16,7 @@ import { Tabs, TabsContent, TabsList, TabsTrigger } from "./ui/tabs";
 import {
   Shield, Users, Building2, Heart, TrendingUp, LogOut,
   CheckCircle, X, Search, DollarSign, AlertCircle,
-  Eye, UserCheck, Ban, Loader2, RefreshCw, FileText, Menu
+  Eye, UserCheck, Ban, Loader2, RefreshCw, FileText, Menu, Flag
 } from "lucide-react";
 
 export default function AdminDashboard() {
@@ -39,6 +43,14 @@ export default function AdminDashboard() {
   // Transactions
   const [transactions, setTransactions] = useState<TransactionItem[]>([]);
   const [transactionsLoading, setTransactionsLoading] = useState(false);
+
+  // Reported posts (moderation)
+  const [reports, setReports] = useState<ReportedPostItem[]>([]);
+  const [reportsLoading, setReportsLoading] = useState(false);
+
+  // Individual KYC submissions
+  const [kyc, setKyc] = useState<KycSubmissionItem[]>([]);
+  const [kycLoading, setKycLoading] = useState(false);
 
   // ═══ LOADERS ═══
   const loadStats = useCallback(async () => {
@@ -71,12 +83,28 @@ export default function AdminDashboard() {
     finally { setTransactionsLoading(false); }
   }, []);
 
+  const loadReports = useCallback(async () => {
+    setReportsLoading(true);
+    try { const r = await moderationService.getReports("Pending"); setReports(r.data); }
+    catch (e) { toast.error(getErrorMessage(e)); }
+    finally { setReportsLoading(false); }
+  }, []);
+
+  const loadKyc = useCallback(async () => {
+    setKycLoading(true);
+    try { const r = await adminService.getKycSubmissions("Pending"); setKyc(r.data); }
+    catch (e) { toast.error(getErrorMessage(e)); }
+    finally { setKycLoading(false); }
+  }, []);
+
   useEffect(() => { loadStats(); }, [loadStats]);
   useEffect(() => {
     if (activeTab === "users") loadUsers();
     if (activeTab === "verifications") loadVerifications();
     if (activeTab === "transactions") loadTransactions();
-  }, [activeTab, loadUsers, loadVerifications, loadTransactions]);
+    if (activeTab === "moderation") loadReports();
+    if (activeTab === "kyc") loadKyc();
+  }, [activeTab, loadUsers, loadVerifications, loadTransactions, loadReports, loadKyc]);
 
   // Reload verifications when filter changes
   useEffect(() => {
@@ -105,6 +133,28 @@ export default function AdminDashboard() {
     catch (e) { toast.error(getErrorMessage(e)); }
   };
 
+  const handleDismissReport = async (reportId: number) => {
+    try { await moderationService.dismiss(reportId); setReports(p => p.filter(r => r.reportId !== reportId)); toast.success("Report dismissed."); }
+    catch (e) { toast.error(getErrorMessage(e)); }
+  };
+
+  const handleRemoveReportedPost = async (reportId: number) => {
+    if (!confirm("Remove this post? The author will be notified.")) return;
+    try { await moderationService.removePost(reportId); setReports(p => p.filter(r => r.reportId !== reportId)); toast.success("Post removed and author notified."); }
+    catch (e) { toast.error(getErrorMessage(e)); }
+  };
+
+  const handleApproveKyc = async (individualId: number) => {
+    try { await adminService.approveKyc(individualId); setKyc(p => p.filter(k => k.individualId !== individualId)); loadStats(); toast.success("Identity approved — individual notified."); }
+    catch (e) { toast.error(getErrorMessage(e)); }
+  };
+
+  const handleRejectKyc = async (individualId: number) => {
+    const reason = prompt("Reason for rejection (optional):") ?? undefined;
+    try { await adminService.rejectKyc(individualId, reason); setKyc(p => p.filter(k => k.individualId !== individualId)); toast.success("Submission rejected — individual notified."); }
+    catch (e) { toast.error(getErrorMessage(e)); }
+  };
+
   const filteredUsers = users.filter(u => {
     const matchesSearch = !userSearchQuery || u.email.toLowerCase().includes(userSearchQuery.toLowerCase());
     const matchesType = userTypeFilter === "All" || u.userType === userTypeFilter;
@@ -114,18 +164,21 @@ export default function AdminDashboard() {
   // ═══ RENDER ═══
   return (
     <div className="min-h-screen bg-neutral-50">
-      <header className="bg-white border-b border-neutral-200 py-4 px-6"><div className="container mx-auto max-w-7xl flex items-center justify-between"><div className="flex items-center gap-3"><button onClick={() => setSidebarOpen(true)} className="lg:hidden text-neutral-600"><Menu className="w-6 h-6" /></button><button onClick={() => setActiveTab("overview")} className="text-xl text-neutral-900 font-bold">UbuntuConnect</button></div><div className="flex items-center gap-4"><Badge className="bg-purple-100 text-purple-700"><Shield className="w-3 h-3 mr-1" /> Admin</Badge><Button variant="outline" size="sm" onClick={logout}><LogOut className="w-4 h-4 mr-2" /> Logout</Button></div></div></header>
+      <header className="bg-white border-b border-neutral-200 py-4 px-6 sticky top-0 z-40"><div className="container mx-auto max-w-7xl flex items-center justify-between"><div className="flex items-center gap-3"><button onClick={() => setSidebarOpen(true)} className="lg:hidden text-neutral-600"><Menu className="w-6 h-6" /></button><button onClick={() => setActiveTab("overview")} className="text-xl text-neutral-900 font-bold">UbuntuConnect</button></div><div className="flex items-center gap-4"><Badge className="bg-purple-100 text-purple-700"><Shield className="w-3 h-3 mr-1" /> Admin</Badge><NotificationBell /><Button variant="outline" size="sm" onClick={logout}><LogOut className="w-4 h-4 mr-2" /> Logout</Button></div></div></header>
 
       <div className="flex">
         {sidebarOpen && <div className="fixed inset-0 bg-black/50 z-30 lg:hidden" onClick={() => setSidebarOpen(false)} />}
-        <aside className={`${sidebarOpen ? "translate-x-0" : "-translate-x-full"} lg:translate-x-0 transition-transform fixed lg:sticky top-0 left-0 z-40 w-64 bg-white border-r border-neutral-200 h-screen lg:min-h-[calc(100vh-73px)] p-6 overflow-y-auto`}>
+        <aside className={`${sidebarOpen ? "translate-x-0" : "-translate-x-full"} lg:translate-x-0 transition-transform fixed lg:sticky top-0 lg:top-[73px] left-0 z-40 lg:z-30 w-64 bg-white border-r border-neutral-200 h-screen lg:h-[calc(100vh-73px)] p-6 overflow-y-auto`}>
           <div className="flex justify-between items-center mb-4 lg:hidden"><span className="font-bold">Menu</span><button onClick={() => setSidebarOpen(false)}><X className="w-5 h-5" /></button></div>
           <nav className="space-y-2">
             {[
               { id: "overview", icon: TrendingUp, label: "Overview" },
               { id: "users", icon: Users, label: "User Management" },
               { id: "verifications", icon: Shield, label: "Verifications" },
+              { id: "kyc", icon: UserCheck, label: "Individual KYC" },
+              { id: "moderation", icon: Flag, label: "Reported Posts" },
               { id: "transactions", icon: DollarSign, label: "Transactions" },
+              { id: "reports", icon: TrendingUp, label: "Reports" },
             ].map(item => (
               <button key={item.id} onClick={() => selectTab(item.id)} className={`w-full flex items-center gap-3 px-4 py-2 rounded-lg transition-colors ${activeTab === item.id ? "bg-purple-50 text-purple-600" : "text-neutral-600 hover:bg-neutral-50"}`}><item.icon className="w-5 h-5" /> {item.label}</button>
             ))}
@@ -216,6 +269,59 @@ export default function AdminDashboard() {
               )}
             </div>)}
 
+            {/* INDIVIDUAL KYC */}
+            {activeTab === "kyc" && (<div>
+              <div className="flex items-center justify-between mb-6"><div><h1 className="text-2xl font-bold mb-2">Individual Identity Verification</h1><p className="text-neutral-600">Review ID + selfie submissions and approve or reject</p></div><Button variant="outline" size="sm" onClick={loadKyc}><RefreshCw className="w-4 h-4" /></Button></div>
+              {kycLoading ? <div className="flex justify-center py-12"><Loader2 className="w-8 h-8 animate-spin text-purple-600" /></div> : kyc.length === 0 ? <Card className="p-12 text-center"><UserCheck className="w-10 h-10 text-neutral-300 mx-auto mb-3" /><p className="text-neutral-600">No pending identity submissions.</p></Card> : (
+                <div className="space-y-4">{kyc.map(k => (
+                  <Card key={k.individualId} className="p-6">
+                    <div className="flex flex-col lg:flex-row gap-6">
+                      <div className="flex-1 min-w-0">
+                        <div className="flex items-center gap-2 mb-2"><h3 className="font-semibold">{k.fullName}</h3><Badge className="bg-yellow-100 text-yellow-700">{k.kycStatus}</Badge>{k.kycRoute && <Badge variant="outline">{k.kycRoute}</Badge>}</div>
+                        <p className="text-sm text-neutral-600">{k.email}</p>
+                        <p className="text-sm text-neutral-600 mt-1">ID Number: <span className="font-medium">{k.idNumber || "—"}</span></p>
+                        {k.kycMatchScore != null && <p className="text-sm text-neutral-500 mt-1">Face match score: {(k.kycMatchScore * 100).toFixed(1)}%</p>}
+                        {k.submittedDate && <p className="text-xs text-neutral-400 mt-1">Submitted {new Date(k.submittedDate).toLocaleDateString()}</p>}
+                        <div className="flex gap-3 mt-4">
+                          <Button size="sm" className="bg-green-600 hover:bg-green-700" onClick={() => handleApproveKyc(k.individualId)}><CheckCircle className="w-4 h-4 mr-1" /> Approve</Button>
+                          <Button size="sm" variant="outline" className="text-red-600 border-red-200" onClick={() => handleRejectKyc(k.individualId)}><X className="w-4 h-4 mr-1" /> Reject</Button>
+                        </div>
+                      </div>
+                      <div className="flex gap-4">
+                        <div className="text-center"><p className="text-xs text-neutral-500 mb-1">ID Document</p>{k.idDocumentUrl ? <a href={resolveMediaUrl(k.idDocumentUrl)} target="_blank" rel="noreferrer"><img src={resolveMediaUrl(k.idDocumentUrl)} alt="ID" className="w-40 h-28 object-cover rounded-md border border-neutral-200" /></a> : <div className="w-40 h-28 bg-neutral-100 rounded-md flex items-center justify-center text-neutral-400 text-xs">No image</div>}</div>
+                        <div className="text-center"><p className="text-xs text-neutral-500 mb-1">Selfie</p>{k.selfieUrl ? <a href={resolveMediaUrl(k.selfieUrl)} target="_blank" rel="noreferrer"><img src={resolveMediaUrl(k.selfieUrl)} alt="Selfie" className="w-40 h-28 object-cover rounded-md border border-neutral-200" /></a> : <div className="w-40 h-28 bg-neutral-100 rounded-md flex items-center justify-center text-neutral-400 text-xs">No image</div>}</div>
+                      </div>
+                    </div>
+                  </Card>
+                ))}</div>
+              )}
+            </div>)}
+
+            {/* MODERATION — REPORTED POSTS */}
+            {activeTab === "moderation" && (<div>
+              <div className="flex items-center justify-between mb-6"><div><h1 className="text-2xl font-bold mb-2">Reported Posts</h1><p className="text-neutral-600">Review posts reported by the community</p></div><Button variant="outline" size="sm" onClick={loadReports}><RefreshCw className="w-4 h-4" /></Button></div>
+              {reportsLoading ? <div className="flex justify-center py-12"><Loader2 className="w-8 h-8 animate-spin text-purple-600" /></div> : reports.length === 0 ? <Card className="p-12 text-center"><Flag className="w-10 h-10 text-neutral-300 mx-auto mb-3" /><p className="text-neutral-600">No pending reports. The community feed is clean.</p></Card> : (
+                <div className="space-y-4">{reports.map(r => (
+                  <Card key={r.reportId} className="p-6">
+                    <div className="flex items-start justify-between gap-4">
+                      <div className="flex-1 min-w-0">
+                        <div className="flex items-center gap-2 mb-2"><Badge className="bg-red-100 text-red-700"><Flag className="w-3 h-3 mr-1" /> Reported</Badge><span className="text-xs text-neutral-500">{new Date(r.createdAt).toLocaleDateString()}</span></div>
+                        <h3 className="font-semibold mb-1">{r.post.postTitle}</h3>
+                        {r.post.content && <p className="text-neutral-600 text-sm mb-2 line-clamp-3">{r.post.content}</p>}
+                        {r.post.mediaUrl && <img src={resolveMediaUrl(r.post.mediaUrl)} alt="" className="max-h-40 rounded-md border border-neutral-200 object-cover mb-2" />}
+                        <p className="text-sm mt-2"><span className="font-medium text-neutral-700">Reason:</span> <span className="text-neutral-600">{r.reason}</span></p>
+                        <p className="text-xs text-neutral-400 mt-1">Reported by user #{r.reporterUserId} · Post by user #{r.post.authorUserId} · Post status: {r.post.activityStatus}</p>
+                      </div>
+                      <div className="flex flex-col gap-2 shrink-0">
+                        <Button size="sm" variant="outline" onClick={() => handleDismissReport(r.reportId)}><CheckCircle className="w-4 h-4 mr-1" /> Dismiss</Button>
+                        <Button size="sm" className="bg-red-600 hover:bg-red-700" onClick={() => handleRemoveReportedPost(r.reportId)}><Ban className="w-4 h-4 mr-1" /> Remove Post</Button>
+                      </div>
+                    </div>
+                  </Card>
+                ))}</div>
+              )}
+            </div>)}
+
             {/* TRANSACTIONS */}
             {activeTab === "transactions" && (<div>
               <div className="flex items-center justify-between mb-6"><div><h1 className="text-2xl font-bold mb-2">All Transactions</h1><p className="text-neutral-600">Platform-wide transaction history</p></div><Button variant="outline" size="sm" onClick={loadTransactions}><RefreshCw className="w-4 h-4" /></Button></div>
@@ -235,6 +341,9 @@ export default function AdminDashboard() {
                 ))}</div>
               )}
             </div>)}
+
+            {/* REPORTS */}
+            {activeTab === "reports" && (<div><AdminReportsPanel /></div>)}
 
           </motion.div>
         </main>

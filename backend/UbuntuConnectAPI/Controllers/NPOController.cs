@@ -4,6 +4,8 @@ using Microsoft.EntityFrameworkCore;
 using System.Security.Claims;
 using UbuntuConnectAPI.Data;
 using UbuntuConnectAPI.DTOs.Requests;
+using UbuntuConnectAPI.Services.Verification;
+using UbuntuConnectAPI.Services.Notifications;
 
 namespace UbuntuConnectAPI.Controllers;
 
@@ -12,10 +14,14 @@ namespace UbuntuConnectAPI.Controllers;
 public class NPOController : ControllerBase
 {
     private readonly AppDbContext _context;
+    private readonly IVerificationGate _gate;
+    private readonly INotificationService? _notifications;
 
-    public NPOController(AppDbContext context)
+    public NPOController(AppDbContext context, IVerificationGate gate, INotificationService? notifications = null)
     {
         _context = context;
+        _gate = gate;
+        _notifications = notifications;
     }
 
     // Public — anyone can browse NPOs (same as IndividualController.DiscoverNpos)
@@ -54,6 +60,106 @@ public class NPOController : ControllerBase
 
         if (npo == null) return NotFound();
         return Ok(npo);
+    }
+
+    // Facebook-style public NPO profile: org details, cover/avatar, mission,
+    // stats, recent posts, active fundraisers and open volunteer opportunities.
+    // Contact info (email/phone) is hidden unless the viewer is fully verified
+    // (or is the NPO itself). Endpoint is public — anonymous viewers see the
+    // profile but never the contact details.
+    [HttpGet("{id}/public")]
+    public async Task<IActionResult> GetPublicProfile(int id)
+    {
+        var npo = await _context.Npos
+            .Include(n => n.User)
+                .ThenInclude(u => u.Profile)
+            .FirstOrDefaultAsync(n => n.NpoId == id);
+        if (npo == null) return NotFound();
+
+        // Determine whether the viewer may see contact details.
+        var contactVisible = false;
+        var callerIdClaim = User.FindFirst(ClaimTypes.NameIdentifier)?.Value;
+        if (int.TryParse(callerIdClaim, out var callerId))
+        {
+            if (callerId == npo.UserId)
+            {
+                contactVisible = true; // owner always sees their own contact
+            }
+            else
+            {
+                var caller = await _context.Users
+                    .FirstOrDefaultAsync(u => u.UserId == callerId);
+                contactVisible = caller is { IsActive: true, IsEmailVerified: true, IsVerified: true };
+            }
+        }
+
+        var followerCount = await _context.Follows.CountAsync(f => f.NpoId == npo.NpoId);
+
+        var posts = await _context.Posts
+            .Where(p => p.UserId == npo.UserId && p.ActivityStatus != "Deleted")
+            .OrderByDescending(p => p.Timestamp)
+            .Take(20)
+            .Select(p => new
+            {
+                postId = p.PostId,
+                postTitle = p.PostTitle,
+                content = p.Content,
+                mediaUrl = p.MediaUrl,
+                likeCount = p.LikeCount,
+                timestamp = p.Timestamp
+            })
+            .ToListAsync();
+
+        var fundraisers = await _context.Projects
+            .Where(p => p.NpoId == npo.NpoId && p.ProjectStatus == "Active")
+            .OrderByDescending(p => p.ProjectId)
+            .Select(p => new
+            {
+                projectId = p.ProjectId,
+                projectName = p.ProjectName,
+                projectDesc = p.ProjectDesc,
+                projectProgress = p.ProjectProgress,
+                targetAmount = p.TargetAmount,
+                raisedAmount = p.RaisedAmount,
+                images = p.Images,
+                endDate = p.EndDate
+            })
+            .ToListAsync();
+
+        var opportunities = await _context.VolunteerOpportunities
+            .Where(o => o.NpoId == npo.NpoId)
+            .OrderByDescending(o => o.OpportunityId)
+            .Select(o => new
+            {
+                opportunityId = o.OpportunityId,
+                roleTitle = o.RoleTitle,
+                category = o.Category,
+                numOfPositions = o.NumOfPositions,
+                description = o.Description
+            })
+            .ToListAsync();
+
+        return Ok(new
+        {
+            npoId = npo.NpoId,
+            userId = npo.UserId,
+            organizationName = npo.OrganizationName,
+            npofocusArea = npo.NpofocusArea,
+            npomission = npo.Npomission,
+            nporegNum = npo.NporegNum,
+            isVerified = npo.User.IsVerified,
+            bio = npo.User.Profile != null ? npo.User.Profile.Bio : null,
+            profileImage = npo.User.Profile != null ? npo.User.Profile.ProfileImage : null,
+            location = npo.User.Location,
+            followerCount,
+            // Contact block — null when the viewer isn't allowed to see it.
+            contactVisible,
+            email = contactVisible ? npo.User.UserEmail : null,
+            phone = contactVisible ? npo.User.UserContact : null,
+            posts,
+            fundraisers,
+            opportunities
+        });
     }
 
     [HttpGet("user/{userId}")]
@@ -264,6 +370,10 @@ public class NPOController : ControllerBase
         var userIdClaim = User.FindFirst(ClaimTypes.NameIdentifier)?.Value;
         var userId = int.Parse(userIdClaim!);
 
+        // Verification gate — anti-fraud/AML: only fully verified users may donate.
+        var gate = await _gate.CanTransactAsync(userId);
+        if (!gate.Allowed) return StatusCode(403, gate.Reason);
+
         if (dto.Amount <= 0) return BadRequest("Amount must be greater than zero.");
 
         var project = await _context.Projects.Include(p => p.Npo).FirstOrDefaultAsync(p => p.ProjectId == projectId);
@@ -295,6 +405,11 @@ public class NPOController : ControllerBase
             if (project.TargetAmount > 0)
                 project.ProjectProgress = Math.Min(100, (project.RaisedAmount / project.TargetAmount) * 100);
 
+            // Auto-close the fundraiser inline when the target is reached.
+            var targetReached = project.TargetAmount > 0 && project.RaisedAmount >= project.TargetAmount;
+            if (targetReached && project.ProjectStatus == "Active")
+                project.ProjectStatus = "Completed";
+
             var transaction = new Models.Transaction
             {
                 SenderUserId = userId,
@@ -309,13 +424,28 @@ public class NPOController : ControllerBase
             await _context.SaveChangesAsync();
             await dbTx.CommitAsync();
 
+            // Best-effort notification to the NPO owner when the fundraiser just reached its goal.
+            if (targetReached && _notifications != null)
+            {
+                try
+                {
+                    await _notifications.CreateAsync(
+                        project.Npo.UserId,
+                        "FundraiserCompleted",
+                        $"Your fundraiser \"{project.ProjectName}\" reached its goal and has been marked completed.",
+                        project.ProjectId);
+                }
+                catch { /* notifications are non-critical */ }
+            }
+
             return Ok(new
             {
                 message = "Donation to project successful.",
                 transactionId = transaction.TransactionId,
                 newBalance = senderWallet.Balance,
                 projectRaisedAmount = project.RaisedAmount,
-                projectProgress = project.ProjectProgress
+                projectProgress = project.ProjectProgress,
+                projectStatus = project.ProjectStatus
             });
         }
         catch

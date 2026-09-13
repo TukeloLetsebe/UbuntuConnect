@@ -5,6 +5,11 @@ using System.Security.Claims;
 using UbuntuConnectAPI.Data;
 using UbuntuConnectAPI.DTOs.Requests;
 using UbuntuConnectAPI.Models;
+using UbuntuConnectAPI.Services.Verification;
+using UbuntuConnectAPI.Services.FaceVerification;
+using UbuntuConnectAPI.Services.Payments;
+using UbuntuConnectAPI.Validation;
+using Microsoft.Extensions.Options;
 
 
 namespace UbuntuConnectAPI.Controllers;
@@ -14,10 +19,123 @@ namespace UbuntuConnectAPI.Controllers;
 public class IndividualController : ControllerBase
 {
     private readonly AppDbContext _context;
+    private readonly IVerificationGate _gate;
+    private readonly IFaceVerificationService _faceService;
+    private readonly IPaymentSimulationService? _payments;
+    private readonly WalletLimitsOptions _limits;
 
-    public IndividualController(AppDbContext context)
+    // Auto-approve threshold for the self-service face-scan route.
+    private const double FaceMatchThreshold = 0.62;
+
+    public IndividualController(
+        AppDbContext context,
+        IVerificationGate gate,
+        IFaceVerificationService faceService,
+        IPaymentSimulationService? payments = null,
+        IOptions<WalletLimitsOptions>? limits = null)
     {
         _context = context;
+        _gate = gate;
+        _faceService = faceService;
+        _payments = payments;
+        _limits = limits?.Value ?? new WalletLimitsOptions();
+    }
+
+    // ── SUBMIT IDENTITY VERIFICATION (KYC) ─────────────────────
+    // Individual uploads ID + selfie (via /api/upload/image) then submits the
+    // URLs here, choosing a route: "Admin" (manual review) or "FaceScan"
+    // (self-service auto-match). Face-scan falls back to Admin when the engine
+    // is disabled or produces a low/failed match.
+    [Authorize(Roles = "Individual")]
+    [HttpPost("verify-identity")]
+    public async Task<IActionResult> SubmitKyc([FromBody] SubmitKycRequest dto)
+    {
+        var userId = int.Parse(User.FindFirst(ClaimTypes.NameIdentifier)!.Value);
+
+        var individual = await _context.Individuals.FirstOrDefaultAsync(i => i.UserId == userId);
+        if (individual == null) return NotFound("Individual profile not found.");
+
+        if (individual.KycStatus == "Pending")
+            return BadRequest("You already have a verification submission awaiting review.");
+        if (individual.KycStatus == "Approved")
+            return BadRequest("Your identity is already verified.");
+
+        if (string.IsNullOrWhiteSpace(dto.IdNumber) ||
+            string.IsNullOrWhiteSpace(dto.IdDocumentUrl) ||
+            string.IsNullOrWhiteSpace(dto.SelfieUrl))
+            return BadRequest("ID number, ID document, and a selfie are all required.");
+
+        var route = dto.Route == "FaceScan" ? "FaceScan" : "Admin";
+
+        individual.IdNumber = dto.IdNumber.Trim();
+        individual.IdDocumentUrl = dto.IdDocumentUrl;
+        individual.SelfieUrl = dto.SelfieUrl;
+        individual.KycRoute = route;
+        individual.SubmittedDate = DateTime.UtcNow;
+        individual.ReviewedByUserId = null;
+        individual.ReviewedDate = null;
+        individual.KycMatchScore = null;
+
+        // Self-service face-scan route: try the engine.
+        if (route == "FaceScan" && _faceService.IsEnabled)
+        {
+            var match = await _faceService.CompareAsync(dto.IdDocumentUrl, dto.SelfieUrl);
+            if (match.Available && match.Matched && match.Score >= FaceMatchThreshold)
+            {
+                // Auto-approve.
+                individual.KycStatus = "Approved";
+                individual.KycMatchScore = (decimal)match.Score;
+                individual.ReviewedDate = DateTime.UtcNow;
+
+                var user = await _context.Users.FirstAsync(u => u.UserId == userId);
+                user.IsVerified = true;
+                await _context.SaveChangesAsync();
+
+                return Ok(new
+                {
+                    message = "Identity verified successfully via face match.",
+                    status = individual.KycStatus,
+                    autoApproved = true,
+                    score = match.Score
+                });
+            }
+
+            // Low/failed match — record score and fall through to pending for admin.
+            if (match.Available)
+                individual.KycMatchScore = (decimal)match.Score;
+        }
+
+        // Admin route, or face-scan that didn't auto-approve → queue for admin.
+        individual.KycStatus = "Pending";
+        await _context.SaveChangesAsync();
+
+        return Ok(new
+        {
+            message = "Your identity verification has been submitted for review.",
+            status = individual.KycStatus,
+            autoApproved = false,
+            route
+        });
+    }
+
+    // ── MY KYC STATUS ──────────────────────────────────────────
+    [Authorize(Roles = "Individual")]
+    [HttpGet("verify-identity/status")]
+    public async Task<IActionResult> GetKycStatus()
+    {
+        var userId = int.Parse(User.FindFirst(ClaimTypes.NameIdentifier)!.Value);
+        var individual = await _context.Individuals.FirstOrDefaultAsync(i => i.UserId == userId);
+        if (individual == null) return NotFound("Individual profile not found.");
+
+        return Ok(new
+        {
+            status = individual.KycStatus,
+            route = individual.KycRoute,
+            submittedDate = individual.SubmittedDate,
+            reviewedDate = individual.ReviewedDate,
+            matchScore = individual.KycMatchScore,
+            faceEngineEnabled = _faceService.IsEnabled
+        });
     }
 
     //DISCOVER NPOs
@@ -154,6 +272,10 @@ public class IndividualController : ControllerBase
     {
         var userIdClaim = User.FindFirst(ClaimTypes.NameIdentifier)?.Value;
         var userId = int.Parse(userIdClaim!);
+
+        // Verification gate — unverified users may browse but not apply.
+        var gate = await _gate.CanTransactAsync(userId);
+        if (!gate.Allowed) return StatusCode(403, gate.Reason);
 
         var opportunityExists = await _context.VolunteerOpportunities
             .AnyAsync(v => v.OpportunityId == opportunityId);
@@ -365,6 +487,10 @@ public class IndividualController : ControllerBase
         var userIdClaim = User.FindFirst(ClaimTypes.NameIdentifier)?.Value;
         var userId = int.Parse(userIdClaim!);
 
+        // Verification gate — anti-fraud/AML: only fully verified users may donate.
+        var gate = await _gate.CanTransactAsync(userId);
+        if (!gate.Allowed) return StatusCode(403, gate.Reason);
+
         if (dto.Amount <= 0)
             return BadRequest("Donation amount must be greater than zero.");
 
@@ -553,8 +679,27 @@ public class IndividualController : ControllerBase
         var userIdClaim = User.FindFirst(ClaimTypes.NameIdentifier)?.Value;
         var userId = int.Parse(userIdClaim!);
 
+        // Verification gate — anti-fraud/AML: only fully verified users may top up.
+        var gate = await _gate.CanTransactAsync(userId);
+        if (!gate.Allowed) return StatusCode(403, gate.Reason);
+
         if (dto.Amount <= 0)
             return BadRequest("Top-up amount must be greater than zero.");
+
+        // Per-transaction top-up limits.
+        if (dto.Amount < _limits.MinTopUp)
+            return BadRequest($"Minimum top-up is R {_limits.MinTopUp:0.##}.");
+        if (dto.Amount > _limits.MaxTopUp)
+            return BadRequest($"Maximum top-up is R {_limits.MaxTopUp:0.##}.");
+
+        // Simulated card charge. If card details were supplied, validate them
+        // (Luhn + expiry + CVV); a valid card is always approved.
+        if (_payments != null && HasCardDetails(dto))
+        {
+            var charge = _payments.Charge(dto.CardNumber, dto.CardExpiry, dto.CardCvv);
+            if (!charge.Approved)
+                return BadRequest(charge.DeclineReason ?? "Card was declined.");
+        }
 
         var wallet = await _context.Wallets.FirstOrDefaultAsync(w => w.UserId == userId);
         if (wallet == null)
@@ -592,4 +737,9 @@ public class IndividualController : ControllerBase
             return StatusCode(500, "Top-up failed due to a server error.");
         }
     }
+
+    private static bool HasCardDetails(TopUpRequest dto) =>
+        !string.IsNullOrWhiteSpace(dto.CardNumber)
+        || !string.IsNullOrWhiteSpace(dto.CardExpiry)
+        || !string.IsNullOrWhiteSpace(dto.CardCvv);
 }

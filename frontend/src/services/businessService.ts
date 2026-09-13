@@ -150,7 +150,8 @@ export const businessService = {
   // Wallet
   getWalletBalance: (userId: number) =>
     api.get<WalletBalance>(`/api/wallet/user/${userId}/balance`),
-  topUp: (amount: number) => api.post("/api/business/topup", { amount }),
+  topUp: (amount: number, card?: { cardNumber?: string; cardExpiry?: string; cardCvv?: string }) =>
+    api.post("/api/business/topup", { amount, ...card }),
 
   // Campaigns
   getMyCampaigns: () => api.get<Campaign[]>("/api/business/my-campaigns"),
@@ -207,4 +208,18 @@ export const businessService = {
   getFundraisers: () => api.get<Fundraiser[]>("/api/project"),
   donateToFundraiser: (projectId: number, amount: number) =>
     api.post(`/api/npo/project/${projectId}/donate`, { amount }),
+
+  // View an NPO's verification documents (to vet a partner)
+  getNpoDocuments: (npoId: number) =>
+    api.get<NpoDocuments>(`/api/verification/npo/${npoId}`),
 };
+
+export interface NpoDocuments {
+  npoId: number;
+  hasDocuments: boolean;
+  status: string | null;
+  npoCertificate: string | null;
+  npoTaxCertificate: string | null;
+  submittedDate?: string;
+  reviewedDate?: string | null;
+}

@@ -3,9 +3,16 @@ import { Link } from "react-router";
 import { motion } from "motion/react";
 import { toast } from "sonner";
 import { useAuth } from "../../context/AuthContext";
-import { businessService, getErrorMessage, type BusinessProfile, type NPOSummary, type FollowedNPO, type Campaign, type CampaignApplication, type DonationsResponse, type BusinessImpact, type CommunityPost, type CommentItem } from "../../services/businessService";
+import NotificationBell from "./NotificationBell";
+import EmailVerificationBanner from "./EmailVerificationBanner";
+import ReportPostButton from "./ReportPostButton";
+import CardPaymentFields, { type CardDetails, emptyCard, validateCard } from "./CardPaymentFields";
+import BusinessReportsPanel from "./reports/BusinessReportsPanel";
+import { resolveMediaUrl } from "../../lib/api";
+import { businessService, getErrorMessage, type BusinessProfile, type NPOSummary, type FollowedNPO, type Campaign, type CampaignApplication, type DonationsResponse, type BusinessImpact, type CommunityPost, type CommentItem, type Fundraiser, type NpoDocuments } from "../../services/businessService";
 import { Button } from "./ui/button";
 import { Card } from "./ui/card";
+import { Carousel, CarouselContent, CarouselItem, CarouselPrevious, CarouselNext } from "./ui/carousel";
 import { Badge } from "./ui/badge";
 import { Input } from "./ui/input";
 import { Label } from "./ui/label";
@@ -37,6 +44,12 @@ export default function BusinessDashboard() {
   // Campaigns
   const [campaigns, setCampaigns] = useState<Campaign[]>([]);
   const [campaignsLoading, setCampaignsLoading] = useState(false);
+
+  // Overview slider: all NPO fundraisers + NPO document viewer
+  const [allFundraisers, setAllFundraisers] = useState<Fundraiser[]>([]);
+  const [docModalNpo, setDocModalNpo] = useState<{ npoId: number; name: string } | null>(null);
+  const [npoDocs, setNpoDocs] = useState<NpoDocuments | null>(null);
+  const [docsLoading, setDocsLoading] = useState(false);
   const [showCreateCampaign, setShowCreateCampaign] = useState(false);
   const [editingCampaign, setEditingCampaign] = useState<Campaign | null>(null);
   const [selectedCampaign, setSelectedCampaign] = useState<Campaign | null>(null);
@@ -52,6 +65,7 @@ export default function BusinessDashboard() {
   const [walletLoading, setWalletLoading] = useState(false);
   const [showTopUp, setShowTopUp] = useState(false);
   const [topUpAmount, setTopUpAmount] = useState("");
+  const [topUpCard, setTopUpCard] = useState<CardDetails>(emptyCard);
   const [toppingUp, setToppingUp] = useState(false);
   const [showDonateModal, setShowDonateModal] = useState(false);
   const [donateNpoId, setDonateNpoId] = useState<number | null>(null);
@@ -124,15 +138,34 @@ export default function BusinessDashboard() {
     finally { setCommunityLoading(false); }
   }, []);
 
+  const loadOverviewSlider = useCallback(async () => {
+    try {
+      const [c, f] = await Promise.all([businessService.getMyCampaigns(), businessService.getFundraisers()]);
+      setCampaigns(c.data);
+      setAllFundraisers(f.data.filter(x => x.projectStatus === "Active"));
+    } catch { /* non-critical slider */ }
+  }, []);
+
   useEffect(() => { loadProfile(); loadWallet(); loadImpact(); }, [loadProfile, loadWallet, loadImpact]);
   useEffect(() => {
+    if (activeTab === "overview") loadOverviewSlider();
     if (activeTab === "discover") loadNPOs();
     if (activeTab === "campaigns") loadCampaigns();
     if (activeTab === "donations") loadDonations();
     if (activeTab === "community") loadCommunity();
-  }, [activeTab, loadNPOs, loadCampaigns, loadDonations, loadCommunity]);
+  }, [activeTab, loadOverviewSlider, loadNPOs, loadCampaigns, loadDonations, loadCommunity]);
 
   // ═══ HANDLERS ═══
+  const handleViewDocs = async (npoId: number, name: string) => {
+    setDocModalNpo({ npoId, name });
+    setNpoDocs(null);
+    setDocsLoading(true);
+    try {
+      const r = await businessService.getNpoDocuments(npoId);
+      setNpoDocs(r.data);
+    } catch (e) { toast.error(getErrorMessage(e)); }
+    finally { setDocsLoading(false); }
+  };
   const handleFollow = async (npoId: number) => {
     const isFollowed = followedNpoIds.has(npoId);
     if (isFollowed) {
@@ -163,11 +196,17 @@ export default function BusinessDashboard() {
     e.preventDefault();
     const amt = parseFloat(topUpAmount);
     if (!amt || amt <= 0) { toast.error("Enter a valid amount."); return; }
+    const cardError = validateCard(topUpCard);
+    if (cardError) { toast.error(cardError); return; }
     setToppingUp(true);
     try {
-      const r = await businessService.topUp(amt);
+      const r = await businessService.topUp(amt, {
+        cardNumber: topUpCard.cardNumber,
+        cardExpiry: topUpCard.cardExpiry,
+        cardCvv: topUpCard.cardCvv,
+      });
       setWalletBalance(r.data.newBalance);
-      setShowTopUp(false); setTopUpAmount("");
+      setShowTopUp(false); setTopUpAmount(""); setTopUpCard(emptyCard);
       toast.success(`R ${amt.toLocaleString()} added to wallet!`);
     } catch (e) { toast.error(getErrorMessage(e)); }
     finally { setToppingUp(false); }
@@ -281,11 +320,11 @@ export default function BusinessDashboard() {
   // ═══ RENDER ═══
   return (
     <div className="min-h-screen bg-neutral-50">
-      <header className="bg-white border-b border-neutral-200 py-4 px-6"><div className="container mx-auto max-w-7xl flex items-center justify-between"><div className="flex items-center gap-3"><button onClick={() => setSidebarOpen(true)} className="lg:hidden text-neutral-600"><Menu className="w-6 h-6" /></button><button onClick={() => setActiveTab("overview")} className="text-xl text-neutral-900 font-bold">UbuntuConnect</button></div><div className="flex items-center gap-4"><span className="text-neutral-600 hidden sm:inline">{profile?.contactPersonName || profile?.businessEmail || "Business"}</span><Button variant="outline" size="sm" onClick={logout}><LogOut className="w-4 h-4 mr-2" /> Logout</Button></div></div></header>
+      <header className="bg-white border-b border-neutral-200 py-4 px-6 sticky top-0 z-40"><div className="container mx-auto max-w-7xl flex items-center justify-between"><div className="flex items-center gap-3"><button onClick={() => setSidebarOpen(true)} className="lg:hidden text-neutral-600"><Menu className="w-6 h-6" /></button><button onClick={() => setActiveTab("overview")} className="text-xl text-neutral-900 font-bold">UbuntuConnect</button></div><div className="flex items-center gap-4"><span className="text-neutral-600 hidden sm:inline">{profile?.contactPersonName || profile?.businessEmail || "Business"}</span><NotificationBell /><Button variant="outline" size="sm" onClick={logout}><LogOut className="w-4 h-4 mr-2" /> Logout</Button></div></div></header>
 
       <div className="flex">
         {sidebarOpen && <div className="fixed inset-0 bg-black/50 z-30 lg:hidden" onClick={() => setSidebarOpen(false)} />}
-        <aside className={`${sidebarOpen ? "translate-x-0" : "-translate-x-full"} lg:translate-x-0 transition-transform fixed lg:sticky top-0 left-0 z-40 w-64 bg-white border-r border-neutral-200 h-screen lg:min-h-[calc(100vh-73px)] p-6 overflow-y-auto`}>
+        <aside className={`${sidebarOpen ? "translate-x-0" : "-translate-x-full"} lg:translate-x-0 transition-transform fixed lg:sticky top-0 lg:top-[73px] left-0 z-40 lg:z-30 w-64 bg-white border-r border-neutral-200 h-screen lg:h-[calc(100vh-73px)] p-6 overflow-y-auto`}>
           <div className="flex justify-between items-center mb-4 lg:hidden"><span className="font-bold">Menu</span><button onClick={() => setSidebarOpen(false)}><X className="w-5 h-5" /></button></div>
           <nav className="space-y-2">
             {[
@@ -296,6 +335,7 @@ export default function BusinessDashboard() {
               { id: "donations", icon: DollarSign, label: "Donations" },
               { id: "wallet", icon: Wallet, label: "Wallet" },
               { id: "community", icon: MessageSquare, label: "Community Feed" },
+              { id: "reports", icon: TrendingUp, label: "Reports" },
             ].map(item => (
               <button key={item.id} onClick={() => selectTab(item.id)} className={`w-full flex items-center gap-3 px-4 py-2 rounded-lg transition-colors ${activeTab === item.id ? "bg-orange-50 text-orange-600" : "text-neutral-600 hover:bg-neutral-50"}`}><item.icon className="w-5 h-5" /> {item.label}</button>
             ))}
@@ -315,7 +355,56 @@ export default function BusinessDashboard() {
                 <Card className="p-6 cursor-pointer hover:shadow-md" onClick={() => setActiveTab("campaigns")}><div className="flex justify-between mb-2"><span className="text-neutral-600 text-sm">Campaigns</span><Target className="w-5 h-5 text-neutral-400" /></div><div className="text-3xl font-bold">{impact?.activeCampaigns || 0}</div></Card>
                 <Card className="p-6 cursor-pointer hover:shadow-md" onClick={() => setActiveTab("discover")}><div className="flex justify-between mb-2"><span className="text-neutral-600 text-sm">NPOs Supported</span><Users className="w-5 h-5 text-neutral-400" /></div><div className="text-3xl font-bold">{impact?.nposSupported || 0}</div></Card>
               </div>
-              {profile?.csrGoal && <Card className="p-6"><h3 className="font-semibold mb-2">CSR Goal</h3><p className="text-neutral-600">{profile.csrGoal}</p></Card>}
+              {profile?.csrGoal && <Card className="p-6 mb-8"><h3 className="font-semibold mb-2">CSR Goal</h3><p className="text-neutral-600">{profile.csrGoal}</p></Card>}
+
+              {campaigns.length > 0 && (
+                <div className="mb-8">
+                  <div className="flex items-center justify-between mb-3"><h2 className="text-lg font-semibold">Your Campaigns</h2><Button variant="ghost" size="sm" onClick={() => setActiveTab("campaigns")}>Manage</Button></div>
+                  <Carousel opts={{ align: "start" }} className="w-full">
+                    <CarouselContent>
+                      {campaigns.map(c => (
+                        <CarouselItem key={c.campaignId} className="md:basis-1/2 lg:basis-1/3">
+                          <Card className="p-5 h-full">
+                            <Badge variant="outline" className="mb-2">Your campaign</Badge>
+                            <h3 className="font-semibold truncate">{c.title}</h3>
+                            {c.category && <p className="text-xs text-neutral-500 mt-1">{c.category}</p>}
+                            {c.budgetPerPartner != null && <p className="text-sm text-orange-600 mt-2">R {c.budgetPerPartner.toLocaleString()} per partner</p>}
+                            {c.description && <p className="text-sm text-neutral-600 mt-2 line-clamp-2">{c.description}</p>}
+                          </Card>
+                        </CarouselItem>
+                      ))}
+                    </CarouselContent>
+                    <CarouselPrevious />
+                    <CarouselNext />
+                  </Carousel>
+                </div>
+              )}
+
+              {allFundraisers.length > 0 && (
+                <div className="mb-8">
+                  <div className="flex items-center justify-between mb-3"><h2 className="text-lg font-semibold">NPO Fundraisers</h2><Link to="/fundraisers" className="text-sm text-orange-600 hover:underline">See all</Link></div>
+                  <Carousel opts={{ align: "start" }} className="w-full">
+                    <CarouselContent>
+                      {allFundraisers.map(f => (
+                        <CarouselItem key={f.projectId} className="md:basis-1/2 lg:basis-1/3">
+                          <Card className="overflow-hidden h-full">
+                            {f.images && <img src={resolveMediaUrl(f.images.split(",")[0].trim())} alt={f.projectName} className="w-full h-28 object-cover" />}
+                            <div className="p-4">
+                              <p className="text-xs text-orange-600 font-medium truncate">{f.npoName}</p>
+                              <h3 className="font-semibold text-sm truncate">{f.projectName}</h3>
+                              <div className="w-full bg-neutral-200 rounded-full h-2 mt-2"><div className="bg-orange-600 h-2 rounded-full" style={{ width: `${f.targetAmount > 0 ? Math.min(100, (f.raisedAmount / f.targetAmount) * 100) : 0}%` }} /></div>
+                              <p className="text-xs text-neutral-500 mt-1">R {f.raisedAmount.toLocaleString()} of R {f.targetAmount.toLocaleString()}</p>
+                              <div className="flex gap-2 mt-3"><Button size="sm" variant="outline" className="flex-1" onClick={() => handleViewDocs(f.npoId, f.npoName)}><FileText className="w-3.5 h-3.5 mr-1" /> Docs</Button><Button asChild size="sm" className="flex-1 bg-orange-600 hover:bg-orange-700"><Link to={`/npo/${f.npoId}`}>Profile</Link></Button></div>
+                            </div>
+                          </Card>
+                        </CarouselItem>
+                      ))}
+                    </CarouselContent>
+                    <CarouselPrevious />
+                    <CarouselNext />
+                  </Carousel>
+                </div>
+              )}
             </div>)}
 
             {/* DISCOVER NPOs */}
@@ -332,6 +421,7 @@ export default function BusinessDashboard() {
                       <Button variant={followedNpoIds.has(npo.npoId) ? "default" : "outline"} size="sm" className={`flex-1 ${followedNpoIds.has(npo.npoId) ? "bg-orange-600 hover:bg-orange-700" : ""}`} onClick={() => handleFollow(npo.npoId)}><Heart className={`w-4 h-4 mr-1 ${followedNpoIds.has(npo.npoId) ? "fill-current" : ""}`} /> {followedNpoIds.has(npo.npoId) ? "Following" : "Follow"}</Button>
                       <Button variant="outline" size="sm" onClick={() => { setDonateNpoId(npo.npoId); setDonateAmount(""); setShowDonateModal(true); }}><DollarSign className="w-4 h-4" /></Button>
                     </div>
+                    <Link to={`/npo/${npo.npoId}`} className="block text-center text-sm text-orange-600 hover:underline mt-3">View full profile</Link>
                   </Card>
                 ))}</div>
               )}
@@ -404,12 +494,15 @@ export default function BusinessDashboard() {
               {communityLoading ? <div className="flex justify-center py-12"><Loader2 className="w-8 h-8 animate-spin" /></div> : communityPosts.length === 0 ? <Card className="p-12 text-center"><p className="text-neutral-600">No posts yet.</p></Card> : (
                 <div className="grid md:grid-cols-2 gap-6">{communityPosts.map(post => (
                   <Card key={post.postId} className="overflow-hidden hover:shadow-lg transition-shadow">
-                    {post.mediaUrl && <img src={post.mediaUrl} alt="" className="w-full h-48 object-cover" />}
-                    <div className="p-6"><p className="text-xs text-orange-600 font-medium mb-1">{post.authorName}</p><h3 className="font-semibold mb-2">{post.postTitle}</h3>{post.content && <p className="text-neutral-600 text-sm mb-4 line-clamp-3">{post.content}</p>}<div className="flex items-center justify-between text-sm"><div className="flex items-center gap-4"><button onClick={() => handleLikePost(post.postId)} className={`flex items-center gap-1 ${likedPostIds.has(post.postId) ? "text-red-500" : "text-neutral-600"}`}><Heart className={`w-4 h-4 ${likedPostIds.has(post.postId) ? "fill-current" : ""}`} /> {post.likeCount}</button><button onClick={() => handleOpenComments(post)} className="flex items-center gap-1 text-neutral-600 hover:text-orange-600"><MessageSquare className="w-4 h-4" /> Comment</button></div><span className="text-neutral-500 text-xs">{new Date(post.timestamp).toLocaleDateString()}</span></div></div>
+                    {post.mediaUrl && <img src={resolveMediaUrl(post.mediaUrl)} alt="" className="w-full h-48 object-cover cursor-pointer" onClick={() => handleOpenComments(post)} />}
+                    <div className="p-6"><p className="text-xs text-orange-600 font-medium mb-1">{post.authorName}</p><h3 className="font-semibold mb-2">{post.postTitle}</h3>{post.content && <p className="text-neutral-600 text-sm mb-4 line-clamp-3">{post.content}</p>}<div className="flex items-center justify-between text-sm"><div className="flex items-center gap-4"><button onClick={() => handleLikePost(post.postId)} className={`flex items-center gap-1 ${likedPostIds.has(post.postId) ? "text-red-500" : "text-neutral-600"}`}><Heart className={`w-4 h-4 ${likedPostIds.has(post.postId) ? "fill-current" : ""}`} /> {post.likeCount}</button><button onClick={() => handleOpenComments(post)} className="flex items-center gap-1 text-neutral-600 hover:text-orange-600"><MessageSquare className="w-4 h-4" /> Comment</button><ReportPostButton postId={post.postId} /></div><span className="text-neutral-500 text-xs">{new Date(post.timestamp).toLocaleDateString()}</span></div></div>
                   </Card>
                 ))}</div>
               )}
             </div>)}
+
+            {/* REPORTS */}
+            {activeTab === "reports" && (<div><BusinessReportsPanel /></div>)}
 
           </motion.div>
         </main>
@@ -455,8 +548,24 @@ export default function BusinessDashboard() {
         <div className="flex justify-between items-center mb-4"><h2 className="text-lg font-bold">Top Up Wallet</h2><Button variant="ghost" size="sm" onClick={() => setShowTopUp(false)}><X className="w-4 h-4" /></Button></div>
         <form onSubmit={handleTopUp} className="space-y-4">
           <div><Label>Amount (R)</Label><Input type="number" step="0.01" min="1" value={topUpAmount} onChange={e => setTopUpAmount(e.target.value)} required /></div>
+          <CardPaymentFields value={topUpCard} onChange={setTopUpCard} disabled={toppingUp} />
           <Button type="submit" className="w-full bg-orange-600 hover:bg-orange-700" disabled={toppingUp}>{toppingUp ? <Loader2 className="w-4 h-4 animate-spin" /> : "Top Up"}</Button>
         </form>
+      </Card></div>)}
+
+      {/* NPO DOCUMENTS MODAL */}
+      {docModalNpo && (<div className="fixed inset-0 bg-black/50 flex items-center justify-center z-50 p-4" onClick={() => setDocModalNpo(null)}><Card className="w-full max-w-md p-6" onClick={e => e.stopPropagation()}>
+        <div className="flex justify-between items-center mb-4"><h2 className="text-lg font-bold">Verification Documents</h2><Button variant="ghost" size="sm" onClick={() => setDocModalNpo(null)}><X className="w-4 h-4" /></Button></div>
+        <p className="text-sm text-neutral-600 mb-4">{docModalNpo.name}</p>
+        {docsLoading ? <div className="flex justify-center py-8"><Loader2 className="w-6 h-6 animate-spin text-orange-600" /></div> : !npoDocs || !npoDocs.hasDocuments ? (
+          <p className="text-neutral-500 text-sm">This NPO has not submitted any verification documents yet.</p>
+        ) : (
+          <div className="space-y-3">
+            {npoDocs.status && <Badge className={npoDocs.status === "Approved" ? "bg-green-100 text-green-700" : npoDocs.status === "Rejected" ? "bg-red-100 text-red-700" : "bg-amber-100 text-amber-700"}>{npoDocs.status}</Badge>}
+            {npoDocs.npoCertificate && <a href={resolveMediaUrl(npoDocs.npoCertificate)} target="_blank" rel="noreferrer" className="flex items-center gap-2 rounded-md border border-neutral-200 p-3 hover:bg-neutral-50"><FileText className="w-5 h-5 text-orange-600" /><span className="text-sm">NPO Registration Certificate</span></a>}
+            {npoDocs.npoTaxCertificate && <a href={resolveMediaUrl(npoDocs.npoTaxCertificate)} target="_blank" rel="noreferrer" className="flex items-center gap-2 rounded-md border border-neutral-200 p-3 hover:bg-neutral-50"><FileText className="w-5 h-5 text-orange-600" /><span className="text-sm">Tax Clearance Certificate</span></a>}
+          </div>
+        )}
       </Card></div>)}
 
       {/* COMMENTS MODAL */}
@@ -479,6 +588,8 @@ export default function BusinessDashboard() {
           ))}</div>
         )}
       </Card></div>)}
+
+      <EmailVerificationBanner />
     </div>
   );
 }

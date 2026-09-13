@@ -23,6 +23,9 @@ public partial class User
 
     public bool IsActive { get; set; }
 
+    /// <summary>Stage 1 gate: has the user confirmed their email address.</summary>
+    public bool IsEmailVerified { get; set; }
+
     public virtual ICollection<Business> Businesses { get; set; } = new List<Business>();
 
     public virtual ICollection<Follow> Follows { get; set; } = new List<Follow>();

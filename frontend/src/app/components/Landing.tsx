@@ -12,9 +12,11 @@ export default function Landing() {
           <Link to="/" className="text-xl text-white">
             UbuntuConnect
           </Link>
-          <div className="flex items-center gap-4">
-            <Link to="/login" className="text-white hover:text-white/80">
-              Sign In
+          <div className="flex items-center gap-3">
+            <Link to="/login">
+              <Button size="sm" variant="outline" className="border-white text-white bg-transparent hover:bg-white hover:text-orange-600">
+                Sign In
+              </Button>
             </Link>
             <Link to="/register">
               <Button size="sm" className="bg-white text-orange-600 hover:bg-neutral-100">
@@ -50,11 +52,18 @@ export default function Landing() {
               <p className="text-white/80 text-lg mb-8 max-w-lg">
                 The digital platform connecting South African NPOs with individuals and businesses through trust, visibility, and meaningful engagement.
               </p>
-              <Link to="/register">
-                <Button size="lg" className="bg-orange-600 hover:bg-orange-700 text-white px-8 py-6 text-lg">
-                  Get Started
-                </Button>
-              </Link>
+              <div className="flex flex-wrap items-center gap-4">
+                <Link to="/register">
+                  <Button size="lg" className="bg-orange-600 hover:bg-orange-700 text-white px-8 py-6 text-lg">
+                    Get Started
+                  </Button>
+                </Link>
+                <Link to="/login">
+                  <Button size="lg" variant="outline" className="border-white text-white bg-transparent hover:bg-white hover:text-orange-600 px-8 py-6 text-lg">
+                    Sign In
+                  </Button>
+                </Link>
+              </div>
             </motion.div>
           </div>
         </div>

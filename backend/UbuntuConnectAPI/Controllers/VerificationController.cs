@@ -93,6 +93,45 @@ public class VerificationController : ControllerBase
 
         return Ok(verifications);
     }
+
+    // Businesses (and admins) can view an NPO's submitted verification documents
+    // to vet a potential partner. Returns the NPO's latest verification record.
+    [Authorize(Roles = "Business,Admin")]
+    [HttpGet("npo/{npoId}")]
+    public async Task<IActionResult> GetNpoDocuments(int npoId)
+    {
+        var npoExists = await _context.Npos.AnyAsync(n => n.NpoId == npoId);
+        if (!npoExists) return NotFound("NPO not found.");
+
+        var latest = await _context.Verifications
+            .Where(v => v.NpoId == npoId)
+            .OrderByDescending(v => v.SubmittedDate)
+            .Select(v => new
+            {
+                verificationId = v.VerificationId,
+                npoId = v.NpoId,
+                npoCertificate = v.Npocertificate,
+                npoTaxCertificate = v.NpotaxCertificate,
+                status = v.Status,
+                submittedDate = v.SubmittedDate,
+                reviewedDate = v.ReviewedDate
+            })
+            .FirstOrDefaultAsync();
+
+        if (latest == null)
+            return Ok(new { npoId, hasDocuments = false, status = (string?)null, npoCertificate = (string?)null, npoTaxCertificate = (string?)null });
+
+        return Ok(new
+        {
+            latest.npoId,
+            hasDocuments = latest.npoCertificate != null || latest.npoTaxCertificate != null,
+            latest.status,
+            latest.npoCertificate,
+            latest.npoTaxCertificate,
+            latest.submittedDate,
+            latest.reviewedDate
+        });
+    }
 }
 
 public class SubmitVerificationRequest

@@ -6,15 +6,56 @@ import { Input } from "./ui/input";
 import { Label } from "./ui/label";
 import { Textarea } from "./ui/textarea";
 import { useAuth, type RegisterDto } from "../../context/AuthContext";
+import {
+  isStrongPassword,
+  isValidEmail,
+  isValidPhone,
+  isValidNpoRegNum,
+  isValidCipcNumber,
+  validationMessages,
+} from "../../lib/validators";
+import {
+  NPO_FOCUS_AREAS,
+  BUSINESS_INDUSTRIES,
+  CSR_BBEE_GOALS,
+} from "../../lib/registrationOptions";
+import SelectWithOther, { resolveWithOther } from "./registration/SelectWithOther";
+import LocationPicker, { composeLocation } from "./registration/LocationPicker";
+import CausesMultiSelect from "./registration/CausesMultiSelect";
 import { AxiosError } from "axios";
 
-type UserTypeSelection = "npo" | "individual" | "business" | "admin" | null;
+type UserTypeSelection = "npo" | "individual" | "business" | null;
 
 export default function Register() {
   const { register } = useAuth();
   const [selectedType, setSelectedType] = useState<UserTypeSelection>(null);
   const [error, setError] = useState<string | null>(null);
   const [loading, setLoading] = useState(false);
+
+  // ── Controlled structured fields (dropdowns / multi-select / location) ──
+  const [province, setProvince] = useState("");
+  const [city, setCity] = useState("");
+  const [focusArea, setFocusArea] = useState("");
+  const [focusAreaOther, setFocusAreaOther] = useState("");
+  const [industry, setIndustry] = useState("");
+  const [industryOther, setIndustryOther] = useState("");
+  const [csrGoal, setCsrGoal] = useState("");
+  const [csrGoalOther, setCsrGoalOther] = useState("");
+  const [causes, setCauses] = useState<string[]>([]);
+
+  const resetStructured = () => {
+    setProvince(""); setCity("");
+    setFocusArea(""); setFocusAreaOther("");
+    setIndustry(""); setIndustryOther("");
+    setCsrGoal(""); setCsrGoalOther("");
+    setCauses([]);
+  };
+
+  const changeType = (type: UserTypeSelection) => {
+    setSelectedType(type);
+    setError(null);
+    resetStructured();
+  };
 
   const handleSubmit = async (e: React.FormEvent<HTMLFormElement>) => {
     e.preventDefault();
@@ -23,14 +64,44 @@ export default function Register() {
 
     const formData = new FormData(e.currentTarget);
 
+    // Client-side gate: email format, password strength, and password match.
+    const emailValue = formData.get("email") as string;
+    const passwordValue = formData.get("password") as string;
+    const confirmValue = formData.get("confirm-password") as string;
+    const phoneValue = (formData.get("phone") as string) || "";
+
+    if (!isValidEmail(emailValue)) {
+      setError(validationMessages.email);
+      setLoading(false);
+      return;
+    }
+    if (!isStrongPassword(passwordValue)) {
+      setError(validationMessages.password);
+      setLoading(false);
+      return;
+    }
+    if (passwordValue !== confirmValue) {
+      setError("Passwords do not match. Please re-enter your password.");
+      setLoading(false);
+      return;
+    }
+    // Phone is optional, but if provided it must be valid.
+    if (phoneValue && !isValidPhone(phoneValue)) {
+      setError(validationMessages.phone);
+      setLoading(false);
+      return;
+    }
+
+    const location = composeLocation(province, city);
+
     try {
       let dto: RegisterDto;
 
       const baseFields = {
-        userEmail: formData.get("email") as string,
-        password: formData.get("password") as string,
-        userContact: (formData.get("phone") as string) || undefined,
-        location: (formData.get("location") as string) || undefined,
+        userEmail: emailValue,
+        password: passwordValue,
+        userContact: phoneValue || undefined,
+        location,
       };
 
       switch (selectedType) {
@@ -40,37 +111,45 @@ export default function Register() {
             userType: "Individual",
             firstName: formData.get("first-name") as string,
             lastName: formData.get("last-name") as string,
-            causeOfCare: (formData.get("interests") as string) || undefined,
+            causeOfCare: causes.length > 0 ? causes.join(", ") : undefined,
           };
           break;
-        case "npo":
+        case "npo": {
+          const regNum = formData.get("registration-number") as string;
+          if (!isValidNpoRegNum(regNum)) {
+            setError(validationMessages.npoRegNum);
+            setLoading(false);
+            return;
+          }
           dto = {
             ...baseFields,
             userType: "NPO",
-            npoRegNum: formData.get("registration-number") as string,
+            npoRegNum: regNum,
             organizationName: formData.get("org-name") as string,
-            npoFocusArea: (formData.get("focus-area") as string) || undefined,
+            npoFocusArea: resolveWithOther(focusArea, focusAreaOther),
             npoMission: (formData.get("mission") as string) || undefined,
           };
           break;
-        case "business":
+        }
+        case "business": {
+          const regNum = formData.get("registration-number") as string;
+          if (!isValidCipcNumber(regNum)) {
+            setError(validationMessages.cipc);
+            setLoading(false);
+            return;
+          }
           dto = {
             ...baseFields,
             userType: "Business",
-            businessRegNum: formData.get("registration-number") as string,
-            industry: (formData.get("industry") as string) || undefined,
+            businessRegNum: regNum,
+            industry: resolveWithOther(industry, industryOther),
             contactPersonName: (formData.get("contact-name") as string) || undefined,
             contactPersonTitle: (formData.get("job-title") as string) || undefined,
             businessEmail: baseFields.userEmail,
-            csrGoal: (formData.get("csr-goals") as string) || undefined,
+            csrGoal: resolveWithOther(csrGoal, csrGoalOther),
           };
           break;
-        case "admin":
-          dto = {
-            ...baseFields,
-            userType: "Admin",
-          };
-          break;
+        }
         default:
           setError("Please select an account type.");
           setLoading(false);
@@ -102,7 +181,7 @@ export default function Register() {
   return (
     <div className="min-h-screen bg-neutral-50">
       {/* Header */}
-      <header className="bg-white border-b border-neutral-200 py-4 px-6">
+      <header className="bg-white border-b border-neutral-200 py-4 px-6 sticky top-0 z-40">
         <div className="container mx-auto max-w-7xl flex items-center justify-between">
           <Link to="/" className="text-xl text-neutral-900">
             UbuntuConnect
@@ -137,7 +216,7 @@ export default function Register() {
                 <h2 className="mb-6 text-center">I am a...</h2>
                 <div className="grid gap-4">
                   <button
-                    onClick={() => setSelectedType("npo")}
+                    onClick={() => changeType("npo")}
                     className="p-6 border-2 border-neutral-200 rounded-lg hover:border-orange-500 hover:bg-orange-50 transition-all text-left group"
                   >
                     <div className="flex items-start gap-4">
@@ -154,7 +233,7 @@ export default function Register() {
                   </button>
 
                   <button
-                    onClick={() => setSelectedType("individual")}
+                    onClick={() => changeType("individual")}
                     className="p-6 border-2 border-neutral-200 rounded-lg hover:border-orange-500 hover:bg-orange-50 transition-all text-left group"
                   >
                     <div className="flex items-start gap-4">
@@ -171,7 +250,7 @@ export default function Register() {
                   </button>
 
                   <button
-                    onClick={() => setSelectedType("business")}
+                    onClick={() => changeType("business")}
                     className="p-6 border-2 border-neutral-200 rounded-lg hover:border-orange-500 hover:bg-orange-50 transition-all text-left group"
                   >
                     <div className="flex items-start gap-4">
@@ -182,23 +261,6 @@ export default function Register() {
                         <h3 className="mb-1">Business</h3>
                         <p className="text-neutral-600 text-sm">
                           Find NPO partners for B-BBEE and CSR initiatives
-                        </p>
-                      </div>
-                    </div>
-                  </button>
-
-                  <button
-                    onClick={() => setSelectedType("admin")}
-                    className="p-6 border-2 border-neutral-200 rounded-lg hover:border-purple-500 hover:bg-purple-50 transition-all text-left group"
-                  >
-                    <div className="flex items-start gap-4">
-                      <div className="w-12 h-12 rounded-full bg-purple-100 flex items-center justify-center flex-shrink-0 group-hover:bg-purple-200 transition-colors">
-                        <span className="text-2xl" aria-hidden="true">🔐</span>
-                      </div>
-                      <div>
-                        <h3 className="mb-1">Administrator</h3>
-                        <p className="text-neutral-600 text-sm">
-                          Manage platform, verify NPOs, and oversee operations
                         </p>
                       </div>
                     </div>
@@ -217,7 +279,7 @@ export default function Register() {
                 <div className="flex items-center justify-between mb-6">
                   <h2>NPO Registration</h2>
                   <button
-                    onClick={() => { setSelectedType(null); setError(null); }}
+                    onClick={() => changeType(null)}
                     className="text-sm text-neutral-600 hover:text-neutral-900"
                   >
                     Change
@@ -232,7 +294,7 @@ export default function Register() {
 
                   <div>
                     <Label htmlFor="registration-number">NPO Registration Number</Label>
-                    <Input id="registration-number" name="registration-number" placeholder="e.g., 123-456-NPO" className="mt-2" required disabled={loading} />
+                    <Input id="registration-number" name="registration-number" placeholder="e.g., 123-456 or 123-456-NPO" className="mt-2" required disabled={loading} />
                   </div>
 
                   <div>
@@ -242,18 +304,29 @@ export default function Register() {
 
                   <div>
                     <Label htmlFor="phone">Phone Number</Label>
-                    <Input id="phone" name="phone" type="tel" placeholder="+27 XX XXX XXXX" className="mt-2" disabled={loading} />
+                    <Input id="phone" name="phone" type="tel" placeholder="+27821234567 or 0821234567" className="mt-2" disabled={loading} />
                   </div>
 
-                  <div>
-                    <Label htmlFor="location">Location</Label>
-                    <Input id="location" name="location" placeholder="City, Province" className="mt-2" disabled={loading} />
-                  </div>
+                  <LocationPicker
+                    province={province}
+                    city={city}
+                    onProvinceChange={setProvince}
+                    onCityChange={setCity}
+                    disabled={loading}
+                  />
 
-                  <div>
-                    <Label htmlFor="focus-area">Focus Area</Label>
-                    <Input id="focus-area" name="focus-area" placeholder="e.g., Education, Health, Youth Development" className="mt-2" disabled={loading} />
-                  </div>
+                  <SelectWithOther
+                    id="focus-area"
+                    label="Focus Area"
+                    options={NPO_FOCUS_AREAS}
+                    value={focusArea}
+                    onChange={setFocusArea}
+                    otherValue={focusAreaOther}
+                    onOtherChange={setFocusAreaOther}
+                    placeholder="Select your focus area"
+                    otherPlaceholder="Describe your focus area"
+                    disabled={loading}
+                  />
 
                   <div>
                     <Label htmlFor="mission">Mission Statement</Label>
@@ -262,7 +335,12 @@ export default function Register() {
 
                   <div>
                     <Label htmlFor="password">Password</Label>
-                    <Input id="password" name="password" type="password" placeholder="Create a secure password (min 8 characters)" className="mt-2" required minLength={8} disabled={loading} />
+                    <Input id="password" name="password" type="password" placeholder="Create a secure password (min 8 characters, letters + numbers)" className="mt-2" required minLength={8} disabled={loading} />
+                  </div>
+
+                  <div>
+                    <Label htmlFor="confirm-password">Re-enter Password</Label>
+                    <Input id="confirm-password" name="confirm-password" type="password" placeholder="Re-enter your password to confirm" className="mt-2" required minLength={8} disabled={loading} />
                   </div>
 
                   <Button type="submit" className="w-full bg-orange-600 hover:bg-orange-700" disabled={loading}>
@@ -282,7 +360,7 @@ export default function Register() {
                 <div className="flex items-center justify-between mb-6">
                   <h2>Individual Registration</h2>
                   <button
-                    onClick={() => { setSelectedType(null); setError(null); }}
+                    onClick={() => changeType(null)}
                     className="text-sm text-neutral-600 hover:text-neutral-900"
                   >
                     Change
@@ -307,18 +385,28 @@ export default function Register() {
                   </div>
 
                   <div>
-                    <Label htmlFor="location">Location (Optional)</Label>
-                    <Input id="location" name="location" placeholder="City, Province" className="mt-2" disabled={loading} />
+                    <Label htmlFor="phone">Phone Number (Optional)</Label>
+                    <Input id="phone" name="phone" type="tel" placeholder="+27821234567 or 0821234567" className="mt-2" disabled={loading} />
                   </div>
 
-                  <div>
-                    <Label htmlFor="interests">Causes You Care About (Optional)</Label>
-                    <Input id="interests" name="interests" placeholder="e.g., Education, Environment, Health" className="mt-2" disabled={loading} />
-                  </div>
+                  <LocationPicker
+                    province={province}
+                    city={city}
+                    onProvinceChange={setProvince}
+                    onCityChange={setCity}
+                    disabled={loading}
+                  />
+
+                  <CausesMultiSelect selected={causes} onChange={setCauses} disabled={loading} />
 
                   <div>
                     <Label htmlFor="password">Password</Label>
-                    <Input id="password" name="password" type="password" placeholder="Create a secure password (min 8 characters)" className="mt-2" required minLength={8} disabled={loading} />
+                    <Input id="password" name="password" type="password" placeholder="Create a secure password (min 8 characters, letters + numbers)" className="mt-2" required minLength={8} disabled={loading} />
+                  </div>
+
+                  <div>
+                    <Label htmlFor="confirm-password">Re-enter Password</Label>
+                    <Input id="confirm-password" name="confirm-password" type="password" placeholder="Re-enter your password to confirm" className="mt-2" required minLength={8} disabled={loading} />
                   </div>
 
                   <Button type="submit" className="w-full bg-orange-600 hover:bg-orange-700" disabled={loading}>
@@ -338,7 +426,7 @@ export default function Register() {
                 <div className="flex items-center justify-between mb-6">
                   <h2>Business Registration</h2>
                   <button
-                    onClick={() => { setSelectedType(null); setError(null); }}
+                    onClick={() => changeType(null)}
                     className="text-sm text-neutral-600 hover:text-neutral-900"
                   >
                     Change
@@ -348,13 +436,21 @@ export default function Register() {
                 <form onSubmit={handleSubmit} className="space-y-6">
                   <div>
                     <Label htmlFor="registration-number">Company Registration Number</Label>
-                    <Input id="registration-number" name="registration-number" placeholder="Registration number" className="mt-2" required disabled={loading} />
+                    <Input id="registration-number" name="registration-number" placeholder="e.g., 2026/123456/07" className="mt-2" required disabled={loading} />
                   </div>
 
-                  <div>
-                    <Label htmlFor="industry">Industry</Label>
-                    <Input id="industry" name="industry" placeholder="e.g., Technology, Finance, Retail" className="mt-2" disabled={loading} />
-                  </div>
+                  <SelectWithOther
+                    id="industry"
+                    label="Industry"
+                    options={BUSINESS_INDUSTRIES}
+                    value={industry}
+                    onChange={setIndustry}
+                    otherValue={industryOther}
+                    onOtherChange={setIndustryOther}
+                    placeholder="Select your industry"
+                    otherPlaceholder="Describe your industry"
+                    disabled={loading}
+                  />
 
                   <div className="grid md:grid-cols-2 gap-4">
                     <div>
@@ -374,61 +470,42 @@ export default function Register() {
 
                   <div>
                     <Label htmlFor="phone">Phone Number</Label>
-                    <Input id="phone" name="phone" type="tel" placeholder="+27 XX XXX XXXX" className="mt-2" disabled={loading} />
+                    <Input id="phone" name="phone" type="tel" placeholder="+27821234567 or 0821234567" className="mt-2" disabled={loading} />
                   </div>
 
-                  <div>
-                    <Label htmlFor="csr-goals">CSR/B-BBEE Goals (Optional)</Label>
-                    <Textarea id="csr-goals" name="csr-goals" placeholder="Describe your social impact objectives" className="mt-2" rows={4} disabled={loading} />
-                  </div>
+                  <LocationPicker
+                    province={province}
+                    city={city}
+                    onProvinceChange={setProvince}
+                    onCityChange={setCity}
+                    disabled={loading}
+                  />
+
+                  <SelectWithOther
+                    id="csr-goals"
+                    label="CSR / B-BBEE Goals (Optional)"
+                    options={CSR_BBEE_GOALS}
+                    value={csrGoal}
+                    onChange={setCsrGoal}
+                    otherValue={csrGoalOther}
+                    onOtherChange={setCsrGoalOther}
+                    placeholder="Select a goal"
+                    otherPlaceholder="Describe your goal"
+                    disabled={loading}
+                  />
 
                   <div>
                     <Label htmlFor="password">Password</Label>
-                    <Input id="password" name="password" type="password" placeholder="Create a secure password (min 8 characters)" className="mt-2" required minLength={8} disabled={loading} />
+                    <Input id="password" name="password" type="password" placeholder="Create a secure password (min 8 characters, letters + numbers)" className="mt-2" required minLength={8} disabled={loading} />
+                  </div>
+
+                  <div>
+                    <Label htmlFor="confirm-password">Re-enter Password</Label>
+                    <Input id="confirm-password" name="confirm-password" type="password" placeholder="Re-enter your password to confirm" className="mt-2" required minLength={8} disabled={loading} />
                   </div>
 
                   <Button type="submit" className="w-full bg-orange-600 hover:bg-orange-700" disabled={loading}>
                     {loading ? "Creating account..." : "Create Business Account"}
-                  </Button>
-                </form>
-              </motion.div>
-            )}
-
-            {/* Admin Registration Form */}
-            {selectedType === "admin" && (
-              <motion.div
-                initial={{ opacity: 0 }}
-                animate={{ opacity: 1 }}
-                className="bg-white rounded-lg p-8 shadow-sm"
-              >
-                <div className="flex items-center justify-between mb-6">
-                  <h2>Administrator Registration</h2>
-                  <button
-                    onClick={() => { setSelectedType(null); setError(null); }}
-                    className="text-sm text-neutral-600 hover:text-neutral-900"
-                  >
-                    Change
-                  </button>
-                </div>
-
-                <form onSubmit={handleSubmit} className="space-y-6">
-                  <div>
-                    <Label htmlFor="email">Email Address</Label>
-                    <Input id="email" name="email" type="email" placeholder="admin@ubuntuconnect.org" className="mt-2" required disabled={loading} />
-                  </div>
-
-                  <div>
-                    <Label htmlFor="phone">Phone Number</Label>
-                    <Input id="phone" name="phone" type="tel" placeholder="+27 XX XXX XXXX" className="mt-2" disabled={loading} />
-                  </div>
-
-                  <div>
-                    <Label htmlFor="password">Password</Label>
-                    <Input id="password" name="password" type="password" placeholder="Create a secure password (min 8 characters)" className="mt-2" required minLength={8} disabled={loading} />
-                  </div>
-
-                  <Button type="submit" className="w-full bg-purple-600 hover:bg-purple-700" disabled={loading}>
-                    {loading ? "Creating account..." : "Create Administrator Account"}
                   </Button>
                 </form>
               </motion.div>

@@ -4,6 +4,9 @@ using Microsoft.EntityFrameworkCore;
 using System.Security.Claims;
 using UbuntuConnectAPI.Data;
 using UbuntuConnectAPI.DTOs.Requests;
+using UbuntuConnectAPI.Models;
+using UbuntuConnectAPI.Services.Email;
+using UbuntuConnectAPI.Services.Notifications;
 
 namespace UbuntuConnectAPI.Controllers;
 
@@ -12,10 +15,17 @@ namespace UbuntuConnectAPI.Controllers;
 public class VolunteerApplicationController : ControllerBase
 {
     private readonly AppDbContext _context;
+    private readonly INotificationService? _notifications;
+    private readonly IEmailService? _email;
 
-    public VolunteerApplicationController(AppDbContext context)
+    public VolunteerApplicationController(
+        AppDbContext context,
+        INotificationService? notifications = null,
+        IEmailService? email = null)
     {
         _context = context;
+        _notifications = notifications;
+        _email = email;
     }
 
     // Returns volunteer applications for opportunities belonging to the caller's NPO only.
@@ -39,9 +49,14 @@ public class VolunteerApplicationController : ControllerBase
                 applicationId = a.ApplicationId,
                 userId = a.UserId,
                 opportunityId = a.OpportunityId,
+                roleTitle = a.Opportunity.RoleTitle,
                 firstName = a.FirstName,
                 lastName = a.LastName,
                 email = a.Email,
+                phoneNum = a.PhoneNum,
+                skills = a.Skills,
+                availability = a.Availability,
+                whyVolunteer = a.WhyVolunteer,
                 status = a.Status,
                 applicationDate = a.ApplicationDate
             })
@@ -125,6 +140,8 @@ public class VolunteerApplicationController : ControllerBase
 
         app.Status = "Accepted";
         await _context.SaveChangesAsync();
+
+        await NotifyApplicantAsync(app, accepted: true);
         return NoContent();
     }
 
@@ -145,6 +162,8 @@ public class VolunteerApplicationController : ControllerBase
 
         app.Status = "Rejected";
         await _context.SaveChangesAsync();
+
+        await NotifyApplicantAsync(app, accepted: false);
         return NoContent();
     }
 
@@ -166,6 +185,52 @@ public class VolunteerApplicationController : ControllerBase
         app.Status = "Pending";
         await _context.SaveChangesAsync();
         return NoContent();
+    }
+
+    // Best-effort notification + email to the applicant when an NPO decides on
+    // their application. Failures here never block the decision itself.
+    private async Task NotifyApplicantAsync(VolunteerApplication app, bool accepted)
+    {
+        var orgName = app.Opportunity.Npo.OrganizationName;
+        var role = app.Opportunity.RoleTitle;
+        var decision = accepted ? "accepted" : "not accepted";
+
+        var notificationMessage = accepted
+            ? $"Great news! {orgName} accepted your application for \"{role}\"."
+            : $"{orgName} reviewed your application for \"{role}\" and it was {decision} this time.";
+
+        if (_notifications != null)
+        {
+            try
+            {
+                await _notifications.CreateAsync(
+                    app.UserId,
+                    accepted ? "VolunteerAccepted" : "VolunteerRejected",
+                    notificationMessage,
+                    app.ApplicationId);
+            }
+            catch { /* notifications are non-critical */ }
+        }
+
+        if (_email != null)
+        {
+            var subject = accepted
+                ? $"Your volunteer application was accepted — {role}"
+                : $"Update on your volunteer application — {role}";
+            var body = accepted
+                ? $"Hi {app.FirstName},\n\nGreat news! {orgName} has accepted your application to volunteer for \"{role}\".\n\nThey may be in touch with next steps. Thank you for offering your time.\n\n— UbuntuConnect"
+                : $"Hi {app.FirstName},\n\nThank you for applying to volunteer for \"{role}\" with {orgName}. After review, your application was not accepted this time.\n\nDon't be discouraged — there are many other opportunities on UbuntuConnect.\n\n— UbuntuConnect";
+            try
+            {
+                await _email.SendAsync(new EmailMessage
+                {
+                    ToEmail = app.Email,
+                    Subject = subject,
+                    Body = body
+                });
+            }
+            catch { /* email is non-critical */ }
+        }
     }
 
     // NOTE: Delete endpoint removed. Your IndividualController already has

@@ -38,6 +38,12 @@ public partial class AppDbContext : DbContext
 
     public virtual DbSet<Comment> Comments { get; set; }
 
+    public virtual DbSet<EmailVerificationToken> EmailVerificationTokens { get; set; }
+
+    public virtual DbSet<Notification> Notifications { get; set; }
+
+    public virtual DbSet<PostReport> PostReports { get; set; }
+
     public virtual DbSet<Profile> Profiles { get; set; }
 
     public virtual DbSet<Project> Projects { get; set; }
@@ -176,6 +182,14 @@ public partial class AppDbContext : DbContext
             entity.Property(e => e.CauseOfCare).HasMaxLength(255);
             entity.Property(e => e.FirstName).HasMaxLength(100);
             entity.Property(e => e.LastName).HasMaxLength(100);
+            entity.Property(e => e.IdNumber).HasMaxLength(20);
+            entity.Property(e => e.IdDocumentUrl).HasMaxLength(500);
+            entity.Property(e => e.SelfieUrl).HasMaxLength(500);
+            entity.Property(e => e.KycStatus).HasMaxLength(20).HasDefaultValue("NotSubmitted");
+            entity.Property(e => e.KycRoute).HasMaxLength(20);
+            entity.Property(e => e.KycMatchScore).HasColumnType("decimal(5, 4)");
+            entity.Property(e => e.SubmittedDate).HasColumnType("datetime");
+            entity.Property(e => e.ReviewedDate).HasColumnType("datetime");
 
             entity.HasOne(d => d.User).WithMany(p => p.Individuals)
                 .HasForeignKey(d => d.UserId)
@@ -289,6 +303,70 @@ public partial class AppDbContext : DbContext
                 .HasConstraintName("FK_Comment_Users");
         });
 
+        modelBuilder.Entity<EmailVerificationToken>(entity =>
+        {
+            entity.HasKey(e => e.TokenId);
+
+            entity.ToTable("EmailVerificationTokens");
+
+            entity.HasIndex(e => e.Token, "UQ_EmailToken_Token").IsUnique();
+
+            entity.Property(e => e.Token).HasMaxLength(128);
+            entity.Property(e => e.Purpose)
+                .HasMaxLength(50)
+                .HasDefaultValue("EmailVerification");
+            entity.Property(e => e.ExpiresAt).HasColumnType("datetime");
+            entity.Property(e => e.ConsumedAt).HasColumnType("datetime");
+            entity.Property(e => e.CreatedAt)
+                .HasDefaultValueSql("(getdate())")
+                .HasColumnType("datetime");
+
+            entity.HasOne(d => d.User).WithMany()
+                .HasForeignKey(d => d.UserId)
+                .HasConstraintName("FK_EmailToken_Users");
+        });
+
+        modelBuilder.Entity<Notification>(entity =>
+        {
+            entity.HasKey(e => e.NotificationId);
+
+            entity.ToTable("Notifications");
+
+            entity.HasIndex(e => new { e.UserId, e.IsRead }, "IX_Notifications_UserId_IsRead");
+
+            entity.Property(e => e.Type).HasMaxLength(50);
+            entity.Property(e => e.Message).HasMaxLength(500);
+            entity.Property(e => e.CreatedAt)
+                .HasDefaultValueSql("(getdate())")
+                .HasColumnType("datetime");
+
+            entity.HasOne(d => d.User).WithMany()
+                .HasForeignKey(d => d.UserId)
+                .HasConstraintName("FK_Notification_Users");
+        });
+
+        modelBuilder.Entity<PostReport>(entity =>
+        {
+            entity.HasKey(e => e.ReportId);
+
+            entity.ToTable("PostReports");
+
+            entity.HasIndex(e => new { e.PostId, e.ReporterUserId }, "UQ_PostReport_PerUser").IsUnique();
+
+            entity.Property(e => e.Reason).HasMaxLength(500);
+            entity.Property(e => e.Status)
+                .HasMaxLength(20)
+                .HasDefaultValue("Pending");
+            entity.Property(e => e.CreatedAt)
+                .HasDefaultValueSql("(getdate())")
+                .HasColumnType("datetime");
+            entity.Property(e => e.ReviewedAt).HasColumnType("datetime");
+
+            entity.HasOne(d => d.Post).WithMany()
+                .HasForeignKey(d => d.PostId)
+                .HasConstraintName("FK_PostReport_Post");
+        });
+
         modelBuilder.Entity<Profile>(entity =>
         {
             entity.HasKey(e => e.ProfileId).HasName("PK__Profile__290C88E46B2DE127");
@@ -324,6 +402,8 @@ public partial class AppDbContext : DbContext
                 .HasColumnType("decimal(12, 2)")
                 .HasDefaultValue(0m);
             entity.Property(e => e.Images).HasMaxLength(2000);
+            entity.Property(e => e.StartDate).HasColumnType("datetime2");
+            entity.Property(e => e.EndDate).HasColumnType("datetime2");
 
             entity.HasOne(d => d.Npo).WithMany(p => p.Projects)
                 .HasForeignKey(d => d.NpoId)
@@ -359,6 +439,7 @@ public partial class AppDbContext : DbContext
             entity.HasIndex(e => e.UserEmail, "UQ__Users__08638DF8F974D3A9").IsUnique();
 
             entity.Property(e => e.IsActive).HasDefaultValue(true);
+            entity.Property(e => e.IsEmailVerified).HasDefaultValue(false);
             entity.Property(e => e.Location).HasMaxLength(255);
             entity.Property(e => e.PasswordHash).HasMaxLength(255);
             entity.Property(e => e.RegistrationDate)

@@ -46,7 +46,7 @@ export default function Login() {
   return (
     <div className="min-h-screen bg-neutral-50">
       {/* Header */}
-      <header className="bg-white border-b border-neutral-200 py-4 px-6">
+      <header className="bg-white border-b border-neutral-200 py-4 px-6 sticky top-0 z-40">
         <div className="container mx-auto max-w-7xl flex items-center justify-between">
           <Link to="/" className="text-xl text-neutral-900">
             UbuntuConnect

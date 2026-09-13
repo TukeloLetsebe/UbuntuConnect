@@ -34,6 +34,10 @@ public class CampaignApplicationController : ControllerBase
         var campaign = await _context.PartnershipCampaigns.FindAsync(campaignId);
         if (campaign == null) return NotFound("Campaign not found.");
 
+        // A partnership application must include a reason/motivation.
+        if (string.IsNullOrWhiteSpace(dto.Motivation))
+            return BadRequest("Please provide a reason for applying to this partnership.");
+
         var already = await _context.CampaignApplications
             .AnyAsync(a => a.CampaignId == campaignId && a.NpoId == npo.NpoId);
         if (already) return BadRequest("You have already applied to this campaign.");

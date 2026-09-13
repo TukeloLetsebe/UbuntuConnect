@@ -31,10 +31,12 @@
 
 UbuntuConnect is a community-driven collaboration platform that enables:
 
-- **NPOs** to manage their presence, create posts, run fundraisers, manage volunteers, and get verified
-- **Individuals** to discover NPOs, donate, volunteer, follow organizations, and track their social impact
-- **Businesses** to create CSR partnership campaigns, track donations, and generate impact reports
-- **Admins** to manage users, verify NPOs, and monitor platform-wide transactions
+- **NPOs** to manage their presence, create posts (with images), run **timed fundraisers** (with auto-close), manage volunteers, upload verification documents (PDF), and expose a **Facebook-style public profile**
+- **Individuals** to discover NPOs, complete **KYC identity verification** (admin review or self-service face scan), donate, volunteer, follow organizations, and track their social impact
+- **Businesses** to create CSR partnership campaigns, view NPO documents, donate via a **simulated card gateway**, and generate reports with charts
+- **Admins** to manage users, review NPO & individual KYC verifications, moderate reported posts, run account cleanup, and monitor platform-wide transactions with reports
+
+> **Status:** The 26-task improvements plan (`.kiro/spec/improvement/improvements.md`) is complete — backend build clean, **149 xUnit tests passing**, frontend build clean. See the addenda in `docs/07_API_CONTRACT.md` and `docs/03_FUNCTIONAL_REQUIREMENTS.md`.
 
 ---
 
@@ -60,6 +62,10 @@ UbuntuConnect is a community-driven collaboration platform that enables:
 | **Authentication** | JWT (JSON Web Tokens) | — |
 | **API Docs** | Swagger / OpenAPI | — |
 | **Routing** | React Router v7 | 7.13 |
+| **Charts** | Recharts | 2.15 |
+| **Image processing** | SixLabors.ImageSharp | 3.1.12 |
+| **Face matching** | FaceONNX (local, config-gated) | 4.1 |
+| **Backend tests** | xUnit + EF Core InMemory | — |
 
 ---
 
@@ -69,31 +75,47 @@ UbuntuConnect is a community-driven collaboration platform that enables:
 UbuntuConnect/
 ├── backend/                           # .NET 10 Web API
 │   └── UbuntuConnectAPI/
-│       ├── Controllers/               # 17 API Controllers
-│       │   ├── AuthController.cs      # Register + Login (JWT)
-│       │   ├── NPOController.cs       # NPO profile, follow, donors, fundraiser donations
-│       │   ├── IndividualController.cs # Discover, follow, donate, volunteer, impact
+│       ├── Controllers/               # 19 API Controllers
+│       │   ├── AuthController.cs      # Register + Login + email verification (JWT)
+│       │   ├── NPOController.cs       # NPO profile, follow, donors, fundraiser donations, public profile
+│       │   ├── IndividualController.cs # Discover, follow, donate, volunteer, impact, KYC
 │       │   ├── BusinessController.cs   # Profile, follow, donate, campaigns, impact
-│       │   ├── AdminController.cs      # User mgmt, verifications, stats, transactions
+│       │   ├── AdminController.cs      # User mgmt, verifications, stats, ghost cleanup
+│       │   ├── AdminKycController.cs   # Individual KYC review (approve/reject)
 │       │   ├── CampaignController.cs   # CRUD for partnership campaigns
-│       │   ├── CampaignApplicationController.cs # NPO applies, Business approves/rejects
+│       │   ├── CampaignApplicationController.cs # NPO applies (reason required), Business approves/rejects
 │       │   ├── PostController.cs       # CRUD posts + likes
+│       │   ├── PostReportController.cs # Report posts + admin moderation
 │       │   ├── CommentController.cs    # Comments on posts
-│       │   ├── ProjectController.cs    # Fundraiser/project CRUD
+│       │   ├── ProjectController.cs    # Fundraiser/project CRUD (with timing)
+│       │   ├── UploadController.cs     # Image + PDF document uploads
+│       │   ├── NotificationController.cs # In-app notifications
 │       │   ├── VolunteerOpportunityController.cs # NPO creates opportunities
-│       │   ├── VolunteerApplicationController.cs # Apply, accept, reject, log hours
-│       │   ├── VerificationController.cs # NPO submits verification docs
+│       │   ├── VolunteerApplicationController.cs # Apply, accept/reject (+email), log hours
+│       │   ├── VerificationController.cs # NPO submits + business/admin views docs
 │       │   ├── WalletController.cs     # View balance
-│       │   ├── TransactionController.cs # Transaction history + withdrawals
-│       │   ├── ReportController.cs     # Donation reports + CSV export
+│       │   ├── TransactionController.cs # History + withdrawals (limits) + wallet-limits
+│       │   ├── ReportController.cs     # NPO/Business/Admin summaries + CSV export
 │       │   └── FeedController.cs       # Community feed
-│       ├── Data/AppDbContext.cs        # EF Core DbContext (20 entities)
-│       ├── DTOs/Requests/             # 18 Request DTOs
-│       ├── Models/                    # 20 Entity Models
+│       ├── Services/                   # Config-swappable seams
+│       │   ├── Email/                 # Mock email + verification tokens
+│       │   ├── Storage/               # Local file storage (image/PDF)
+│       │   ├── Notifications/         # In-app notification service
+│       │   ├── Verification/          # Transaction verification gate
+│       │   ├── FaceVerification/      # FaceONNX engine + NoOp fallback
+│       │   ├── Payments/              # Simulated card gateway + wallet limits
+│       │   ├── Cleanup/               # Ghost-account cleanup job
+│       │   ├── Fundraisers/           # Fundraiser auto-close job
+│       │   └── Admin/                 # Secure admin seeding
+│       ├── Validation/                # Shared validators + attributes
+│       ├── Data/AppDbContext.cs        # EF Core DbContext
+│       ├── DTOs/Requests/             # Request DTOs
+│       ├── Models/                    # Entity Models
 │       ├── Filters/                   # Swagger auth filter
-│       ├── Program.cs                 # App entry (JWT, CORS, Swagger)
+│       ├── Program.cs                 # App entry (JWT, CORS, Swagger, DI, background services)
 │       ├── appsettings.json           # Config template
 │       └── appsettings.Development.json # Local dev config
+├── backend/UbuntuConnectAPI.Tests/    # xUnit test suite (149 tests, EF Core InMemory)
 ├── frontend/                           # React + Vite + TailwindCSS
 │   ├── src/
 │   │   ├── app/
@@ -102,25 +124,36 @@ UbuntuConnect/
 │   │   │   │   ├── IndividualDashboard.tsx    # Full Individual dashboard
 │   │   │   │   ├── BusinessDashboard.tsx      # Full Business dashboard
 │   │   │   │   ├── AdminDashboard.tsx         # Full Admin dashboard
-│   │   │   │   ├── Fundraisers.tsx            # Browse & donate to projects
+│   │   │   │   ├── Fundraisers.tsx            # Browse & donate to projects (with deadlines)
+│   │   │   │   ├── NpoProfile.tsx             # Facebook-style public NPO profile
+│   │   │   │   ├── DiscoverNpos.tsx           # Browse/search NPOs
+│   │   │   │   ├── VerifyEmail.tsx / VerifyIdentity.tsx # KYC + email verification
+│   │   │   │   ├── WebcamCapture.tsx          # Selfie capture for face-scan KYC
+│   │   │   │   ├── ImageUploadField.tsx / DocumentUploadField.tsx # Uploads
+│   │   │   │   ├── CardPaymentFields.tsx      # Simulated card entry (Luhn/expiry)
+│   │   │   │   ├── NotificationBell.tsx       # In-app notifications
+│   │   │   │   ├── ReportPostButton.tsx       # Report a post
+│   │   │   │   ├── reports/                   # NPO/Business/Admin report panels (recharts)
+│   │   │   │   ├── registration/              # Structured registration inputs
 │   │   │   │   ├── Landing.tsx                # Public landing page
 │   │   │   │   ├── Login.tsx / Register.tsx   # Auth pages
 │   │   │   │   ├── ProtectedRoute.tsx         # Role-based route guard
 │   │   │   │   └── ui/                        # shadcn/ui components (40+)
 │   │   │   └── routes.tsx                     # All routes with role protection
 │   │   ├── context/AuthContext.tsx             # JWT auth state management
-│   │   ├── services/
-│   │   │   ├── npoService.ts                  # NPO API service
-│   │   │   ├── individualService.ts           # Individual API service
-│   │   │   ├── businessService.ts             # Business API service
-│   │   │   └── adminService.ts                # Admin API service
-│   │   ├── lib/api.ts                         # Axios client + interceptors
+│   │   ├── services/                           # Thin axios wrappers per domain
+│   │   │   ├── npoService.ts / individualService.ts / businessService.ts / adminService.ts
+│   │   │   ├── authService.ts / kycService.ts / uploadService.ts
+│   │   │   ├── notificationService.ts / moderationService.ts
+│   │   │   ├── npoProfileService.ts / reportService.ts
+│   │   ├── lib/api.ts                         # Axios client + interceptors + resolveMediaUrl
+│   │   ├── lib/validators.ts                  # Client validation (mirrors backend)
 │   │   └── styles/                            # Tailwind + theme
 │   ├── package.json
 │   └── vite.config.ts
 ├── database/                           # SQL Server migrations
-│   ├── migrations/                    # 24 sequential migrations (002–024)
-│   ├── 000_run_all_migrations.sql     # Master migration runner
+│   ├── migrations/                    # Sequential migrations (002–030)
+│   ├── 000_run_all_migrations.sql     # Master migration runner (STALE — apply 025–030 individually)
 │   └── seed_dummy_data.sql            # Realistic seed data
 ├── docs/                               # Full project documentation
 │   ├── 00_PROJECT_CHARTER.md
@@ -161,12 +194,22 @@ git checkout v6
 ### 2. Database Setup
 
 ```bash
-# Connect to SQL Server (SSMS or sqlcmd) and run:
+# Connect to SQL Server (SSMS or sqlcmd) and run the base schema:
 database/000_run_all_migrations.sql
+
+# Then apply the incremental improvement migrations (025–030) in order, e.g.:
+sqlcmd -S localhost -E -C -i database/migrations/025_create_emailverificationtokens.sql
+sqlcmd -S localhost -E -C -i database/migrations/026_create_notifications.sql
+sqlcmd -S localhost -E -C -i database/migrations/027_alter_users_add_isemailverified.sql
+sqlcmd -S localhost -E -C -i database/migrations/028_create_postreports.sql
+sqlcmd -S localhost -E -C -i database/migrations/029_alter_individual_add_kyc.sql
+sqlcmd -S localhost -E -C -i database/migrations/030_alter_projects_add_dates.sql
 
 # Optionally load seed data:
 database/seed_dummy_data.sql
 ```
+
+> Note: `000_run_all_migrations.sql` predates the improvement migrations. Migrations 025–030 are idempotent (guarded by `IF NOT EXISTS`), so re-running them is safe.
 
 ### 3. Backend Setup
 
@@ -311,22 +354,26 @@ Authorization: Bearer <jwt_token>
 
 | Controller | Route | Methods |
 |-----------|-------|---------|
-| Auth | `/api/Auth` | POST register, POST login |
-| NPO | `/api/npo` | GET, GET/{id}, PUT, POST topup/follow/unfollow/donate |
-| Individual | `/api/individual` | GET me, PUT me, POST follow/donate/volunteer/topup |
+| Auth | `/api/Auth` | POST register, POST login, POST verify-email, POST resend-verification |
+| NPO | `/api/npo` | GET, GET/{id}, GET/{id}/public, PUT, POST follow/unfollow/donate |
+| Individual | `/api/individual` | GET me, PUT me, POST follow/donate/volunteer/topup, POST/GET verify-identity |
 | Business | `/api/business` | GET me, POST follow/donate/topup, GET my-campaigns/impact |
-| Admin | `/api/admin` | GET stats/users/verifications/transactions, PUT activate/deactivate/approve/reject |
+| Admin | `/api/admin` | GET stats/users/verifications/transactions, PUT activate/deactivate/approve/reject, ghost-cleanup preview/run |
+| Admin KYC | `/api/admin/kyc` | GET, PUT {id}/approve, PUT {id}/reject |
 | Campaigns | `/api/campaigns` | GET, GET/{id}, POST, PUT/{id}, DELETE/{id} |
-| Campaign Apps | `/api/campaignapplications` | POST apply, GET campaign/{id}, PUT approve/reject |
+| Campaign Apps | `/api/campaignapplications` | POST apply (reason required), GET campaign/{id}, PUT approve/reject |
 | Posts | `/api/post` | GET, POST, PUT, DELETE, POST like, DELETE unlike |
+| Post Reports | `/api/postreport` | POST post/{id}, GET, PUT dismiss/remove-post |
 | Comments | `/api/comment` | GET post/{id}, POST, DELETE |
-| Projects | `/api/project` | GET, GET/{id}, POST, PUT, DELETE |
+| Projects | `/api/project` | GET, GET/{id}, POST, PUT, DELETE (with startDate/endDate/durationDays) |
+| Uploads | `/api/upload` | POST image, POST document |
+| Notifications | `/api/notification` | GET, GET unread-count, PUT {id}/read, PUT read-all |
 | Volunteer Opp | `/api/VolunteerOpportunity` | GET, POST, PUT, DELETE |
-| Volunteer App | `/api/VolunteerApplication` | GET, PUT accept/reject, DELETE, POST log-hours |
-| Verification | `/api/verification` | POST submit, GET my-status |
+| Volunteer App | `/api/VolunteerApplication` | GET, PUT accept/reject (+email), DELETE, POST log-hours |
+| Verification | `/api/verification` | POST submit, GET my-status, GET npo/{npoId} |
 | Wallet | `/api/wallet` | GET user/{id}/balance |
-| Transactions | `/api/transaction` | GET user/{id}, POST withdraw |
-| Reports | `/api/reports` | GET donations, GET donations/csv, GET my-donations/csv |
+| Transactions | `/api/transaction` | GET user/{id}, POST withdraw (limits), GET wallet-limits |
+| Reports | `/api/reports` | GET donations, GET donations/csv, GET my-donations/csv, GET npo/business/admin-summary |
 
 ### Swagger UI
 Available at `http://localhost:5275/swagger` in development mode.
@@ -335,7 +382,7 @@ Available at `http://localhost:5275/swagger` in development mode.
 
 ## Database Schema
 
-**20 Tables** across 24 migrations:
+**Core tables** plus improvement tables (migrations 025–030):
 
 | Table | Purpose |
 |-------|---------|
@@ -359,6 +406,14 @@ Available at `http://localhost:5275/swagger` in development mode.
 | Verification | NPO verification documents |
 | FundingRequest | Legacy funding requests |
 | ImpactTrack | Impact metrics |
+| EmailVerificationTokens | Email verification / password-reset tokens (migration 025) |
+| Notifications | In-app notifications (migration 026) |
+| PostReports | Reported posts for moderation (migration 028) |
+
+**Improvement schema changes:**
+- `Users.IsEmailVerified` — Stage-1 email verification flag (migration 027)
+- `Individual` KYC columns — `IdNumber`, `IdDocumentUrl`, `SelfieUrl`, `KycStatus`, `KycRoute`, `KycMatchScore`, review fields (migration 029)
+- `Projects.StartDate` / `Projects.EndDate` — timed fundraisers (migration 030)
 
 ---
 
@@ -373,10 +428,31 @@ Available at `http://localhost:5275/swagger` in development mode.
 ### Roles
 | Role | Access Level |
 |------|-------------|
-| Individual | Own profile, discover NPOs, donate, volunteer |
-| NPO | Own dashboard, posts, projects, volunteers |
-| Business | Own dashboard, campaigns, donations, community |
-| Admin | Full platform management |
+| Individual | Own profile, discover NPOs, donate, volunteer (after email + KYC verification) |
+| NPO | Own dashboard, posts, projects, volunteers, public profile |
+| Business | Own dashboard, campaigns, donations, NPO docs, community |
+| Admin | Full platform management + KYC + moderation |
+
+### Two-stage verification
+- **Stage 1 — email** (`User.IsEmailVerified`): confirmed via `POST api/Auth/verify-email`.
+- **Stage 2 — identity/KYC** (`User.IsVerified`): individuals submit ID + selfie (admin review or self-service face scan); NPOs submit documents for admin approval.
+- The **verification gate** blocks money-out / volunteer actions until both stages pass; contact details on public profiles are hidden from unverified viewers.
+
+---
+
+## Configuration
+
+Feature seams are configured via `appsettings.json` and are **config-swappable / config-gated** (most default OFF for a light local run):
+
+| Section | Purpose | Default |
+|---------|---------|---------|
+| `Email` | Email provider (Mock in dev; SMTP-ready) + frontend base URL | Mock |
+| `FileStorage` | Local upload storage (images re-encoded, PDFs validated) | Local |
+| `AdminSeed` | Secure startup admin seeding (creds via env/user-secrets) | Disabled |
+| `GhostCleanup` | Periodic cleanup of never-verified accounts | Disabled + DryRun |
+| `FaceVerification` | Local FaceONNX face-match engine (else admin fallback) | Disabled |
+| `FundraiserAutoClose` | Background job closing expired/funded fundraisers | Enabled (hourly) |
+| `WalletLimits` | Top-up / withdrawal min-max + rolling-24h withdrawal cap | On |
 
 ---
 
@@ -409,12 +485,24 @@ dotnet build  # Must compile without errors
 dotnet run    # Then test via Swagger UI
 ```
 
+### Backend Unit Tests (xUnit + EF Core InMemory)
+```bash
+cd backend/UbuntuConnectAPI.Tests
+dotnet test   # 149 tests — must be green
+```
+
+Covers validation, email verification, admin seeding, ghost cleanup, post reporting,
+verification gate, KYC submission + admin review, FaceONNX engine load, project donations,
+fundraiser auto-close, payment simulation + wallet limits, volunteer accept/reject,
+public NPO profile contact-gating, partnership apply, and report summaries.
+
 ### Manual Testing Flow
-1. Register accounts for each role
-2. NPO: Create posts, fundraisers, volunteer opportunities
-3. Individual: Discover NPOs, follow, donate, apply to volunteer, donate to fundraisers
-4. Business: Create campaigns, view NPO applications, donate, generate report
-5. Admin: View stats, manage users, approve NPO verifications
+1. Register accounts for each role → verify email (link is logged by the mock email service)
+2. Individual: submit KYC (admin review or face scan); once verified, donate / volunteer / top up
+3. NPO: create posts (with images), timed fundraisers, volunteer opportunities; upload verification PDFs; view public profile
+4. Individual/Business: discover NPOs, follow, donate to fundraisers (watch auto-close on target), report a post
+5. Business: create campaigns, view NPO documents, top up via simulated card, generate report charts/CSV
+6. Admin: view stats + reports, manage users, approve/reject NPO & individual KYC, moderate reported posts, run ghost cleanup
 
 ---
 
@@ -428,11 +516,11 @@ Full project documentation is available in the `/docs` folder:
 | `01_PROJECT_OVERVIEW.md` | Vision, mission, objectives |
 | `01_BUSINESS_DOMAIN.md` | Business domain analysis |
 | `02_SYSTEM_CONTEXT.md` | System context diagram |
-| `03_FUNCTIONAL_REQUIREMENTS.md` | All functional requirements |
+| `03_FUNCTIONAL_REQUIREMENTS.md` | All functional requirements + delivered improvements (Tasks 1–26) |
 | `04_NON_FUNCTIONAL_REQUIREMENTS.md` | Performance, security, scalability |
 | `05_PROJECT_ARCHITECTURE.md` | System architecture design |
 | `06_DATABASE_ARCHITECTURE.md` | Database design & ERD |
-| `07_API_CONTRACT.md` | Full API specification |
+| `07_API_CONTRACT.md` | Full API specification + improvements addendum (new endpoints) |
 | `08_BACKEND_ARCHITECTURE.md` | Backend patterns & structure |
 | `09_FRONTEND_ARCHITECTURE.md` | Frontend patterns & structure |
 | `10_UI_UX_SPECIFICATION.md` | UI/UX design specification |

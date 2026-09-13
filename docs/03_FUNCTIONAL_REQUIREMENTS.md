@@ -461,3 +461,60 @@ Before implementing any feature, the AI must:
 7. Produce an implementation plan.
 
 Only after this analysis may implementation begin.
+
+---
+
+# 17. Improvements Plan — Delivered Capabilities (Tasks 1–26)
+
+All 26 improvement tasks are implemented and verified (backend build + 149 xUnit tests
+green; frontend `npm run build` clean). Detailed per-task notes live in
+`.kiro/spec/improvement/improvements.md`.
+
+## Phase 0 — Foundations
+- Mock email service seam + verification-token store (config-swappable to SMTP later).
+- Local file-storage seam + `api/upload/{image,document}` (image re-encode, PDF signature check).
+- In-app notifications (bell + polling).
+- Shared validation helpers (email, password strength, SA phone, CIPC, NPO reg) — backend + frontend parity.
+
+## Phase 1 — Auth & Security
+- Password confirmation + strength + relabelled fields.
+- Stage-1 email verification gate (`User.IsEmailVerified`).
+- Public Admin registration removed; secure config-gated admin seeding.
+- Config-gated ghost-account cleanup background job (soft- then hard-delete).
+
+## Phase 2 — Registration Data Quality
+- Structured registration inputs: focus-area/industry/CSR dropdowns with "Other", multi-select causes, cascading Province→City + optional geolocation.
+
+## Phase 3 — Posts, Feed & Moderation
+- Post image upload + consistent cards + click-to-expand detail.
+- Post reporting + admin moderation queue (dismiss / remove).
+
+## Phase 4 — Verification Gating & Individual KYC
+- Verification gate: unverified individuals are view-only (donate/top-up/volunteer-apply blocked).
+- Individual ID + selfie KYC submission with route choice (Admin review vs self-service face scan).
+- Admin KYC review (approve/reject) with notification + email.
+- Local FaceONNX face-match engine behind a config-gated seam (default OFF → admin fallback).
+- Webcam selfie capture for the self-service face-scan route.
+
+## Phase 5 — Fundraisers & Payments
+- Donations update fundraiser progress atomically + individual-facing detail view.
+- Timed fundraisers (StartDate/EndDate/duration) + auto-close (deadline or target) with NPO notification.
+- Simulated card top-up (Luhn + expiry + CVV; always approves a valid card) + server-side wallet top-up/withdrawal limits (incl. rolling-24h cap).
+
+## Phase 6 — Volunteering
+- Volunteer accept/reject sends notification + email; richer applicant card.
+
+## Phase 7 — Profiles, Dashboards & Discovery
+- Facebook-style public NPO profile + Discover-NPO browse/search; contact hidden from unverified viewers.
+- NPO dashboard current-fundraisers slider + public-profile access + PDF document verification upload.
+- Business dashboard campaign/fundraiser slider + partnership apply (reason required) + NPO document viewing.
+
+## Phase 8 — Reports & Global UI
+- Detailed NPO / Business / Admin reports (recharts visualisations + CSV export).
+- Sticky headers across the app + alignment consistency pass.
+- End-to-end verification + docs update (this addendum + API contract addendum).
+
+## Verification Status
+- Backend: `dotnet build` clean; `dotnet test` = 149 passing.
+- Frontend: `npm run build` clean (chunk-size advisory only).
+- Migrations 025–030 applied to `UbuntuConnect_DB`.

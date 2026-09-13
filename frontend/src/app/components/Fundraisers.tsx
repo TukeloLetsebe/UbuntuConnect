@@ -3,7 +3,7 @@ import { Link } from "react-router";
 import { motion } from "motion/react";
 import { toast } from "sonner";
 import { useAuth } from "../../context/AuthContext";
-import api from "../../lib/api";
+import api, { resolveMediaUrl } from "../../lib/api";
 import { Button } from "./ui/button";
 import { Card } from "./ui/card";
 import { Badge } from "./ui/badge";
@@ -12,7 +12,7 @@ import { Label } from "./ui/label";
 import { Progress } from "./ui/progress";
 import {
   Target, DollarSign, Loader2, RefreshCw, X, ArrowLeft,
-  Heart, TrendingUp, LogOut, Search
+  Heart, TrendingUp, LogOut, Search, Clock
 } from "lucide-react";
 
 interface Fundraiser {
@@ -26,6 +26,35 @@ interface Fundraiser {
   targetAmount: number;
   raisedAmount: number;
   images: string | null;
+  startDate: string | null;
+  endDate: string | null;
+}
+
+/**
+ * Human-readable deadline info for a fundraiser.
+ * Returns null when no end date is set.
+ */
+function getDeadlineInfo(endDate: string | null): { label: string; ended: boolean; urgent: boolean } | null {
+  if (!endDate) return null;
+  const end = new Date(endDate);
+  if (isNaN(end.getTime())) return null;
+  const now = new Date();
+  const ms = end.getTime() - now.getTime();
+  if (ms <= 0) return { label: "Ended", ended: true, urgent: false };
+  const days = Math.floor(ms / 86_400_000);
+  const hours = Math.floor((ms % 86_400_000) / 3_600_000);
+  const label =
+    days >= 1 ? `${days} day${days === 1 ? "" : "s"} left`
+      : hours >= 1 ? `${hours} hour${hours === 1 ? "" : "s"} left`
+        : "Less than an hour left";
+  return { label, ended: false, urgent: days < 3 };
+}
+
+function formatDate(value: string | null): string {
+  if (!value) return "";
+  const d = new Date(value);
+  if (isNaN(d.getTime())) return "";
+  return d.toLocaleDateString(undefined, { year: "numeric", month: "short", day: "numeric" });
 }
 
 function getErrorMessage(error: unknown): string {
@@ -54,6 +83,9 @@ export default function Fundraisers() {
   const [selectedProject, setSelectedProject] = useState<Fundraiser | null>(null);
   const [donateAmount, setDonateAmount] = useState("");
   const [donating, setDonating] = useState(false);
+
+  // Detail view
+  const [detailProject, setDetailProject] = useState<Fundraiser | null>(null);
 
   const loadFundraisers = useCallback(async () => {
     setLoading(true);
@@ -121,7 +153,7 @@ export default function Fundraisers() {
   return (
     <div className="min-h-screen bg-neutral-50">
       {/* Header */}
-      <header className="bg-white border-b border-neutral-200 py-4 px-6">
+      <header className="bg-white border-b border-neutral-200 py-4 px-6 sticky top-0 z-40">
         <div className="container mx-auto max-w-7xl flex items-center justify-between">
           <Link to={dashboardPath} className="text-xl text-neutral-900 font-bold">UbuntuConnect</Link>
           <div className="flex items-center gap-4">
@@ -161,7 +193,7 @@ export default function Fundraisers() {
             <div className="grid md:grid-cols-2 lg:grid-cols-3 gap-6">
               {filteredFundraisers.map(fund => (
                 <Card key={fund.projectId} className="overflow-hidden hover:shadow-lg transition-shadow">
-                  {fund.images && <img src={fund.images} alt={fund.projectName} className="w-full h-48 object-cover" />}
+                  {fund.images && <img src={resolveMediaUrl(fund.images.split(",")[0].trim())} alt={fund.projectName} className="w-full h-48 object-cover cursor-pointer" onClick={() => setDetailProject(fund)} />}
                   <div className="p-6">
                     <div className="flex items-center gap-2 mb-2">
                       <div className="w-8 h-8 rounded-full bg-orange-100 flex items-center justify-center">
@@ -169,7 +201,7 @@ export default function Fundraisers() {
                       </div>
                       <span className="text-sm text-orange-600 font-medium">{fund.npoName}</span>
                     </div>
-                    <h3 className="font-semibold text-lg mb-2">{fund.projectName}</h3>
+                    <h3 className="font-semibold text-lg mb-2 cursor-pointer hover:text-orange-600" onClick={() => setDetailProject(fund)}>{fund.projectName}</h3>
                     {fund.projectDesc && <p className="text-neutral-600 text-sm mb-4 line-clamp-2">{fund.projectDesc}</p>}
 
                     {/* Progress */}
@@ -184,12 +216,27 @@ export default function Fundraisers() {
                       </p>
                     </div>
 
-                    <Button
-                      className="w-full bg-orange-600 hover:bg-orange-700"
-                      onClick={() => { setSelectedProject(fund); setDonateAmount(""); setShowDonateModal(true); }}
-                    >
-                      <DollarSign className="w-4 h-4 mr-2" /> Donate to this Fundraiser
-                    </Button>
+                    {(() => {
+                      const d = getDeadlineInfo(fund.endDate);
+                      if (!d) return null;
+                      return (
+                        <div className={`flex items-center gap-1 text-xs mb-4 ${d.ended ? "text-red-600" : d.urgent ? "text-orange-600" : "text-neutral-500"}`}>
+                          <Clock className="w-3.5 h-3.5" /> <span>{d.label}</span>
+                        </div>
+                      );
+                    })()}
+
+                    <div className="flex gap-2">
+                      <Button variant="outline" className="flex-1" onClick={() => setDetailProject(fund)}>
+                        View details
+                      </Button>
+                      <Button
+                        className="flex-1 bg-orange-600 hover:bg-orange-700"
+                        onClick={() => { setSelectedProject(fund); setDonateAmount(""); setShowDonateModal(true); }}
+                      >
+                        <DollarSign className="w-4 h-4 mr-1" /> Donate
+                      </Button>
+                    </div>
                   </div>
                 </Card>
               ))}
@@ -198,6 +245,73 @@ export default function Fundraisers() {
 
         </motion.div>
       </main>
+
+      {/* FUNDRAISER DETAIL */}
+      {detailProject && (
+        <div className="fixed inset-0 bg-black/50 flex items-center justify-center z-50 p-4" onClick={() => setDetailProject(null)}>
+          <Card className="w-full max-w-2xl max-h-[90vh] overflow-y-auto" onClick={e => e.stopPropagation()}>
+            {detailProject.images && (
+              <img src={resolveMediaUrl(detailProject.images.split(",")[0].trim())} alt={detailProject.projectName} className="w-full h-56 object-cover rounded-t-lg" />
+            )}
+            <div className="p-6">
+              <div className="flex justify-between items-start mb-3">
+                <div className="flex items-center gap-2">
+                  <div className="w-9 h-9 rounded-full bg-orange-100 flex items-center justify-center">
+                    <span className="text-sm font-bold text-orange-600">{detailProject.npoName.charAt(0)}</span>
+                  </div>
+                  <div>
+                    <p className="text-sm text-orange-600 font-medium">{detailProject.npoName}</p>
+                    <Badge variant="outline" className="mt-0.5">{detailProject.projectStatus}</Badge>
+                  </div>
+                </div>
+                <Button variant="ghost" size="sm" onClick={() => setDetailProject(null)}><X className="w-4 h-4" /></Button>
+              </div>
+
+              <h2 className="text-xl font-bold mb-2">{detailProject.projectName}</h2>
+              {detailProject.projectDesc && <p className="text-neutral-600 whitespace-pre-wrap mb-6">{detailProject.projectDesc}</p>}
+
+              <div className="mb-6">
+                <div className="flex justify-between text-sm mb-1">
+                  <span className="text-green-600 font-medium">R {detailProject.raisedAmount.toLocaleString()} raised</span>
+                  <span className="text-neutral-600">Goal: R {detailProject.targetAmount.toLocaleString()}</span>
+                </div>
+                <Progress value={detailProject.targetAmount > 0 ? Math.min(100, (detailProject.raisedAmount / detailProject.targetAmount) * 100) : 0} className="h-3" />
+                <p className="text-xs text-neutral-500 mt-1">
+                  {detailProject.targetAmount > 0 ? Math.round((detailProject.raisedAmount / detailProject.targetAmount) * 100) : 0}% funded
+                </p>
+              </div>
+
+              {(() => {
+                const d = getDeadlineInfo(detailProject.endDate);
+                if (!d) return null;
+                return (
+                  <div className={`flex items-center gap-2 text-sm mb-6 rounded-lg p-3 ${d.ended ? "bg-red-50 text-red-700" : d.urgent ? "bg-orange-50 text-orange-700" : "bg-neutral-50 text-neutral-700"}`}>
+                    <Clock className="w-4 h-4" />
+                    <span className="font-medium">{d.ended ? "This fundraiser has ended" : d.label}</span>
+                    {detailProject.endDate && !d.ended && (
+                      <span className="text-neutral-500">· closes {formatDate(detailProject.endDate)}</span>
+                    )}
+                  </div>
+                );
+              })()}
+
+              {(() => {
+                const d = getDeadlineInfo(detailProject.endDate);
+                const ended = d?.ended ?? false;
+                return (
+                  <Button
+                    className="w-full bg-orange-600 hover:bg-orange-700"
+                    disabled={ended}
+                    onClick={() => { setSelectedProject(detailProject); setDonateAmount(""); setShowDonateModal(true); setDetailProject(null); }}
+                  >
+                    <DollarSign className="w-4 h-4 mr-2" /> {ended ? "Fundraiser Closed" : "Donate to this Fundraiser"}
+                  </Button>
+                );
+              })()}
+            </div>
+          </Card>
+        </div>
+      )}
 
       {/* DONATE MODAL */}
       {showDonateModal && selectedProject && (

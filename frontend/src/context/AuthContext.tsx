@@ -12,6 +12,7 @@ interface AuthState {
   userType: UserType | null;
   email: string | null;
   isVerified: boolean;
+  isEmailVerified: boolean;
   isAuthenticated: boolean;
 }
 
@@ -59,6 +60,7 @@ interface StoredUser {
   userType: UserType;
   email: string;
   isVerified: boolean;
+  isEmailVerified: boolean;
 }
 
 function loadFromStorage(): AuthState {
@@ -74,6 +76,7 @@ function loadFromStorage(): AuthState {
         userType: user.userType,
         email: user.email,
         isVerified: user.isVerified,
+        isEmailVerified: user.isEmailVerified ?? false,
         isAuthenticated: true,
       };
     } catch {
@@ -89,6 +92,7 @@ function loadFromStorage(): AuthState {
     userType: null,
     email: null,
     isVerified: false,
+    isEmailVerified: false,
     isAuthenticated: false,
   };
 }
@@ -121,9 +125,15 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
         password,
       });
 
-      const { token, userId, userType, email: responseEmail, isVerified } = response.data;
+      const { token, userId, userType, email: responseEmail, isVerified, isEmailVerified } = response.data;
 
-      const user: StoredUser = { userId, userType, email: responseEmail, isVerified };
+      const user: StoredUser = {
+        userId,
+        userType,
+        email: responseEmail,
+        isVerified,
+        isEmailVerified: isEmailVerified ?? false,
+      };
       persistToStorage(token, user);
 
       setState({
@@ -132,6 +142,7 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
         userType,
         email: responseEmail,
         isVerified,
+        isEmailVerified: isEmailVerified ?? false,
         isAuthenticated: true,
       });
 
@@ -166,6 +177,7 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
       userType: null,
       email: null,
       isVerified: false,
+      isEmailVerified: false,
       isAuthenticated: false,
     });
     navigate("/login");

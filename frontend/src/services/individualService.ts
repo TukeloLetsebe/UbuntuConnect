@@ -179,7 +179,8 @@ export const individualService = {
   // Wallet & Donations
   getWalletBalance: (userId: number) =>
     api.get<WalletBalance>(`/api/wallet/user/${userId}/balance`),
-  topUp: (amount: number) => api.post("/api/individual/topup", { amount }),
+  topUp: (amount: number, card?: { cardNumber?: string; cardExpiry?: string; cardCvv?: string }) =>
+    api.post("/api/individual/topup", { amount, ...card }),
   donate: (npoId: number, amount: number) =>
     api.post(`/api/individual/donate/${npoId}`, { amount }),
   getMyDonations: () => api.get<MyDonationsResponse>("/api/individual/my-donations"),

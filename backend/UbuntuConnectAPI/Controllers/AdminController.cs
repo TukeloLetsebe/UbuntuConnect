@@ -3,6 +3,7 @@ using Microsoft.AspNetCore.Mvc;
 using Microsoft.EntityFrameworkCore;
 using System.Security.Claims;
 using UbuntuConnectAPI.Data;
+using UbuntuConnectAPI.Services.Cleanup;
 
 namespace UbuntuConnectAPI.Controllers;
 
@@ -12,10 +13,12 @@ namespace UbuntuConnectAPI.Controllers;
 public class AdminController : ControllerBase
 {
     private readonly AppDbContext _context;
+    private readonly IGhostAccountCleanupService _ghostCleanup;
 
-    public AdminController(AppDbContext context)
+    public AdminController(AppDbContext context, IGhostAccountCleanupService ghostCleanup)
     {
         _context = context;
+        _ghostCleanup = ghostCleanup;
     }
 
     // ── PLATFORM STATS ─────────────────────────────────────────
@@ -192,5 +195,35 @@ public class AdminController : ControllerBase
             .ToListAsync();
 
         return Ok(txs);
+    }
+
+    // ── GHOST ACCOUNT CLEANUP (Task 8) ─────────────────────────
+    // Preview which ghost (never-verified) accounts would be removed, without
+    // changing anything. Admins use this before running an actual cleanup.
+    [HttpGet("ghost-cleanup/preview")]
+    public async Task<IActionResult> PreviewGhostCleanup()
+    {
+        var result = await _ghostCleanup.RunAsync(dryRun: true);
+        return Ok(new
+        {
+            dryRun = true,
+            softDeleted = result.SoftDeleted,
+            hardDeleted = result.HardDeleted,
+            softDeletedUserIds = result.SoftDeletedUserIds,
+            hardDeletedUserIds = result.HardDeletedUserIds
+        });
+    }
+
+    // Run an actual cleanup pass on demand (applies soft/hard deletes).
+    [HttpPost("ghost-cleanup/run")]
+    public async Task<IActionResult> RunGhostCleanup()
+    {
+        var result = await _ghostCleanup.RunAsync(dryRun: false);
+        return Ok(new
+        {
+            dryRun = false,
+            softDeleted = result.SoftDeleted,
+            hardDeleted = result.HardDeleted
+        });
     }
 }

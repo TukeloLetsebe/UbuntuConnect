@@ -481,3 +481,6 @@ $RECYCLE.BIN/
 
 # Vim temporary swap files
 *.swp
+
+# UbuntuConnect uploaded files (local file storage — Task 2)
+backend/UbuntuConnectAPI/uploads/
