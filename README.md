@@ -225,8 +225,8 @@ The API will be available at **http://localhost:5275** with Swagger UI at `/swag
 
 ```bash
 cd frontend
-pnpm install
-pnpm dev
+npm install
+npm run dev
 ```
 
 The app will be available at **http://localhost:5173**.
