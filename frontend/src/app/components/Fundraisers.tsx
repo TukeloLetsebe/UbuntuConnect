@@ -11,7 +11,7 @@ import { Input } from "./ui/input";
 import { Label } from "./ui/label";
 import { Progress } from "./ui/progress";
 import {
-  Target, DollarSign, Loader2, RefreshCw, X, ArrowLeft,
+  Target, HandCoins, Loader2, RefreshCw, X, ArrowLeft,
   Heart, TrendingUp, LogOut, Search, Clock
 } from "lucide-react";
 
@@ -234,7 +234,7 @@ export default function Fundraisers() {
                         className="flex-1 bg-orange-600 hover:bg-orange-700"
                         onClick={() => { setSelectedProject(fund); setDonateAmount(""); setShowDonateModal(true); }}
                       >
-                        <DollarSign className="w-4 h-4 mr-1" /> Donate
+                        <HandCoins className="w-4 h-4 mr-1" /> Donate
                       </Button>
                     </div>
                   </div>
@@ -304,7 +304,7 @@ export default function Fundraisers() {
                     disabled={ended}
                     onClick={() => { setSelectedProject(detailProject); setDonateAmount(""); setShowDonateModal(true); setDetailProject(null); }}
                   >
-                    <DollarSign className="w-4 h-4 mr-2" /> {ended ? "Fundraiser Closed" : "Donate to this Fundraiser"}
+                    <HandCoins className="w-4 h-4 mr-2" /> {ended ? "Fundraiser Closed" : "Donate to this Fundraiser"}
                   </Button>
                 );
               })()}
@@ -336,7 +336,7 @@ export default function Fundraisers() {
                 <Input type="number" step="0.01" min="1" value={donateAmount} onChange={e => setDonateAmount(e.target.value)} placeholder="Enter amount..." required />
               </div>
               <Button type="submit" className="w-full bg-orange-600 hover:bg-orange-700" disabled={donating}>
-                {donating ? <Loader2 className="w-4 h-4 animate-spin mr-2" /> : <DollarSign className="w-4 h-4 mr-2" />}
+                {donating ? <Loader2 className="w-4 h-4 animate-spin mr-2" /> : <HandCoins className="w-4 h-4 mr-2" />}
                 {donating ? "Processing..." : "Confirm Donation"}
               </Button>
             </form>

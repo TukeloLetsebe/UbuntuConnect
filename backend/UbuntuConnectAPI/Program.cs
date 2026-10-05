@@ -15,7 +15,7 @@ using UbuntuConnectAPI.Services.Payments;
 using UbuntuConnectAPI.Services.Verification;
 using UbuntuConnectAPI.Services.FaceVerification;
 using Microsoft.Extensions.FileProviders;
-using Microsoft.OpenApi;
+using Microsoft.OpenApi.Models;
 
 
 

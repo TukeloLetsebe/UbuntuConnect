@@ -1,15 +1,16 @@
 ﻿import { useState, useEffect, useCallback } from "react";
-import { Link } from "react-router";
+import { Link, useNavigate } from "react-router";
 import { motion } from "motion/react";
 import { toast } from "sonner";
 import { useAuth } from "../../context/AuthContext";
 import NotificationBell from "./NotificationBell";
 import EmailVerificationBanner from "./EmailVerificationBanner";
 import IdentityVerificationBanner from "./IdentityVerificationBanner";
-import CardPaymentFields, { type CardDetails, emptyCard, validateCard } from "./CardPaymentFields";
+import CardPaymentFields, { type CardDetails, emptyCard } from "./CardPaymentFields";
 import ReportPostButton from "./ReportPostButton";
 import { resolveMediaUrl } from "../../lib/api";
 import { individualService, getErrorMessage, type IndividualProfile, type NPOSummary, type NPODetail, type VolunteerOpportunity, type MyVolunteeringItem, type MyDonationsResponse, type MyImpact, type CommunityPost, type FollowedNPO } from "../../services/individualService";
+import { kycService, type KycStatus } from "../../services/kycService";
 import {
   Dialog,
   DialogContent,
@@ -24,6 +25,7 @@ import { Skeleton } from "./ui/skeleton";
 import { Input } from "./ui/input";
 import { Label } from "./ui/label";
 import { Textarea } from "./ui/textarea";
+import { Checkbox } from "./ui/checkbox";
 import {
   Heart,
   Search,
@@ -32,7 +34,8 @@ import {
   LogOut,
   Settings,
   Bell,
-  DollarSign,
+  Banknote,
+  HandCoins,
   Users,
   CheckCircle,
   X,
@@ -47,11 +50,47 @@ import {
   Wallet,
   Send,
   Trash2,
-  Menu
+  Menu,
+  ShieldCheck,
+  BadgeCheck
 } from "lucide-react";
+
+// Common volunteer skills offered as quick checkboxes. Keeps applications
+// consistent and fast to fill while still allowing a free-text "Other".
+const SKILL_OPTIONS = [
+  "Teaching / Tutoring",
+  "Mentoring",
+  "First Aid",
+  "Administration",
+  "Fundraising",
+  "Social Media",
+  "Event Planning",
+  "Gardening",
+  "Cooking / Catering",
+  "Driving",
+  "IT / Computer Skills",
+  "Photography",
+  "Translation",
+  "Counselling",
+  "Construction / Handywork",
+];
+
+const AVAILABILITY_DAYS = ["Mon", "Tue", "Wed", "Thu", "Fri", "Sat", "Sun"];
+const AVAILABILITY_TIMES = ["Morning", "Afternoon", "Evening"];
+
+// Pre-tick skill checkboxes whose keyword appears in the opportunity's
+// required-skills text (case-insensitive, best-effort match).
+function matchSeedSkills(required: string): string[] {
+  const text = required.toLowerCase();
+  return SKILL_OPTIONS.filter((s) => {
+    const key = s.split(/[\s/]+/)[0].toLowerCase(); // first word, e.g. "teaching"
+    return key.length > 2 && text.includes(key);
+  });
+}
 
 export default function IndividualDashboard() {
   const { logout, email, userId } = useAuth();
+  const navigate = useNavigate();
   const [activeTab, setActiveTab] = useState("discover");
   const [sidebarOpen, setSidebarOpen] = useState(false);
 
@@ -138,6 +177,10 @@ export default function IndividualDashboard() {
   const [deactivatePassword, setDeactivatePassword] = useState("");
   const [deactivating, setDeactivating] = useState(false);
 
+  // Identity verification (KYC) status — shown in Profile Settings
+  const [kycStatus, setKycStatus] = useState<KycStatus | null>(null);
+  const [kycLoading, setKycLoading] = useState(false);
+
   // Volunteer Opportunities state
   const [opportunities, setOpportunities] = useState<VolunteerOpportunity[]>([]);
   const [oppsLoading, setOppsLoading] = useState(false);
@@ -150,6 +193,12 @@ export default function IndividualDashboard() {
   const [volEmail, setVolEmail] = useState("");
   const [volPhone, setVolPhone] = useState("");
   const [volSkills, setVolSkills] = useState("");
+  // Structured skills (checkbox multi-select) + "other" free text
+  const [volSkillSet, setVolSkillSet] = useState<string[]>([]);
+  const [volSkillsOther, setVolSkillsOther] = useState("");
+  // Structured availability: selected days + time-of-day blocks
+  const [volAvailDays, setVolAvailDays] = useState<string[]>([]);
+  const [volAvailTimes, setVolAvailTimes] = useState<string[]>([]);
   const [volAvailability, setVolAvailability] = useState("");
   const [volMotivation, setVolMotivation] = useState("");
   const [applying, setApplying] = useState(false);
@@ -262,6 +311,23 @@ export default function IndividualDashboard() {
       loadProfile();
     }
   }, [profile, loadProfile]);
+
+  // Load identity-verification (KYC) status for the Profile Settings card
+  const loadKyc = useCallback(async () => {
+    setKycLoading(true);
+    try {
+      const r = await kycService.getStatus();
+      setKycStatus(r.data);
+    } catch {
+      // Non-blocking — the card still renders a "verify now" action
+    } finally {
+      setKycLoading(false);
+    }
+  }, []);
+
+  useEffect(() => {
+    if (activeTab === "profile") loadKyc();
+  }, [activeTab, loadKyc]);
 
   // Load NPOs function
   const loadNPOs = useCallback(async () => {
@@ -660,12 +726,20 @@ export default function IndividualDashboard() {
   // Handle volunteer apply button
   const handleApplyVolunteer = (opportunityId: number) => {
     setSelectedOpportunity(opportunityId);
-    // Pre-populate form from profile if available
+    // Pre-populate form from the saved profile for a faster, friendlier apply flow.
     setVolFirstName(profile?.firstName || "");
     setVolLastName(profile?.lastName || "");
     setVolEmail(profile?.email || email || "");
-    setVolPhone("");
+    setVolPhone(profile?.contact || "");
+    // Seed the skills checkboxes from the opportunity's required skills (so the
+    // most relevant options are pre-ticked), and clear the structured availability.
+    const opp = opportunities.find((o) => o.opportunityId === opportunityId);
+    const seeded = matchSeedSkills(opp?.skillsRequired || "");
+    setVolSkillSet(seeded);
+    setVolSkillsOther("");
     setVolSkills("");
+    setVolAvailDays([]);
+    setVolAvailTimes([]);
     setVolAvailability("");
     setVolMotivation("");
     setShowVolunteerModal(true);
@@ -675,6 +749,15 @@ export default function IndividualDashboard() {
   const handleVolunteerSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
     if (!selectedOpportunity) return;
+
+    // Serialize the structured skills (checkboxes + "other") and availability
+    // (days + time blocks) into the plain strings the API expects.
+    const skills = [...volSkillSet, volSkillsOther.trim()].filter(Boolean).join(", ");
+    const availability =
+      volAvailDays.length || volAvailTimes.length
+        ? `${volAvailDays.join(", ")}${volAvailDays.length && volAvailTimes.length ? " — " : ""}${volAvailTimes.join(", ")}`
+        : "";
+
     setApplying(true);
     try {
       await individualService.applyVolunteer(selectedOpportunity, {
@@ -682,8 +765,8 @@ export default function IndividualDashboard() {
         lastName: volLastName,
         email: volEmail,
         phoneNum: volPhone || null,
-        skills: volSkills || null,
-        availability: volAvailability || null,
+        skills: skills || null,
+        availability: availability || null,
         whyVolunteer: volMotivation || null,
       });
       toast.success("Application submitted successfully!");
@@ -695,6 +778,10 @@ export default function IndividualDashboard() {
       setVolEmail("");
       setVolPhone("");
       setVolSkills("");
+      setVolSkillSet([]);
+      setVolSkillsOther("");
+      setVolAvailDays([]);
+      setVolAvailTimes([]);
       setVolAvailability("");
       setVolMotivation("");
       setSelectedOpportunity(null);
@@ -782,9 +869,10 @@ export default function IndividualDashboard() {
       return;
     }
 
-    const cardError = validateCard(topUpCard);
-    if (cardError) {
-      setTopUpError(cardError);
+    // Simulated card — we don't validate correctness, but all three fields must
+    // be filled in (fake numbers are fine) before the top-up goes through.
+    if (!topUpCard.cardNumber || !topUpCard.cardExpiry || !topUpCard.cardCvv) {
+      setTopUpError("Please enter your card details to top up.");
       return;
     }
 
@@ -857,9 +945,13 @@ export default function IndividualDashboard() {
           </div>
           <div className="flex items-center gap-4">
             <NotificationBell />
-            <span className="text-neutral-600 hidden sm:inline">
+            <button
+              onClick={() => setActiveTab("profile")}
+              className="text-neutral-600 hover:text-orange-600 transition-colors hidden sm:inline cursor-pointer"
+              title="Go to Profile Settings"
+            >
               {profile ? `${profile.firstName} ${profile.lastName}` : email || "User"}
-            </span>
+            </button>
             <Button variant="outline" size="sm" onClick={handleLogout}>
               <LogOut className="w-4 h-4 mr-2" />
               Logout
@@ -915,7 +1007,7 @@ export default function IndividualDashboard() {
                   : "text-neutral-600 hover:bg-neutral-50"
               }`}
             >
-              <DollarSign className="w-5 h-5" />
+              <Banknote className="w-5 h-5" />
               Donations
             </button>
             <button
@@ -1110,7 +1202,11 @@ export default function IndividualDashboard() {
                     {/* NPO Grid */}
                     <div className="grid md:grid-cols-2 gap-6">
                       {filteredNPOs.map((npo) => (
-                        <Card key={npo.npoId} className="overflow-hidden hover:shadow-lg transition-shadow">
+                        <Card
+                          key={npo.npoId}
+                          className="overflow-hidden hover:shadow-lg transition-shadow cursor-pointer"
+                          onClick={() => navigate(`/npo/${npo.npoId}`)}
+                        >
                           <div className={`h-40 bg-gradient-to-br ${getNpoColor(npo.organizationName)} flex items-center justify-center`}>
                             <span className="text-5xl font-bold text-white/80">
                               {npo.organizationName.charAt(0).toUpperCase()}
@@ -1120,12 +1216,9 @@ export default function IndividualDashboard() {
                             <div className="flex items-start justify-between mb-3">
                               <div>
                                 <div className="flex items-center gap-2 mb-1">
-                                  <button
-                                    className="text-lg font-semibold hover:text-orange-600 transition-colors text-left"
-                                    onClick={() => handleViewNpoDetail(npo.npoId)}
-                                  >
+                                  <span className="text-lg font-semibold group-hover:text-orange-600">
                                     {npo.organizationName}
-                                  </button>
+                                  </span>
                                   {npo.isVerified && <CheckCircle className="w-5 h-5 text-green-600" />}
                                 </div>
                                 <div className="flex items-center gap-4 text-sm text-neutral-600">
@@ -1146,7 +1239,7 @@ export default function IndividualDashboard() {
                               <Button
                                 variant="outline"
                                 className="flex-1"
-                                onClick={() => handleFollow(npo.npoId)}
+                                onClick={(e) => { e.stopPropagation(); handleFollow(npo.npoId); }}
                               >
                                 <Heart
                                   className={`w-4 h-4 mr-2 ${
@@ -1157,14 +1250,12 @@ export default function IndividualDashboard() {
                               </Button>
                               <Button
                                 className="flex-1 bg-orange-600 hover:bg-orange-700"
-                                onClick={() => handleDonate(npo.npoId)}
+                                onClick={(e) => { e.stopPropagation(); handleDonate(npo.npoId); }}
                               >
                                 Donate
                               </Button>
                             </div>
-                            <Link to={`/npo/${npo.npoId}`} className="block text-center text-sm text-orange-600 hover:underline mt-3">
-                              View full profile
-                            </Link>
+                            <p className="text-center text-sm text-orange-600 mt-3">View full profile →</p>
                           </div>
                         </Card>
                       ))}
@@ -1225,7 +1316,11 @@ export default function IndividualDashboard() {
                     <h2 className="mb-6">Your Followed Organizations</h2>
                     <div className="grid md:grid-cols-2 gap-6">
                       {followedNpos.map((npo) => (
-                        <Card key={npo.npoId} className="overflow-hidden">
+                        <Card
+                          key={npo.npoId}
+                          className="overflow-hidden hover:shadow-lg transition-shadow cursor-pointer"
+                          onClick={() => navigate(`/npo/${npo.npoId}`)}
+                        >
                           <div className={`h-16 bg-gradient-to-r ${getNpoColor(npo.organizationName)} flex items-center justify-center`}>
                             <span className="text-2xl font-bold text-white/90">
                               {npo.organizationName.charAt(0).toUpperCase()}
@@ -1235,12 +1330,9 @@ export default function IndividualDashboard() {
                           <div className="flex items-start justify-between mb-3">
                             <div>
                               <div className="flex items-center gap-2 mb-1">
-                                <button
-                                  className="text-lg font-semibold hover:text-orange-600 transition-colors text-left"
-                                  onClick={() => handleViewNpoDetail(npo.npoId)}
-                                >
+                                <span className="text-lg font-semibold">
                                   {npo.organizationName}
-                                </button>
+                                </span>
                                 {npo.isVerified && <CheckCircle className="w-5 h-5 text-green-600" />}
                               </div>
                               <div className="flex items-center gap-3 text-sm text-neutral-600 mb-2">
@@ -1256,7 +1348,7 @@ export default function IndividualDashboard() {
                             <Button
                               variant="outline"
                               size="sm"
-                              onClick={() => handleFollow(npo.npoId)}
+                              onClick={(e) => { e.stopPropagation(); handleFollow(npo.npoId); }}
                             >
                               Unfollow
                             </Button>
@@ -1267,10 +1359,11 @@ export default function IndividualDashboard() {
                           <Button
                             size="sm"
                             className="bg-orange-600 hover:bg-orange-700"
-                            onClick={() => handleDonate(npo.npoId)}
+                            onClick={(e) => { e.stopPropagation(); handleDonate(npo.npoId); }}
                           >
                             Donate
                           </Button>
+                          <p className="text-center text-sm text-orange-600 mt-3">View full profile →</p>
                           </div>
                         </Card>
                       ))}
@@ -1344,7 +1437,13 @@ export default function IndividualDashboard() {
                         <div className="flex items-start justify-between mb-4">
                           <div>
                             <h3 className="mb-1">{opp.roleTitle}</h3>
-                            <p className="text-sm text-neutral-500">NPO #{opp.npoId}</p>
+                            <button
+                              onClick={() => navigate(`/npo/${opp.npoId}`)}
+                              className="text-sm text-orange-600 hover:underline text-left"
+                              title="View NPO profile"
+                            >
+                              {opp.npoName || `NPO #${opp.npoId}`}
+                            </button>
                           </div>
                           {opp.category && <Badge className="bg-blue-100 text-blue-700">{opp.category}</Badge>}
                         </div>
@@ -1631,7 +1730,7 @@ export default function IndividualDashboard() {
                       </div>
                     ) : (
                       <Card className="p-12 text-center">
-                        <DollarSign className="w-12 h-12 text-neutral-400 mx-auto mb-3" />
+                        <Banknote className="w-12 h-12 text-neutral-400 mx-auto mb-3" />
                         <h3 className="mb-2">No donations yet</h3>
                         <p className="text-neutral-600 mb-4">Support NPOs by making your first donation</p>
                         <Button onClick={() => setActiveTab("discover")}>Discover NPOs</Button>
@@ -1977,6 +2076,43 @@ export default function IndividualDashboard() {
                   <p className="text-neutral-600">Manage your account information</p>
                 </div>
 
+                {/* Identity Verification (KYC) — always visible so the flow is reachable */}
+                <Card className="p-8 mb-6">
+                  <div className="flex items-start justify-between gap-4 flex-wrap">
+                    <div className="flex items-start gap-3">
+                      <div className="w-10 h-10 rounded-full bg-orange-100 flex items-center justify-center shrink-0">
+                        <ShieldCheck className="w-5 h-5 text-orange-600" />
+                      </div>
+                      <div>
+                        <h3 className="mb-1">Identity Verification</h3>
+                        <p className="text-sm text-neutral-600 max-w-md">
+                          Verify your identity (ID + selfie) to unlock donations, wallet top-ups and volunteering.
+                        </p>
+                        <div className="mt-2">
+                          {kycLoading ? (
+                            <span className="text-sm text-neutral-500 inline-flex items-center gap-2"><Loader2 className="w-4 h-4 animate-spin" /> Checking status…</span>
+                          ) : kycStatus?.status === "Approved" ? (
+                            <Badge className="bg-green-100 text-green-700 gap-1"><BadgeCheck className="w-3.5 h-3.5" /> Verified</Badge>
+                          ) : kycStatus?.status === "Pending" ? (
+                            <Badge className="bg-amber-100 text-amber-700">Under review</Badge>
+                          ) : kycStatus?.status === "Rejected" ? (
+                            <Badge className="bg-red-100 text-red-700">Rejected — please resubmit</Badge>
+                          ) : (
+                            <Badge className="bg-neutral-100 text-neutral-700">Not submitted</Badge>
+                          )}
+                        </div>
+                      </div>
+                    </div>
+                    {kycStatus?.status !== "Approved" && (
+                      <Button asChild className="bg-orange-600 hover:bg-orange-700">
+                        <Link to="/verify-identity">
+                          {kycStatus?.status === "Pending" ? "View submission" : kycStatus?.status === "Rejected" ? "Resubmit" : "Verify now"}
+                        </Link>
+                      </Button>
+                    )}
+                  </div>
+                </Card>
+
                 {profileLoading && (
                   <Card className="p-8 mb-6">
                     <Skeleton className="h-6 w-48 mb-6" />
@@ -2316,7 +2452,7 @@ export default function IndividualDashboard() {
                         className="text-orange-600 border-orange-600 hover:bg-orange-50"
                         onClick={() => setShowTopUp(true)}
                       >
-                        <DollarSign className="w-4 h-4 mr-1" />
+                        <HandCoins className="w-4 h-4 mr-1" />
                         Top Up Wallet
                       </Button>
                     )}
@@ -2443,25 +2579,81 @@ export default function IndividualDashboard() {
                 />
               </div>
               <div>
-                <Label htmlFor="vol-skills">Your Skills</Label>
+                <Label>Your Skills</Label>
+                <p className="text-xs text-neutral-500 mt-1">Select all that apply.</p>
+                <div className="mt-2 grid grid-cols-2 gap-2">
+                  {SKILL_OPTIONS.map((skill) => {
+                    const checked = volSkillSet.includes(skill);
+                    return (
+                      <label
+                        key={skill}
+                        className="flex items-center gap-2 text-sm text-neutral-700 cursor-pointer"
+                      >
+                        <Checkbox
+                          checked={checked}
+                          onCheckedChange={(v) =>
+                            setVolSkillSet((prev) =>
+                              v === true ? [...prev, skill] : prev.filter((s) => s !== skill)
+                            )
+                          }
+                        />
+                        <span>{skill}</span>
+                      </label>
+                    );
+                  })}
+                </div>
                 <Input
-                  id="vol-skills"
-                  placeholder="e.g., Teaching, First Aid"
-                  className="mt-2"
-                  value={volSkills}
-                  onChange={(e) => setVolSkills(e.target.value)}
+                  id="vol-skills-other"
+                  placeholder="Other skills (optional)"
+                  className="mt-3"
+                  value={volSkillsOther}
+                  onChange={(e) => setVolSkillsOther(e.target.value)}
                 />
               </div>
               <div>
-                <Label htmlFor="vol-availability">Your Availability</Label>
-                <Textarea
-                  id="vol-availability"
-                  placeholder="When are you available?"
-                  className="mt-2"
-                  rows={3}
-                  value={volAvailability}
-                  onChange={(e) => setVolAvailability(e.target.value)}
-                />
+                <Label>Your Availability</Label>
+                <p className="text-xs text-neutral-500 mt-1">Pick the days and times you're free.</p>
+                <div className="mt-2 flex flex-wrap gap-2">
+                  {AVAILABILITY_DAYS.map((day) => {
+                    const checked = volAvailDays.includes(day);
+                    return (
+                      <button
+                        key={day}
+                        type="button"
+                        onClick={() =>
+                          setVolAvailDays((prev) =>
+                            prev.includes(day) ? prev.filter((d) => d !== day) : [...prev, day]
+                          )
+                        }
+                        className={`px-3 py-1.5 rounded-full text-sm border transition-colors ${
+                          checked
+                            ? "bg-orange-600 text-white border-orange-600"
+                            : "bg-white text-neutral-700 border-neutral-300 hover:border-orange-400"
+                        }`}
+                      >
+                        {day}
+                      </button>
+                    );
+                  })}
+                </div>
+                <div className="mt-2 flex flex-wrap gap-4">
+                  {AVAILABILITY_TIMES.map((time) => {
+                    const checked = volAvailTimes.includes(time);
+                    return (
+                      <label key={time} className="flex items-center gap-2 text-sm text-neutral-700 cursor-pointer">
+                        <Checkbox
+                          checked={checked}
+                          onCheckedChange={(v) =>
+                            setVolAvailTimes((prev) =>
+                              v === true ? [...prev, time] : prev.filter((t) => t !== time)
+                            )
+                          }
+                        />
+                        <span>{time}</span>
+                      </label>
+                    );
+                  })}
+                </div>
               </div>
               <div>
                 <Label htmlFor="vol-motivation">Why do you want to volunteer?</Label>

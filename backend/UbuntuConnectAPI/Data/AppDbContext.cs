@@ -1,4 +1,4 @@
-﻿using System;
+﻿ using System;
 using System.Collections.Generic;
 using Microsoft.EntityFrameworkCore;
 using UbuntuConnectAPI.Models;
@@ -232,6 +232,7 @@ public partial class AppDbContext : DbContext
             entity.Property(e => e.Description).HasMaxLength(2000);
             entity.Property(e => e.Requirements).HasMaxLength(1000);
             entity.Property(e => e.Title).HasMaxLength(255);
+            entity.Property(e => e.ImageUrl).HasMaxLength(500);
 
             entity.HasOne(d => d.Business).WithMany(p => p.PartnershipCampaigns)
                 .HasForeignKey(d => d.BusinessId)

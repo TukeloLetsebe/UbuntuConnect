@@ -6,4 +6,5 @@ public class UpdateCampaignRequest
     public string? Category { get; set; }
     public string? Requirements { get; set; }
     public decimal? BudgetPerPartner { get; set; }
+    public string? ImageUrl { get; set; }
 }

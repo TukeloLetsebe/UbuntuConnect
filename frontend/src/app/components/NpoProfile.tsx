@@ -2,15 +2,19 @@ import { useState, useEffect, useCallback } from "react";
 import { useParams, Link, useNavigate } from "react-router";
 import { toast } from "sonner";
 import { resolveMediaUrl } from "../../lib/api";
+import { useAuth } from "../../context/AuthContext";
 import { npoProfileService, type PublicNpoProfile } from "../../services/npoProfileService";
+import { individualService } from "../../services/individualService";
 import { Button } from "./ui/button";
 import { Card } from "./ui/card";
 import { Badge } from "./ui/badge";
 import { Progress } from "./ui/progress";
+import { Input } from "./ui/input";
+import { Label } from "./ui/label";
 import { Tabs, TabsList, TabsTrigger, TabsContent } from "./ui/tabs";
 import {
   ArrowLeft, Loader2, MapPin, Users, BadgeCheck, Mail, Phone,
-  Lock, Target, HandHeart, Heart,
+  Lock, Target, HandHeart, Heart, HandCoins, X,
 } from "lucide-react";
 
 function getErrorMessage(error: unknown): string {
@@ -29,8 +33,44 @@ function getErrorMessage(error: unknown): string {
 export default function NpoProfile() {
   const { npoId } = useParams<{ npoId: string }>();
   const navigate = useNavigate();
+  const { userType } = useAuth();
   const [profile, setProfile] = useState<PublicNpoProfile | null>(null);
   const [loading, setLoading] = useState(true);
+
+  // Donate (Individual only)
+  const [showDonate, setShowDonate] = useState(false);
+  const [donateAmount, setDonateAmount] = useState("");
+  const [donating, setDonating] = useState(false);
+
+  const dashboardPath =
+    userType === "NPO" ? "/npo-dashboard"
+      : userType === "Business" ? "/business-dashboard"
+        : userType === "Admin" ? "/admin-dashboard"
+          : "/individual-dashboard";
+
+  // Safe back: go to the previous page only if we have in-app history,
+  // otherwise fall back to the role dashboard (never bounce to /login).
+  const goBack = () => {
+    if (window.history.length > 1) navigate(-1);
+    else navigate(dashboardPath);
+  };
+
+  const handleDonate = async () => {
+    if (!profile) return;
+    const amt = parseFloat(donateAmount);
+    if (isNaN(amt) || amt <= 0) { toast.error("Enter a valid amount."); return; }
+    setDonating(true);
+    try {
+      await individualService.donate(profile.npoId, amt);
+      toast.success(`Thank you! You donated R ${amt.toLocaleString()} to ${profile.organizationName}.`);
+      setShowDonate(false);
+      setDonateAmount("");
+    } catch (e) {
+      toast.error(getErrorMessage(e));
+    } finally {
+      setDonating(false);
+    }
+  };
 
   const load = useCallback(async () => {
     if (!npoId) return;
@@ -60,7 +100,7 @@ export default function NpoProfile() {
     return (
       <div className="min-h-screen flex flex-col items-center justify-center bg-neutral-50 gap-4">
         <p className="text-neutral-600">NPO profile not found.</p>
-        <Button variant="outline" onClick={() => navigate(-1)}><ArrowLeft className="w-4 h-4 mr-2" /> Go back</Button>
+        <Button variant="outline" onClick={goBack}><ArrowLeft className="w-4 h-4 mr-2" /> Go back</Button>
       </div>
     );
   }
@@ -72,7 +112,7 @@ export default function NpoProfile() {
       {/* Cover */}
       <div className="relative h-48 md:h-64 bg-gradient-to-r from-orange-500 to-amber-500">
         <div className="absolute top-4 left-4">
-          <Button variant="secondary" size="sm" onClick={() => navigate(-1)}>
+          <Button variant="secondary" size="sm" onClick={goBack}>
             <ArrowLeft className="w-4 h-4 mr-1" /> Back
           </Button>
         </div>
@@ -103,6 +143,14 @@ export default function NpoProfile() {
           </div>
 
           {profile.bio && <p className="text-neutral-700 mt-4">{profile.bio}</p>}
+
+          {userType === "Individual" && (
+            <div className="mt-4">
+              <Button className="bg-orange-600 hover:bg-orange-700" onClick={() => { setDonateAmount(""); setShowDonate(true); }}>
+                <Heart className="w-4 h-4 mr-2" /> Donate to this NPO
+              </Button>
+            </div>
+          )}
 
           {/* Contact block — gated */}
           <div className="mt-4 border-t border-neutral-100 pt-4">
@@ -154,7 +202,7 @@ export default function NpoProfile() {
               <div className="space-y-4 mt-4">
                 {profile.posts.map(p => (
                   <Card key={p.postId} className="overflow-hidden">
-                    {p.mediaUrl && <img src={resolveMediaUrl(p.mediaUrl)} alt={p.postTitle} className="w-full max-h-80 object-cover" />}
+                    {p.mediaUrl && <img src={resolveMediaUrl(p.mediaUrl)} alt={p.postTitle} className="w-full h-56 object-cover object-center" />}
                     <div className="p-5">
                       <h3 className="font-semibold text-lg">{p.postTitle}</h3>
                       {p.content && <p className="text-neutral-700 mt-1 whitespace-pre-wrap">{p.content}</p>}
@@ -175,13 +223,18 @@ export default function NpoProfile() {
             ) : (
               <div className="grid sm:grid-cols-2 gap-4 mt-4">
                 {profile.fundraisers.map(f => (
-                  <Card key={f.projectId} className="overflow-hidden">
+                  <Card key={f.projectId} className="overflow-hidden flex flex-col">
                     {f.images && <img src={resolveMediaUrl(f.images.split(",")[0].trim())} alt={f.projectName} className="w-full h-40 object-cover" />}
-                    <div className="p-5">
+                    <div className="p-5 flex flex-col flex-1">
                       <div className="flex items-center gap-2 mb-2"><Target className="w-4 h-4 text-orange-600" /><h3 className="font-semibold">{f.projectName}</h3></div>
                       {f.projectDesc && <p className="text-sm text-neutral-600 line-clamp-2 mb-3">{f.projectDesc}</p>}
                       <Progress value={f.targetAmount > 0 ? Math.min(100, (f.raisedAmount / f.targetAmount) * 100) : 0} className="h-2" />
                       <p className="text-xs text-neutral-500 mt-1">R {f.raisedAmount.toLocaleString()} of R {f.targetAmount.toLocaleString()}</p>
+                      {(userType === "Individual" || userType === "Business") && (
+                        <Button asChild variant="outline" size="sm" className="mt-3 w-full">
+                          <Link to="/fundraisers">View &amp; donate</Link>
+                        </Button>
+                      )}
                     </div>
                   </Card>
                 ))}
@@ -195,13 +248,18 @@ export default function NpoProfile() {
             ) : (
               <div className="grid sm:grid-cols-2 gap-4 mt-4">
                 {profile.opportunities.map(o => (
-                  <Card key={o.opportunityId} className="p-5">
+                  <Card key={o.opportunityId} className="p-5 flex flex-col">
                     <div className="flex items-center gap-2 mb-1"><HandHeart className="w-4 h-4 text-orange-600" /><h3 className="font-semibold">{o.roleTitle}</h3></div>
                     <div className="flex items-center gap-2 mb-2">
                       {o.category && <Badge variant="outline">{o.category}</Badge>}
                       <Badge className="bg-green-100 text-green-700">{o.numOfPositions} position{o.numOfPositions === 1 ? "" : "s"}</Badge>
                     </div>
                     {o.description && <p className="text-sm text-neutral-600 line-clamp-3">{o.description}</p>}
+                    {userType === "Individual" && (
+                      <Button asChild variant="outline" size="sm" className="mt-3 w-full">
+                        <Link to="/individual-dashboard">View &amp; apply</Link>
+                      </Button>
+                    )}
                   </Card>
                 ))}
               </div>
@@ -209,6 +267,36 @@ export default function NpoProfile() {
           </TabsContent>
         </Tabs>
       </div>
+
+      {/* Donate modal (Individual) */}
+      {showDonate && (
+        <div className="fixed inset-0 bg-black/50 flex items-center justify-center z-50 p-4" onClick={() => setShowDonate(false)}>
+          <Card className="w-full max-w-md p-6" onClick={e => e.stopPropagation()}>
+            <div className="flex justify-between items-center mb-4">
+              <h2 className="text-lg font-bold">Donate to {profile.organizationName}</h2>
+              <Button variant="ghost" size="sm" onClick={() => setShowDonate(false)}><X className="w-4 h-4" /></Button>
+            </div>
+            <div>
+              <Label htmlFor="npo-donate-amount">Amount (R)</Label>
+              <Input
+                id="npo-donate-amount"
+                type="number"
+                min="1"
+                step="0.01"
+                value={donateAmount}
+                onChange={e => setDonateAmount(e.target.value)}
+                placeholder="Enter amount"
+                className="mt-1"
+              />
+            </div>
+            <Button className="w-full mt-4 bg-orange-600 hover:bg-orange-700" onClick={handleDonate} disabled={donating}>
+              {donating ? <Loader2 className="w-4 h-4 animate-spin mr-2" /> : <HandCoins className="w-4 h-4 mr-2" />}
+              {donating ? "Processing…" : "Confirm Donation"}
+            </Button>
+            <p className="text-xs text-neutral-500 mt-2 text-center">Funds are transferred from your wallet balance.</p>
+          </Card>
+        </div>
+      )}
     </div>
   );
 }

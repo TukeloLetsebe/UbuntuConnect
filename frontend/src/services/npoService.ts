@@ -218,7 +218,7 @@ export const npoService = {
 
   // Volunteer Opportunities (NPO creates these for individuals to apply to)
   getMyOpportunities: (npoId: number) => api.get<VolunteerOpportunityItem[]>(`/api/VolunteerOpportunity/npo/${npoId}`),
-  createOpportunity: (data: { roleTitle: string; category?: string; numOfPositions?: number; description?: string; skillsRequired?: string; timeCommitment?: string; duration?: string }) =>
+  createOpportunity: (data: { roleTitle: string; category?: string; numOfPositions?: number; description?: string; skillsRequired?: string; timeCommitment?: string; duration?: string; mediaURL?: string }) =>
     api.post<VolunteerOpportunityItem>("/api/VolunteerOpportunity", data),
   updateOpportunity: (id: number, data: { roleTitle?: string; category?: string; numOfPositions?: number; description?: string; skillsRequired?: string; timeCommitment?: string; duration?: string }) =>
     api.put(`/api/VolunteerOpportunity/${id}`, data),

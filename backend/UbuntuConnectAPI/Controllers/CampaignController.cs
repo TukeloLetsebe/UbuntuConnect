@@ -32,6 +32,7 @@ public class CampaignController : ControllerBase
                 description = c.Description,
                 category = c.Category,
                 budgetPerPartner = c.BudgetPerPartner,
+                imageUrl = c.ImageUrl,
                 startDate = c.StartDate,
                 endDate = c.EndDate
             })
@@ -53,6 +54,7 @@ public class CampaignController : ControllerBase
                 category = c.Category,
                 requirements = c.Requirements,
                 budgetPerPartner = c.BudgetPerPartner,
+                imageUrl = c.ImageUrl,
                 startDate = c.StartDate,
                 endDate = c.EndDate
             })
@@ -80,6 +82,7 @@ public class CampaignController : ControllerBase
             Category = req.Category,
             Requirements = req.Requirements,
             BudgetPerPartner = req.BudgetPerPartner,
+            ImageUrl = req.ImageUrl,
             StartDate = req.StartDate,
             EndDate = req.EndDate
         };
@@ -114,6 +117,7 @@ public class CampaignController : ControllerBase
         if (req.Category != null) campaign.Category = req.Category;
         if (req.Requirements != null) campaign.Requirements = req.Requirements;
         if (req.BudgetPerPartner.HasValue) campaign.BudgetPerPartner = req.BudgetPerPartner.Value;
+        if (req.ImageUrl != null) campaign.ImageUrl = req.ImageUrl;
 
         await _context.SaveChangesAsync();
         return NoContent();

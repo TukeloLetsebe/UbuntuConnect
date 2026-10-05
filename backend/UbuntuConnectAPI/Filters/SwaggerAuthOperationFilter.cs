@@ -1,5 +1,5 @@
 ﻿using Microsoft.AspNetCore.Authorization;
-using Microsoft.OpenApi;
+using Microsoft.OpenApi.Models;
 using Swashbuckle.AspNetCore.SwaggerGen;
 
 namespace UbuntuConnectAPI.Filters;
@@ -18,7 +18,14 @@ public class SwaggerAuthOperationFilter : IOperationFilter
         operation.Security.Add(new OpenApiSecurityRequirement
         {
             {
-                new OpenApiSecuritySchemeReference("Bearer", context.Document),
+                new OpenApiSecurityScheme
+                {
+                    Reference = new OpenApiReference
+                    {
+                        Type = ReferenceType.SecurityScheme,
+                        Id = "Bearer"
+                    }
+                },
                 new List<string>()
             }
         });

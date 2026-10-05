@@ -2,7 +2,7 @@
 
 > A social impact platform connecting individuals, NPOs, businesses, and communities to create measurable positive change.
 
-[![.NET 10](https://img.shields.io/badge/.NET-10.0-purple)](https://dotnet.microsoft.com/)
+[![.NET 9](https://img.shields.io/badge/.NET-9.0-purple)](https://dotnet.microsoft.com/)
 [![React](https://img.shields.io/badge/React-18.3-blue)](https://react.dev/)
 [![TailwindCSS](https://img.shields.io/badge/Tailwind-4.1-cyan)](https://tailwindcss.com/)
 [![SQL Server](https://img.shields.io/badge/SQL%20Server-2022-red)](https://www.microsoft.com/en-us/sql-server)
@@ -56,8 +56,8 @@ UbuntuConnect is a community-driven collaboration platform that enables:
 | **UI Framework** | Tailwind CSS + shadcn/ui | 4.1 |
 | **Build Tool** | Vite | 6.3 |
 | **Animations** | Motion (Framer Motion) | 12.x |
-| **Backend** | ASP.NET Core Web API | .NET 10 |
-| **ORM** | Entity Framework Core | 10.x |
+| **Backend** | ASP.NET Core Web API | .NET 9 |
+| **ORM** | Entity Framework Core | 9.x |
 | **Database** | Microsoft SQL Server | 2022 |
 | **Authentication** | JWT (JSON Web Tokens) | — |
 | **API Docs** | Swagger / OpenAPI | — |
@@ -73,7 +73,7 @@ UbuntuConnect is a community-driven collaboration platform that enables:
 
 ```
 UbuntuConnect/
-├── backend/                           # .NET 10 Web API
+├── backend/                           # .NET 9 Web API
 │   └── UbuntuConnectAPI/
 │       ├── Controllers/               # 19 API Controllers
 │       │   ├── AuthController.cs      # Register + Login + email verification (JWT)
@@ -152,9 +152,12 @@ UbuntuConnect/
 │   ├── package.json
 │   └── vite.config.ts
 ├── database/                           # SQL Server migrations
-│   ├── migrations/                    # Sequential migrations (002–030)
-│   ├── 000_run_all_migrations.sql     # Master migration runner (STALE — apply 025–030 individually)
-│   └── seed_dummy_data.sql            # Realistic seed data
+│   ├── migrations/                    # Sequential migrations (002–031)
+│   └── 000_run_all_migrations.sql     # Master migration runner (STALE — apply 025–031 individually)
+├── MASTER_SCRIPT.sql                   # One-shot: builds the entire DB schema (all tables, idempotent)
+├── seed_data.sql                       # Fresh randomized seed: 30 users + supporting data
+├── delete_seed_data.sql                # Wipes all data + resets identity counters (run before re-seeding)
+├── SEED_CREDENTIALS.md                 # Plaintext email + password for every seeded account
 ├── docs/                               # Full project documentation
 │   ├── 00_PROJECT_CHARTER.md
 │   ├── 01_PROJECT_OVERVIEW.md
@@ -178,7 +181,7 @@ UbuntuConnect/
 
 ### Prerequisites
 
-- [.NET 10 SDK](https://dotnet.microsoft.com/download/dotnet/10.0)
+- [.NET 9 SDK](https://dotnet.microsoft.com/download/dotnet/9.0) — ships with Visual Studio 2022 (17.12+). Visual Studio 2026 is **not** required.
 - [Node.js 18+](https://nodejs.org/) with pnpm (`npm install -g pnpm`)
 - [SQL Server 2022](https://www.microsoft.com/en-us/sql-server/sql-server-downloads) (LocalDB or full)
 - [Git](https://git-scm.com/)
@@ -194,22 +197,22 @@ git checkout v6
 ### 2. Database Setup
 
 ```bash
-# Connect to SQL Server (SSMS or sqlcmd) and run the base schema:
-database/000_run_all_migrations.sql
+# 1. Build the full schema in one shot (creates UbuntuConnect_DB + every table).
+#    Idempotent — safe to re-run; existing objects are skipped.
+sqlcmd -S localhost -E -C -i MASTER_SCRIPT.sql
 
-# Then apply the incremental improvement migrations (025–030) in order, e.g.:
-sqlcmd -S localhost -E -C -i database/migrations/025_create_emailverificationtokens.sql
-sqlcmd -S localhost -E -C -i database/migrations/026_create_notifications.sql
-sqlcmd -S localhost -E -C -i database/migrations/027_alter_users_add_isemailverified.sql
-sqlcmd -S localhost -E -C -i database/migrations/028_create_postreports.sql
-sqlcmd -S localhost -E -C -i database/migrations/029_alter_individual_add_kyc.sql
-sqlcmd -S localhost -E -C -i database/migrations/030_alter_projects_add_dates.sql
+# 2. (Optional) Load the demo seed data: 30 users + supporting rows.
+#    Login credentials for every seeded account are in SEED_CREDENTIALS.md.
+sqlcmd -S localhost -E -C -i seed_data.sql
 
-# Optionally load seed data:
-database/seed_dummy_data.sql
+# To RESET demo data later, wipe first, then re-seed:
+sqlcmd -S localhost -E -C -i delete_seed_data.sql
+sqlcmd -S localhost -E -C -i seed_data.sql
 ```
 
-> Note: `000_run_all_migrations.sql` predates the improvement migrations. Migrations 025–030 are idempotent (guarded by `IF NOT EXISTS`), so re-running them is safe.
+> `seed_data.sql` does NOT wipe on its own — run `delete_seed_data.sql` first when you
+> want a clean slate. `MASTER_SCRIPT.sql` consolidates migrations 002–031; the individual
+> files under `database/migrations/` remain the source of truth for incremental history.
 
 ### 3. Backend Setup
 

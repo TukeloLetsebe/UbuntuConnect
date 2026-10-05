@@ -40,6 +40,7 @@ export interface Campaign {
   category: string | null;
   requirements: string | null;
   budgetPerPartner: number | null;
+  imageUrl: string | null;
   startDate: string;
   endDate: string | null;
   applicantCount?: number;
@@ -162,6 +163,7 @@ export const businessService = {
     category?: string;
     requirements?: string;
     budgetPerPartner?: number;
+    imageUrl?: string;
     startDate: string;
     endDate?: string;
   }) => api.post("/api/campaigns", data),
@@ -171,6 +173,7 @@ export const businessService = {
     category?: string;
     requirements?: string;
     budgetPerPartner?: number;
+    imageUrl?: string;
   }) => api.put(`/api/campaigns/${id}`, data),
   deleteCampaign: (id: number) => api.delete(`/api/campaigns/${id}`),
 

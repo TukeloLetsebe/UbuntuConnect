@@ -25,6 +25,8 @@ public partial class PartnershipCampaign
 
     public DateOnly? EndDate { get; set; }
 
+    public string? ImageUrl { get; set; }
+
     public virtual Business Business { get; set; } = null!;
 
     public virtual ICollection<CampaignApplication> CampaignApplications { get; set; } = new List<CampaignApplication>();

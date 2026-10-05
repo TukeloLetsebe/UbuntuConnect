@@ -3,30 +3,17 @@ using System.Globalization;
 namespace UbuntuConnectAPI.Services.Payments;
 
 /// <summary>
-/// Mock card gateway. A card that passes Luhn + expiry + CVV structural checks
-/// is always approved. No funds are actually charged; the caller credits the
-/// wallet on approval.
+/// Mock card gateway. This is a pure simulation for demos — it performs NO card
+/// validation and always approves, regardless of the (random) numbers entered.
+/// No funds are actually charged; the caller credits the wallet on approval.
+/// The Luhn/expiry helpers below are retained for reference/tests but are no
+/// longer used to gate a charge.
 /// </summary>
 public class PaymentSimulationService : IPaymentSimulationService
 {
     public PaymentSimulationResult Charge(string? cardNumber, string? expiry, string? cvv)
     {
-        var digits = new string((cardNumber ?? string.Empty).Where(char.IsDigit).ToArray());
-        if (digits.Length < 13 || digits.Length > 19)
-            return PaymentSimulationResult.Decline("Card number must be 13–19 digits.");
-        if (!PassesLuhn(digits))
-            return PaymentSimulationResult.Decline("Invalid card number.");
-
-        if (!TryParseExpiry(expiry, out var expiryEndExclusive))
-            return PaymentSimulationResult.Decline("Invalid expiry date. Use MM/YY.");
-        if (expiryEndExclusive <= DateTime.UtcNow)
-            return PaymentSimulationResult.Decline("Card has expired.");
-
-        var cvvDigits = new string((cvv ?? string.Empty).Where(char.IsDigit).ToArray());
-        if (cvvDigits.Length is < 3 or > 4)
-            return PaymentSimulationResult.Decline("Invalid CVV.");
-
-        // Structurally valid card — mock gateway always approves.
+        // Simulation only — accept any input and always approve.
         return PaymentSimulationResult.Approve();
     }
 

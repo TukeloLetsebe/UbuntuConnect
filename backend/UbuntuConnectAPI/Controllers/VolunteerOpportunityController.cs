@@ -28,6 +28,7 @@ public class VolunteerOpportunityController : ControllerBase
             {
                 opportunityId = o.OpportunityId,
                 npoId = o.NpoId,
+                npoName = o.Npo.OrganizationName,
                 roleTitle = o.RoleTitle,
                 category = o.Category,
                 numOfPositions = o.NumOfPositions,
@@ -52,6 +53,7 @@ public class VolunteerOpportunityController : ControllerBase
             {
                 opportunityId = o.OpportunityId,
                 npoId = o.NpoId,
+                npoName = o.Npo.OrganizationName,
                 roleTitle = o.RoleTitle,
                 category = o.Category,
                 numOfPositions = o.NumOfPositions,
@@ -76,6 +78,7 @@ public class VolunteerOpportunityController : ControllerBase
             {
                 opportunityId = o.OpportunityId,
                 npoId = o.NpoId,
+                npoName = o.Npo.OrganizationName,
                 roleTitle = o.RoleTitle,
                 category = o.Category,
                 numOfPositions = o.NumOfPositions,

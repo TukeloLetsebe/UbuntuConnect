@@ -20,47 +20,17 @@ public class PaymentSimulationTests
     // Well-known Luhn-valid test PAN (Visa test number).
     private const string ValidCard = "4111 1111 1111 1111";
 
-    [Fact]
-    public void Valid_card_is_approved()
+    // The gateway is a pure simulation: it performs NO validation and always
+    // approves, regardless of the (random) numbers entered.
+    [Theory]
+    [InlineData("4111 1111 1111 1111", "12/40", "123")] // "valid-looking"
+    [InlineData("1234", "13/40", "1")]                   // junk — still approved
+    [InlineData("", "", "")]                              // empty — still approved
+    [InlineData("9999 8888 7777 6666", "01/20", "99999")] // expired/odd — still approved
+    public void Any_card_input_is_approved(string card, string expiry, string cvv)
     {
-        var r = Sim.Charge(ValidCard, "12/40", "123");
+        var r = Sim.Charge(card, expiry, cvv);
         Assert.True(r.Approved);
-    }
-
-    [Theory]
-    [InlineData("4111 1111 1111 1112")] // fails Luhn
-    [InlineData("1234")]                // too short
-    public void Invalid_card_number_is_declined(string card)
-    {
-        var r = Sim.Charge(card, "12/40", "123");
-        Assert.False(r.Approved);
-    }
-
-    [Fact]
-    public void Expired_card_is_declined()
-    {
-        var r = Sim.Charge(ValidCard, "01/20", "123");
-        Assert.False(r.Approved);
-        Assert.Contains("expired", r.DeclineReason, System.StringComparison.OrdinalIgnoreCase);
-    }
-
-    [Theory]
-    [InlineData("13/40")] // bad month
-    [InlineData("1240")]  // no separator
-    [InlineData("")]      // empty
-    public void Invalid_expiry_is_declined(string expiry)
-    {
-        var r = Sim.Charge(ValidCard, expiry, "123");
-        Assert.False(r.Approved);
-    }
-
-    [Theory]
-    [InlineData("12")]    // too short
-    [InlineData("12345")] // too long
-    public void Invalid_cvv_is_declined(string cvv)
-    {
-        var r = Sim.Charge(ValidCard, "12/40", cvv);
-        Assert.False(r.Approved);
     }
 
     // ── Individual top-up with card + limits ──────────────────
@@ -126,8 +96,9 @@ public class PaymentSimulationTests
     }
 
     [Fact]
-    public async Task TopUp_with_invalid_card_is_rejected_and_wallet_unchanged()
+    public async Task TopUp_with_any_random_card_credits_wallet()
     {
+        // Simulation accepts any card input — a random/junk card still tops up.
         var (ctx, user) = SetupVerifiedIndividual();
         using (ctx)
         {
@@ -135,12 +106,12 @@ public class PaymentSimulationTests
             var result = await controller.TopUp(new TopUpRequest
             {
                 Amount = 500,
-                CardNumber = "4111 1111 1111 1112",
-                CardExpiry = "12/40",
-                CardCvv = "123"
+                CardNumber = "1234 5678 9012",
+                CardExpiry = "99/99",
+                CardCvv = "1"
             });
-            Assert.IsType<BadRequestObjectResult>(result);
-            Assert.Equal(0, ctx.Wallets.Single(w => w.UserId == user.UserId).Balance);
+            Assert.IsType<OkObjectResult>(result);
+            Assert.Equal(500, ctx.Wallets.Single(w => w.UserId == user.UserId).Balance);
         }
     }
 

@@ -40,6 +40,7 @@ export interface UpdateProfileDto {
 export interface VolunteerOpportunity {
   opportunityId: number;
   npoId: number;
+  npoName: string | null;
   roleTitle: string;
   category: string | null;
   numOfPositions: number;

@@ -6,7 +6,8 @@ import { useAuth } from "../../context/AuthContext";
 import NotificationBell from "./NotificationBell";
 import EmailVerificationBanner from "./EmailVerificationBanner";
 import ReportPostButton from "./ReportPostButton";
-import CardPaymentFields, { type CardDetails, emptyCard, validateCard } from "./CardPaymentFields";
+import CardPaymentFields, { type CardDetails, emptyCard } from "./CardPaymentFields";
+import ImageUploadField from "./ImageUploadField";
 import BusinessReportsPanel from "./reports/BusinessReportsPanel";
 import { resolveMediaUrl } from "../../lib/api";
 import { businessService, getErrorMessage, type BusinessProfile, type NPOSummary, type FollowedNPO, type Campaign, type CampaignApplication, type DonationsResponse, type BusinessImpact, type CommunityPost, type CommentItem, type Fundraiser, type NpoDocuments } from "../../services/businessService";
@@ -51,6 +52,7 @@ export default function BusinessDashboard() {
   const [npoDocs, setNpoDocs] = useState<NpoDocuments | null>(null);
   const [docsLoading, setDocsLoading] = useState(false);
   const [showCreateCampaign, setShowCreateCampaign] = useState(false);
+  const [campaignImageUrl, setCampaignImageUrl] = useState<string | null>(null);
   const [editingCampaign, setEditingCampaign] = useState<Campaign | null>(null);
   const [selectedCampaign, setSelectedCampaign] = useState<Campaign | null>(null);
   const [campaignApps, setCampaignApps] = useState<CampaignApplication[]>([]);
@@ -196,8 +198,7 @@ export default function BusinessDashboard() {
     e.preventDefault();
     const amt = parseFloat(topUpAmount);
     if (!amt || amt <= 0) { toast.error("Enter a valid amount."); return; }
-    const cardError = validateCard(topUpCard);
-    if (cardError) { toast.error(cardError); return; }
+    // Simulated card — no validation; any entered number is accepted.
     setToppingUp(true);
     try {
       const r = await businessService.topUp(amt, {
@@ -222,10 +223,12 @@ export default function BusinessDashboard() {
         category: (fd.get("category") as string) || undefined,
         requirements: (fd.get("requirements") as string) || undefined,
         budgetPerPartner: parseFloat(fd.get("budgetPerPartner") as string) || undefined,
+        imageUrl: campaignImageUrl || undefined,
         startDate: fd.get("startDate") as string,
         endDate: (fd.get("endDate") as string) || undefined,
       });
       setShowCreateCampaign(false);
+      setCampaignImageUrl(null);
       loadCampaigns();
       toast.success("Campaign created!");
     } catch (e) { toast.error(getErrorMessage(e)); }
@@ -365,6 +368,7 @@ export default function BusinessDashboard() {
                       {campaigns.map(c => (
                         <CarouselItem key={c.campaignId} className="md:basis-1/2 lg:basis-1/3">
                           <Card className="p-5 h-full">
+                            {c.imageUrl && <img src={resolveMediaUrl(c.imageUrl)} alt={c.title} className="w-full h-32 object-cover object-center rounded-md mb-3" onError={(e) => { (e.currentTarget as HTMLImageElement).style.display = "none"; }} />}
                             <Badge variant="outline" className="mb-2">Your campaign</Badge>
                             <h3 className="font-semibold truncate">{c.title}</h3>
                             {c.category && <p className="text-xs text-neutral-500 mt-1">{c.category}</p>}
@@ -446,10 +450,11 @@ export default function BusinessDashboard() {
 
             {/* CAMPAIGNS */}
             {activeTab === "campaigns" && (<div>
-              <div className="flex items-center justify-between mb-6"><div><h1 className="text-2xl font-bold mb-2">Partnership Campaigns</h1><p className="text-neutral-600">Create campaigns for NPOs to apply to</p></div><div className="flex gap-2"><Button variant="outline" size="sm" onClick={loadCampaigns}><RefreshCw className="w-4 h-4" /></Button><Button className="bg-orange-600 hover:bg-orange-700" onClick={() => setShowCreateCampaign(true)}><Plus className="w-4 h-4 mr-2" /> New Campaign</Button></div></div>
-              {campaignsLoading ? <div className="flex justify-center py-12"><Loader2 className="w-8 h-8 animate-spin text-orange-600" /></div> : campaigns.length === 0 ? <Card className="p-12 text-center"><Target className="w-12 h-12 text-neutral-400 mx-auto mb-3" /><p className="text-neutral-600">No campaigns yet.</p><Button onClick={() => setShowCreateCampaign(true)} className="mt-4">Create Campaign</Button></Card> : (
+              <div className="flex items-center justify-between mb-6"><div><h1 className="text-2xl font-bold mb-2">Partnership Campaigns</h1><p className="text-neutral-600">Create campaigns for NPOs to apply to</p></div><div className="flex gap-2"><Button variant="outline" size="sm" onClick={loadCampaigns}><RefreshCw className="w-4 h-4" /></Button><Button className="bg-orange-600 hover:bg-orange-700" onClick={() => { setCampaignImageUrl(null); setShowCreateCampaign(true); }}><Plus className="w-4 h-4 mr-2" /> New Campaign</Button></div></div>
+              {campaignsLoading ? <div className="flex justify-center py-12"><Loader2 className="w-8 h-8 animate-spin text-orange-600" /></div> : campaigns.length === 0 ? <Card className="p-12 text-center"><Target className="w-12 h-12 text-neutral-400 mx-auto mb-3" /><p className="text-neutral-600">No campaigns yet.</p><Button onClick={() => { setCampaignImageUrl(null); setShowCreateCampaign(true); }} className="mt-4">Create Campaign</Button></Card> : (
                 <div className="space-y-4">{campaigns.map(c => (
                   <Card key={c.campaignId} className="p-6">
+                    {c.imageUrl && <img src={resolveMediaUrl(c.imageUrl)} alt={c.title} className="w-full h-48 object-cover object-center rounded-lg mb-4" onError={(e) => { (e.currentTarget as HTMLImageElement).style.display = "none"; }} />}
                     <div className="flex items-start justify-between">
                       <div className="flex-1"><h3 className="font-semibold text-lg">{c.title}</h3>{c.category && <Badge variant="outline" className="mt-1">{c.category}</Badge>}{c.description && <p className="text-neutral-600 text-sm mt-2">{c.description}</p>}<div className="flex gap-4 mt-3 text-sm text-neutral-500">{c.budgetPerPartner && <span>R {c.budgetPerPartner.toLocaleString()}/partner</span>}<span><Calendar className="w-4 h-4 inline mr-1" />{c.startDate}</span>{c.applicantCount !== undefined && <span>{c.applicantCount} applicant{c.applicantCount !== 1 ? "s" : ""}</span>}</div></div>
                       <div className="flex gap-2 ml-4"><Button size="sm" variant="outline" onClick={() => handleViewApplications(c)}><Eye className="w-4 h-4 mr-1" /> Apps</Button><Button size="sm" variant="outline" onClick={() => setEditingCampaign(c)}><Edit className="w-4 h-4" /></Button><Button size="sm" variant="outline" className="text-red-600" onClick={() => handleDeleteCampaign(c.campaignId)}><X className="w-4 h-4" /></Button></div>
@@ -510,13 +515,14 @@ export default function BusinessDashboard() {
 
       {/* CREATE CAMPAIGN MODAL */}
       {showCreateCampaign && (<div className="fixed inset-0 bg-black/50 flex items-center justify-center z-50 p-4"><Card className="w-full max-w-lg p-6">
-        <div className="flex justify-between items-center mb-4"><h2 className="text-xl font-bold">Create Campaign</h2><Button variant="ghost" size="sm" onClick={() => setShowCreateCampaign(false)}><X className="w-4 h-4" /></Button></div>
+        <div className="flex justify-between items-center mb-4"><h2 className="text-xl font-bold">Create Campaign</h2><Button variant="ghost" size="sm" onClick={() => { setShowCreateCampaign(false); setCampaignImageUrl(null); }}><X className="w-4 h-4" /></Button></div>
         <form onSubmit={handleCreateCampaign} className="space-y-4">
           <div><Label>Title *</Label><Input name="title" required /></div>
           <div><Label>Description</Label><Textarea name="description" /></div>
           <div className="grid grid-cols-2 gap-4"><div><Label>Category</Label><Input name="category" placeholder="e.g. Education" /></div><div><Label>Budget per Partner (R)</Label><Input name="budgetPerPartner" type="number" step="0.01" /></div></div>
           <div><Label>Requirements</Label><Textarea name="requirements" placeholder="What you expect from partner NPOs..." /></div>
           <div className="grid grid-cols-2 gap-4"><div><Label>Start Date *</Label><Input name="startDate" type="date" required /></div><div><Label>End Date</Label><Input name="endDate" type="date" /></div></div>
+          <ImageUploadField label="Campaign Image (optional)" value={campaignImageUrl} onChange={setCampaignImageUrl} />
           <Button type="submit" className="w-full bg-orange-600 hover:bg-orange-700">Create Campaign</Button>
         </form>
       </Card></div>)}
@@ -570,8 +576,9 @@ export default function BusinessDashboard() {
 
       {/* COMMENTS MODAL */}
       {selectedPost && (<div className="fixed inset-0 bg-black/50 flex items-center justify-center z-50 p-4"><Card className="w-full max-w-lg max-h-[85vh] overflow-y-auto p-6">
-        <div className="flex justify-between items-center mb-4"><h2 className="text-lg font-bold">Comments</h2><Button variant="ghost" size="sm" onClick={() => setSelectedPost(null)}><X className="w-4 h-4" /></Button></div>
-        <div className="mb-4 p-3 bg-neutral-50 rounded-lg"><p className="text-xs text-orange-600 font-medium">{selectedPost.authorName}</p><p className="font-semibold text-sm">{selectedPost.postTitle}</p></div>
+        <div className="flex justify-between items-center mb-4"><h2 className="text-lg font-bold">Post</h2><Button variant="ghost" size="sm" onClick={() => setSelectedPost(null)}><X className="w-4 h-4" /></Button></div>
+        {selectedPost.mediaUrl && <img src={resolveMediaUrl(selectedPost.mediaUrl)} alt={selectedPost.postTitle} className="w-full max-h-72 object-cover object-center rounded-lg mb-4" onError={(e) => { (e.target as HTMLImageElement).style.display = "none"; }} />}
+        <div className="mb-4 p-3 bg-neutral-50 rounded-lg"><p className="text-xs text-orange-600 font-medium">{selectedPost.authorName}</p><p className="font-semibold text-sm">{selectedPost.postTitle}</p>{selectedPost.content && <p className="text-sm text-neutral-600 mt-2 whitespace-pre-wrap">{selectedPost.content}</p>}</div>
         <div className="flex gap-2 mb-4">
           <Input placeholder="Write a comment..." value={newComment} onChange={e => setNewComment(e.target.value)} onKeyDown={e => { if (e.key === "Enter") { e.preventDefault(); handleAddComment(); } }} />
           <Button onClick={handleAddComment} disabled={commentSubmitting} className="bg-orange-600 hover:bg-orange-700"><Send className="w-4 h-4" /></Button>
