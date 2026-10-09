@@ -64,6 +64,51 @@ public class VolunteerApplicationController : ControllerBase
         return Ok(list);
     }
 
+    // Returns the applicant's VERIFIED identity (ID document + selfie) to the NPO
+    // that owns the opportunity — and only if that individual passed KYC. The
+    // images come from the individual's identity record (the source of truth),
+    // never copied onto the application. Ownership is enforced; a non-owning NPO
+    // is forbidden. Treat this as the most sensitive endpoint in the system.
+    [Authorize(Roles = "NPO")]
+    [HttpGet("{id}/identity")]
+    public async Task<IActionResult> GetApplicantIdentity(int id)
+    {
+        var userIdClaim = User.FindFirst(ClaimTypes.NameIdentifier)?.Value;
+        var userId = int.Parse(userIdClaim!);
+
+        var app = await _context.VolunteerApplications
+            .Include(a => a.Opportunity)
+                .ThenInclude(o => o.Npo)
+            .FirstOrDefaultAsync(a => a.ApplicationId == id);
+        if (app == null) return NotFound("Application not found.");
+
+        // Ownership check — only the NPO that owns the opportunity may view this.
+        if (app.Opportunity.Npo.UserId != userId) return Forbid();
+
+        var individual = await _context.Individuals
+            .FirstOrDefaultAsync(i => i.UserId == app.UserId);
+
+        // Only expose identity for a volunteer who has actually been verified.
+        if (individual == null || individual.KycStatus != "Approved")
+        {
+            return Ok(new
+            {
+                verified = false,
+                idNumber = (string?)null,
+                idDocumentUrl = (string?)null,
+                selfieUrl = (string?)null
+            });
+        }
+
+        return Ok(new
+        {
+            verified = true,
+            idNumber = individual.IdNumber,
+            idDocumentUrl = individual.IdDocumentUrl,
+            selfieUrl = individual.SelfieUrl
+        });
+    }
+
     [Authorize(Roles = "NPO")]
     [HttpGet("opportunity/{opportunityId}")]
     public async Task<IActionResult> GetByOpportunity(int opportunityId)
@@ -183,6 +228,33 @@ public class VolunteerApplicationController : ControllerBase
         if (app.Opportunity.Npo.UserId != userId) return Forbid();
 
         app.Status = "Pending";
+        await _context.SaveChangesAsync();
+        return NoContent();
+    }
+
+    // Mark an accepted volunteer as Completed once their engagement is finished.
+    // Soft status change only — logged hours (and the volunteer's impact totals)
+    // are preserved. NPO-only, and only the NPO that owns the opportunity.
+    [Authorize(Roles = "NPO")]
+    [HttpPut("{id}/complete")]
+    public async Task<IActionResult> Complete(int id)
+    {
+        var userIdClaim = User.FindFirst(ClaimTypes.NameIdentifier)?.Value;
+        var userId = int.Parse(userIdClaim!);
+
+        var app = await _context.VolunteerApplications
+            .Include(a => a.Opportunity)
+                .ThenInclude(o => o.Npo)
+            .FirstOrDefaultAsync(a => a.ApplicationId == id);
+        if (app == null) return NotFound();
+
+        if (app.Opportunity.Npo.UserId != userId) return Forbid();
+
+        // Only an accepted volunteer can be completed.
+        if (app.Status != "Accepted")
+            return BadRequest("Only an accepted volunteer can be marked as completed.");
+
+        app.Status = "Completed";
         await _context.SaveChangesAsync();
         return NoContent();
     }

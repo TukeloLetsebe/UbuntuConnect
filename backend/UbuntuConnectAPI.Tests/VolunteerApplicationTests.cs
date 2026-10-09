@@ -121,4 +121,30 @@ public class VolunteerApplicationTests
         Assert.IsType<ForbidResult>(result);
         Assert.Equal("Pending", ctx.VolunteerApplications.Single().Status);
     }
+
+    [Fact]
+    public async Task Complete_sets_status_when_accepted()
+    {
+        using var ctx = TestDbContextFactory.Create();
+        var (app, npoUser, _) = Seed(ctx);
+        app.Status = "Accepted";
+        ctx.SaveChanges();
+
+        var result = await Controller(ctx, npoUser.UserId).Complete(app.ApplicationId);
+
+        Assert.IsType<NoContentResult>(result);
+        Assert.Equal("Completed", ctx.VolunteerApplications.Single().Status);
+    }
+
+    [Fact]
+    public async Task Complete_rejected_when_not_accepted()
+    {
+        using var ctx = TestDbContextFactory.Create();
+        var (app, npoUser, _) = Seed(ctx); // status is "Pending"
+
+        var result = await Controller(ctx, npoUser.UserId).Complete(app.ApplicationId);
+
+        Assert.IsType<BadRequestObjectResult>(result);
+        Assert.Equal("Pending", ctx.VolunteerApplications.Single().Status);
+    }
 }

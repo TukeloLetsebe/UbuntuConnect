@@ -28,24 +28,54 @@ export default function WebcamCapture({ label = "Selfie", value, onChange, disab
   const stopCamera = () => {
     streamRef.current?.getTracks().forEach((t) => t.stop());
     streamRef.current = null;
+    if (videoRef.current) videoRef.current.srcObject = null;
     setActive(false);
   };
 
   // Ensure the camera is released when the component unmounts.
   useEffect(() => () => stopCamera(), []);
 
+  // Bind the stream to the <video> only AFTER it has mounted (active === true).
+  // Setting srcObject inside startCamera doesn't work: the <video> is rendered
+  // conditionally on `active`, so videoRef.current is still null at that point —
+  // which produced a black screen. This effect runs once the element exists.
+  useEffect(() => {
+    const video = videoRef.current;
+    if (active && video && streamRef.current) {
+      video.srcObject = streamRef.current;
+      video.play().catch(() => {
+        // Autoplay can reject until a user gesture; the Capture button also
+        // forces playback, so this is non-fatal.
+      });
+    }
+  }, [active]);
+
   const startCamera = async () => {
     setStarting(true);
     try {
+      // Camera access requires a secure context (HTTPS or localhost) and a
+      // supported API. Fail with a specific message rather than silently.
+      if (!window.isSecureContext || !navigator.mediaDevices?.getUserMedia) {
+        toast.error("Camera needs a secure connection (HTTPS or localhost). Use admin review, or upload a photo instead.");
+        return;
+      }
       const stream = await navigator.mediaDevices.getUserMedia({ video: { facingMode: "user" }, audio: false });
       streamRef.current = stream;
-      if (videoRef.current) {
-        videoRef.current.srcObject = stream;
-        await videoRef.current.play();
-      }
+      // Mount the <video> first; the effect above attaches the stream once the
+      // element is in the DOM.
       setActive(true);
-    } catch {
-      toast.error("Could not access the camera. Please allow camera permission or use admin review.");
+    } catch (err) {
+      // Name the specific failure so the user knows how to fix it.
+      const name = (err as { name?: string })?.name;
+      if (name === "NotAllowedError" || name === "SecurityError") {
+        toast.error("Camera permission was denied. Allow camera access in your browser, or use admin review.");
+      } else if (name === "NotFoundError" || name === "DevicesNotFoundError") {
+        toast.error("No camera was found on this device. Use admin review, or upload a photo instead.");
+      } else if (name === "NotReadableError") {
+        toast.error("The camera is in use by another app. Close it and try again, or use admin review.");
+      } else {
+        toast.error("Could not access the camera. Please allow camera permission or use admin review.");
+      }
     } finally {
       setStarting(false);
     }
@@ -54,6 +84,13 @@ export default function WebcamCapture({ label = "Selfie", value, onChange, disab
   const capture = async () => {
     const video = videoRef.current;
     if (!video) return;
+
+    // The stream may not have delivered a frame yet (videoWidth/Height = 0),
+    // which would produce a blank capture. Guard against it.
+    if (!video.videoWidth || !video.videoHeight) {
+      toast.error("The camera is still starting. Please wait a moment and try again.");
+      return;
+    }
 
     const canvas = document.createElement("canvas");
     canvas.width = video.videoWidth;
@@ -97,7 +134,7 @@ export default function WebcamCapture({ label = "Selfie", value, onChange, disab
         </div>
       ) : active ? (
         <div className="mt-2 space-y-2">
-          <video ref={videoRef} className="w-full max-w-sm rounded-md border border-neutral-200 bg-black" playsInline muted />
+          <video ref={videoRef} className="w-full max-w-sm rounded-md border border-neutral-200 bg-black" playsInline muted autoPlay />
           <div className="flex gap-2">
             <Button type="button" onClick={capture} disabled={uploading} className="bg-orange-600 hover:bg-orange-700">
               {uploading ? <Loader2 className="w-4 h-4 animate-spin" /> : <><Camera className="w-4 h-4 mr-1" /> Capture</>}

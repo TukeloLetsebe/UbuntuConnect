@@ -201,6 +201,11 @@ export const npoService = {
     api.get<VolunteerApplicationItem[]>(`/api/VolunteerApplication/opportunity/${opportunityId}`),
   acceptApplication: (id: number) => api.put(`/api/VolunteerApplication/${id}/accept`),
   rejectApplication: (id: number) => api.put(`/api/VolunteerApplication/${id}/reject`),
+  completeApplication: (id: number) => api.put(`/api/VolunteerApplication/${id}/complete`),
+  getApplicantIdentity: (id: number) =>
+    api.get<{ verified: boolean; idNumber: string | null; idDocumentUrl: string | null; selfieUrl: string | null }>(
+      `/api/VolunteerApplication/${id}/identity`
+    ),
   deleteApplication: (id: number) => api.delete(`/api/VolunteerApplication/${id}`),
   logHours: (id: number, hours: number, date?: string, notes?: string) =>
     api.post(`/api/VolunteerApplication/${id}/log-hours`, { hours, date, notes }),

@@ -1,5 +1,5 @@
 import { useState, useEffect, useCallback } from "react";
-import { Link } from "react-router";
+import { Link, useNavigate } from "react-router";
 import { motion } from "motion/react";
 import { toast } from "sonner";
 import { useAuth } from "../../context/AuthContext";
@@ -7,6 +7,7 @@ import NotificationBell from "./NotificationBell";
 import EmailVerificationBanner from "./EmailVerificationBanner";
 import ImageUploadField from "./ImageUploadField";
 import DocumentUploadField from "./DocumentUploadField";
+import PostDetailModal from "./PostDetailModal";
 import NpoReportsPanel from "./reports/NpoReportsPanel";
 import { resolveMediaUrl } from "../../lib/api";
 import { npoService, getErrorMessage } from "../../services/npoService";
@@ -40,6 +41,7 @@ function fundraiserDeadlineLabel(endDate: string | null | undefined): { text: st
 
 export default function NPODashboard() {
   const { logout, userId } = useAuth();
+  const navigate = useNavigate();
   const [activeTab, setActiveTab] = useState("overview");
   const [sidebarOpen, setSidebarOpen] = useState(false);
   const selectTab = (id: string) => { setActiveTab(id); setSidebarOpen(false); };
@@ -50,6 +52,7 @@ export default function NPODashboard() {
   const [showCreatePost, setShowCreatePost] = useState(false);
   const [editingPost, setEditingPost] = useState<PostItem | null>(null);
   const [selectedPost, setSelectedPost] = useState<PostItem | null>(null);
+  const [identityFor, setIdentityFor] = useState<{ name: string; loading: boolean; data: { verified: boolean; idNumber: string | null; idDocumentUrl: string | null; selfieUrl: string | null } | null } | null>(null);
   const [postImageUrl, setPostImageUrl] = useState<string | null>(null);
   const [likedPostIds, setLikedPostIds] = useState<Set<number>>(new Set());
 
@@ -161,6 +164,17 @@ export default function NPODashboard() {
 
   const handleAcceptApplication = async (id: number) => { try { await npoService.acceptApplication(id); setApplications(p => p.map(a => a.applicationId === id ? { ...a, status: "Accepted" } : a)); toast.success("Accepted!"); } catch (e) { toast.error(getErrorMessage(e)); } };
   const handleRejectApplication = async (id: number) => { try { await npoService.rejectApplication(id); setApplications(p => p.map(a => a.applicationId === id ? { ...a, status: "Rejected" } : a)); toast.success("Rejected."); } catch (e) { toast.error(getErrorMessage(e)); } };
+  const handleCompleteApplication = async (id: number) => { if (!confirm("Mark this volunteer as completed? Their logged hours are kept.")) return; try { await npoService.completeApplication(id); setApplications(p => p.map(a => a.applicationId === id ? { ...a, status: "Completed" } : a)); toast.success("Volunteer marked as completed."); } catch (e) { toast.error(getErrorMessage(e)); } };
+  const handleViewIdentity = async (a: VolunteerApplicationItem) => {
+    setIdentityFor({ name: `${a.firstName} ${a.lastName}`, loading: true, data: null });
+    try {
+      const r = await npoService.getApplicantIdentity(a.applicationId);
+      setIdentityFor({ name: `${a.firstName} ${a.lastName}`, loading: false, data: r.data });
+    } catch (e) {
+      toast.error(getErrorMessage(e));
+      setIdentityFor(null);
+    }
+  };
   const handleDeleteApplication = async (id: number) => { if (!confirm("Delete?")) return; try { await npoService.deleteApplication(id); setApplications(p => p.filter(a => a.applicationId !== id)); toast.success("Deleted."); } catch (e) { toast.error(getErrorMessage(e)); } };
   const handleCreateOpportunity = async (e: React.FormEvent) => { e.preventDefault(); const fd = new FormData(e.currentTarget as HTMLFormElement); try { const r = await npoService.createOpportunity({ roleTitle: fd.get("roleTitle") as string, category: (fd.get("category") as string) || undefined, numOfPositions: parseInt(fd.get("numOfPositions") as string) || 1, description: (fd.get("description") as string) || undefined, skillsRequired: (fd.get("skillsRequired") as string) || undefined, timeCommitment: (fd.get("timeCommitment") as string) || undefined, duration: (fd.get("duration") as string) || undefined, mediaURL: opportunityImageUrl || undefined }); setOpportunities(p => [r.data, ...p]); setShowCreateOpportunity(false); setOpportunityImageUrl(null); toast.success("Opportunity created!"); } catch (e) { toast.error(getErrorMessage(e)); } };
   const handleDeleteOpportunity = async (id: number) => { if (!confirm("Delete?")) return; try { await npoService.deleteOpportunity(id); setOpportunities(p => p.filter(o => o.opportunityId !== id)); toast.success("Deleted."); } catch (e) { toast.error(getErrorMessage(e)); } };
@@ -174,6 +188,7 @@ export default function NPODashboard() {
 
   const pendingApps = applications.filter(a => a.status === "Pending");
   const acceptedApps = applications.filter(a => a.status === "Accepted");
+  const completedApps = applications.filter(a => a.status === "Completed");
   const filteredNpos = discoverNpos.filter(n => !npoSearchQuery || n.organizationName.toLowerCase().includes(npoSearchQuery.toLowerCase()) || (n.npofocusArea || "").toLowerCase().includes(npoSearchQuery.toLowerCase()));
 
   // ═══ RENDER ═══
@@ -224,13 +239,14 @@ export default function NPODashboard() {
               <div className="mb-6"><Input placeholder="Search by name or focus area..." value={npoSearchQuery} onChange={e => setNpoSearchQuery(e.target.value)} className="max-w-md" /></div>
               {discoverLoading ? <div className="flex justify-center py-12"><Loader2 className="w-8 h-8 animate-spin text-orange-600" /></div> : filteredNpos.length === 0 ? <Card className="p-12 text-center"><p className="text-neutral-600">No NPOs found.</p></Card> : (
                 <div className="grid md:grid-cols-2 lg:grid-cols-3 gap-6">{filteredNpos.map(npo => (
-                  <Card key={npo.npoId} className="p-6 hover:shadow-lg transition-shadow">
+                  <Card key={npo.npoId} className="p-6 hover:shadow-lg transition-shadow cursor-pointer" onClick={() => navigate(`/npo/${npo.npoId}`)}>
                     <div className="flex items-center gap-3 mb-4"><div className="w-12 h-12 rounded-full bg-orange-100 flex items-center justify-center"><span className="text-lg font-bold text-orange-600">{npo.organizationName.charAt(0)}</span></div><div><h3 className="font-semibold">{npo.organizationName}</h3>{npo.npofocusArea && <Badge variant="outline" className="text-xs">{npo.npofocusArea}</Badge>}</div></div>
                     {npo.npomission && <p className="text-sm text-neutral-600 mb-4 line-clamp-2">{npo.npomission}</p>}
                     <div className="flex gap-2">
-                      <Button variant={followedNpoIds.has(npo.npoId) ? "default" : "outline"} size="sm" className={`flex-1 ${followedNpoIds.has(npo.npoId) ? "bg-orange-600 hover:bg-orange-700" : ""}`} onClick={() => handleFollowNpo(npo.npoId)}><Heart className={`w-4 h-4 mr-1 ${followedNpoIds.has(npo.npoId) ? "fill-current" : ""}`} /> {followedNpoIds.has(npo.npoId) ? "Following" : "Follow"}</Button>
-                      <Button variant="outline" size="sm" onClick={() => setSelectedNpoDetail(npo)}><Eye className="w-4 h-4" /></Button>
+                      <Button variant={followedNpoIds.has(npo.npoId) ? "default" : "outline"} size="sm" className={`flex-1 ${followedNpoIds.has(npo.npoId) ? "bg-orange-600 hover:bg-orange-700" : ""}`} onClick={(e) => { e.stopPropagation(); handleFollowNpo(npo.npoId); }}><Heart className={`w-4 h-4 mr-1 ${followedNpoIds.has(npo.npoId) ? "fill-current" : ""}`} /> {followedNpoIds.has(npo.npoId) ? "Following" : "Follow"}</Button>
+                      <Button variant="outline" size="sm" onClick={(e) => { e.stopPropagation(); navigate(`/npo/${npo.npoId}`); }}><Eye className="w-4 h-4" /></Button>
                     </div>
+                    <p className="text-center text-sm text-orange-600 mt-3">View full profile →</p>
                   </Card>
                 ))}</div>
               )}
@@ -320,10 +336,11 @@ export default function NPODashboard() {
             {/* VOLUNTEERS */}
             {activeTab === "volunteers" && (<div>
               <div className="flex items-center justify-between mb-8"><div><h1 className="text-2xl font-bold mb-2">Volunteers</h1></div><div className="flex gap-2"><Button variant="outline" size="sm" onClick={() => { loadApplications(); loadOpportunities(); }}><RefreshCw className="w-4 h-4" /></Button><Button className="bg-orange-600 hover:bg-orange-700" onClick={() => { setOpportunityImageUrl(null); setShowCreateOpportunity(true); }}><Plus className="w-4 h-4 mr-2" /> Create Opportunity</Button></div></div>
-              <Tabs defaultValue="opportunities"><TabsList className="mb-6"><TabsTrigger value="opportunities">Opportunities ({opportunities.length})</TabsTrigger><TabsTrigger value="pending">Pending ({pendingApps.length})</TabsTrigger><TabsTrigger value="accepted">Accepted ({acceptedApps.length})</TabsTrigger></TabsList>
+              <Tabs defaultValue="opportunities"><TabsList className="mb-6"><TabsTrigger value="opportunities">Opportunities ({opportunities.length})</TabsTrigger><TabsTrigger value="pending">Pending ({pendingApps.length})</TabsTrigger><TabsTrigger value="accepted">Accepted ({acceptedApps.length})</TabsTrigger><TabsTrigger value="completed">Completed ({completedApps.length})</TabsTrigger></TabsList>
                 <TabsContent value="opportunities">{opportunitiesLoading ? <div className="flex justify-center py-8"><Loader2 className="w-6 h-6 animate-spin" /></div> : opportunities.length === 0 ? <Card className="p-12 text-center"><p className="text-neutral-600 mb-4">No opportunities. Create one for supporters to apply.</p><Button onClick={() => { setOpportunityImageUrl(null); setShowCreateOpportunity(true); }}>Create Opportunity</Button></Card> : <div className="grid md:grid-cols-2 gap-6">{opportunities.map(o => (<Card key={o.opportunityId} className="p-6"><div className="flex justify-between mb-2"><div><h3 className="font-semibold">{o.roleTitle}</h3>{o.category && <Badge variant="outline">{o.category}</Badge>}</div><Badge className="bg-green-100 text-green-700">{o.numOfPositions} pos.</Badge></div>{o.description && <p className="text-sm text-neutral-600 mb-3 line-clamp-2">{o.description}</p>}<div className="flex gap-2"><Button variant="outline" size="sm" className="flex-1" onClick={() => setEditingOpportunity(o)}><Edit className="w-4 h-4 mr-1" /> Edit</Button><Button variant="outline" size="sm" className="text-red-600 flex-1" onClick={() => handleDeleteOpportunity(o.opportunityId)}><Trash2 className="w-4 h-4 mr-1" /> Delete</Button></div></Card>))}</div>}</TabsContent>
-                <TabsContent value="pending">{pendingApps.length === 0 ? <Card className="p-8 text-center"><p className="text-neutral-600">No pending applications.</p></Card> : <div className="space-y-4">{pendingApps.map(a => (<Card key={a.applicationId} className="p-6"><div className="flex justify-between"><div><h3 className="font-semibold">{a.firstName} {a.lastName}</h3>{a.roleTitle && <Badge variant="outline" className="mt-1">{a.roleTitle}</Badge>}<p className="text-sm text-neutral-600 mt-1">{a.email}{a.phoneNum ? ` · ${a.phoneNum}` : ""}</p>{a.skills && <p className="text-xs text-neutral-500 mt-1">Skills: {a.skills}</p>}{a.availability && <p className="text-xs text-neutral-500 mt-0.5">Availability: {a.availability}</p>}{a.whyVolunteer && <p className="text-sm text-neutral-600 mt-2 italic">“{a.whyVolunteer}”</p>}<p className="text-xs text-neutral-400 mt-1">Applied {new Date(a.applicationDate).toLocaleDateString()}</p></div><div className="flex gap-2"><Button size="sm" className="bg-green-600 hover:bg-green-700" onClick={() => handleAcceptApplication(a.applicationId)}><Check className="w-4 h-4" /></Button><Button size="sm" variant="outline" className="text-red-600" onClick={() => handleRejectApplication(a.applicationId)}><X className="w-4 h-4" /></Button></div></div></Card>))}</div>}</TabsContent>
-                <TabsContent value="accepted">{acceptedApps.length === 0 ? <Card className="p-8 text-center"><p className="text-neutral-600">No accepted volunteers.</p></Card> : <div className="space-y-4">{acceptedApps.map(a => (<Card key={a.applicationId} className="p-4"><div className="flex justify-between items-center"><div><span className="font-semibold">{a.firstName} {a.lastName}</span> <Badge className="bg-green-100 text-green-700 ml-2">Active</Badge></div><Button size="sm" variant="outline" className="text-red-600" onClick={() => handleDeleteApplication(a.applicationId)}><Trash2 className="w-4 h-4" /></Button></div></Card>))}</div>}</TabsContent>
+                <TabsContent value="pending">{pendingApps.length === 0 ? <Card className="p-8 text-center"><p className="text-neutral-600">No pending applications.</p></Card> : <div className="space-y-4">{pendingApps.map(a => (<Card key={a.applicationId} className="p-6"><div className="flex justify-between"><div><h3 className="font-semibold">{a.firstName} {a.lastName}</h3>{a.roleTitle && <Badge variant="outline" className="mt-1">{a.roleTitle}</Badge>}<p className="text-sm text-neutral-600 mt-1">{a.email}{a.phoneNum ? ` · ${a.phoneNum}` : ""}</p>{a.skills && <p className="text-xs text-neutral-500 mt-1">Skills: {a.skills}</p>}{a.availability && <p className="text-xs text-neutral-500 mt-0.5">Availability: {a.availability}</p>}{a.whyVolunteer && <p className="text-sm text-neutral-600 mt-2 italic">“{a.whyVolunteer}”</p>}<p className="text-xs text-neutral-400 mt-1">Applied {new Date(a.applicationDate).toLocaleDateString()}</p></div><div className="flex gap-2"><Button size="sm" variant="outline" onClick={() => handleViewIdentity(a)}><Shield className="w-4 h-4 mr-1" /> ID</Button><Button size="sm" className="bg-green-600 hover:bg-green-700" onClick={() => handleAcceptApplication(a.applicationId)}><Check className="w-4 h-4" /></Button><Button size="sm" variant="outline" className="text-red-600" onClick={() => handleRejectApplication(a.applicationId)}><X className="w-4 h-4" /></Button></div></div></Card>))}</div>}</TabsContent>
+                <TabsContent value="accepted">{acceptedApps.length === 0 ? <Card className="p-8 text-center"><p className="text-neutral-600">No accepted volunteers.</p></Card> : <div className="space-y-4">{acceptedApps.map(a => (<Card key={a.applicationId} className="p-4"><div className="flex justify-between items-center"><div><span className="font-semibold">{a.firstName} {a.lastName}</span> <Badge className="bg-green-100 text-green-700 ml-2">Active</Badge></div><div className="flex gap-2"><Button size="sm" variant="outline" onClick={() => handleViewIdentity(a)}><Shield className="w-4 h-4 mr-1" /> ID</Button><Button size="sm" className="bg-blue-600 hover:bg-blue-700" onClick={() => handleCompleteApplication(a.applicationId)}><Check className="w-4 h-4 mr-1" /> Mark Completed</Button><Button size="sm" variant="outline" className="text-red-600" onClick={() => handleDeleteApplication(a.applicationId)}><Trash2 className="w-4 h-4" /></Button></div></div></Card>))}</div>}</TabsContent>
+                <TabsContent value="completed">{completedApps.length === 0 ? <Card className="p-8 text-center"><p className="text-neutral-600">No completed volunteers yet.</p></Card> : <div className="space-y-4">{completedApps.map(a => (<Card key={a.applicationId} className="p-4"><div className="flex justify-between items-center"><div><span className="font-semibold">{a.firstName} {a.lastName}</span> <Badge className="bg-blue-100 text-blue-700 ml-2">Completed</Badge>{a.roleTitle && <Badge variant="outline" className="ml-2">{a.roleTitle}</Badge>}</div></div></Card>))}</div>}</TabsContent>
               </Tabs>
             </div>)}
 
@@ -365,7 +382,48 @@ export default function NPODashboard() {
 
       {editingPost && (<div className="fixed inset-0 bg-black/50 flex items-center justify-center z-50 p-4"><motion.div initial={{ opacity: 0, scale: 0.95 }} animate={{ opacity: 1, scale: 1 }} className="bg-white rounded-lg max-w-2xl w-full p-8 max-h-[90vh] overflow-y-auto"><div className="flex justify-between mb-6"><h3 className="font-semibold text-lg">Edit Post</h3><button onClick={() => setEditingPost(null)}><X className="w-5 h-5" /></button></div><form className="space-y-4" onSubmit={handleUpdatePost}><div><Label>Title</Label><Input name="title" defaultValue={editingPost.postTitle} required className="mt-1" /></div><div><Label>Content</Label><Textarea name="content" defaultValue={editingPost.content || ""} rows={5} required className="mt-1" /></div><input type="hidden" name="mediaUrl" value={postImageUrl || ""} /><ImageUploadField label="Image" value={postImageUrl} onChange={setPostImageUrl} /><div className="flex gap-3"><Button type="submit" className="flex-1 bg-orange-600 hover:bg-orange-700">Save</Button><Button type="button" variant="outline" onClick={() => setEditingPost(null)}>Cancel</Button></div></form></motion.div></div>)}
 
-      {selectedPost && (<div className="fixed inset-0 bg-black/50 flex items-center justify-center z-50 p-4"><motion.div initial={{ opacity: 0, scale: 0.95 }} animate={{ opacity: 1, scale: 1 }} className="bg-white rounded-lg max-w-3xl w-full p-8 max-h-[90vh] overflow-y-auto"><div className="flex justify-between mb-6"><h3 className="font-semibold text-lg">Post Details</h3><button onClick={() => setSelectedPost(null)}><X className="w-5 h-5" /></button></div>{selectedPost.mediaUrl && <img src={resolveMediaUrl(selectedPost.mediaUrl)} alt="" className="w-full h-64 object-cover rounded-lg mb-6" />}<h2 className="text-xl font-bold mb-3">{selectedPost.postTitle}</h2><p className="text-neutral-600 whitespace-pre-wrap mb-6">{selectedPost.content}</p><div className="flex gap-6 text-sm mb-6 pb-6 border-b"><button onClick={() => handleLikePost(selectedPost.postId)} className={`flex items-center gap-2 ${likedPostIds.has(selectedPost.postId) ? "text-red-500" : "text-neutral-600"}`}><Heart className={`w-5 h-5 ${likedPostIds.has(selectedPost.postId) ? "fill-current" : ""}`} /> {selectedPost.likeCount}</button></div><h4 className="font-semibold mb-4">Comments</h4><div className="flex gap-2 mb-6"><Input placeholder="Write a comment..." value={newComment[selectedPost.postId] || ""} onChange={e => setNewComment(p => ({ ...p, [selectedPost.postId]: e.target.value }))} onKeyDown={e => { if (e.key === "Enter") { e.preventDefault(); handleAddComment(selectedPost.postId); } }} /><Button onClick={() => handleAddComment(selectedPost.postId)} disabled={commentSubmitting} className="bg-orange-600 hover:bg-orange-700"><Send className="w-4 h-4" /></Button></div>{commentsLoading[selectedPost.postId] ? <Loader2 className="w-6 h-6 animate-spin mx-auto" /> : <div className="space-y-3">{(comments[selectedPost.postId] || []).length === 0 ? <p className="text-neutral-500 text-sm text-center">No comments yet.</p> : (comments[selectedPost.postId] || []).map(c => (<div key={c.commentId} className="flex gap-3 p-3 bg-neutral-50 rounded-lg"><div className="w-8 h-8 rounded-full bg-orange-100 flex items-center justify-center flex-shrink-0"><span className="text-xs font-bold">{c.authorName?.charAt(0)}</span></div><div className="flex-1"><div className="flex justify-between"><span className="text-sm font-semibold">{c.authorName}</span><div className="flex gap-2 items-center"><span className="text-xs text-neutral-400">{new Date(c.timestamp).toLocaleDateString()}</span>{c.userId === userId && <button onClick={() => handleDeleteComment(c.commentId, selectedPost.postId)} className="text-red-400 hover:text-red-600"><Trash2 className="w-3 h-3" /></button>}</div></div><p className="text-sm mt-1">{c.content}</p></div></div>))}</div>}</motion.div></div>)}
+      {selectedPost && (
+        <PostDetailModal
+          post={{
+            postId: selectedPost.postId,
+            postTitle: selectedPost.postTitle,
+            content: selectedPost.content,
+            mediaUrl: selectedPost.mediaUrl,
+            authorName: selectedPost.userId === userId ? (npoProfile?.organizationName ?? null) : null,
+            likeCount: selectedPost.likeCount,
+            timestamp: selectedPost.timestamp,
+          }}
+          currentUserId={userId}
+          liked={likedPostIds.has(selectedPost.postId)}
+          onClose={() => setSelectedPost(null)}
+          onLikeChange={(postId, isLiked, newCount) => {
+            setLikedPostIds((prev) => {
+              const next = new Set(prev);
+              if (isLiked) next.add(postId); else next.delete(postId);
+              return next;
+            });
+            setCommunityPosts((p) => p.map((x) => x.postId === postId ? { ...x, likeCount: newCount } : x));
+            setPosts((p) => p.map((x) => x.postId === postId ? { ...x, likeCount: newCount } : x));
+          }}
+        />
+      )}
+
+      {/* Volunteer identity (ID + selfie) — owning NPO only, verified individuals only */}
+      {identityFor && (<div className="fixed inset-0 bg-black/50 flex items-center justify-center z-50 p-4" onClick={() => setIdentityFor(null)}><Card className="w-full max-w-lg p-6" onClick={e => e.stopPropagation()}>
+        <div className="flex justify-between items-center mb-4"><h3 className="font-semibold text-lg">Identity — {identityFor.name}</h3><Button variant="ghost" size="sm" onClick={() => setIdentityFor(null)}><X className="w-4 h-4" /></Button></div>
+        {identityFor.loading ? <div className="flex justify-center py-8"><Loader2 className="w-6 h-6 animate-spin text-orange-600" /></div> : !identityFor.data?.verified ? (
+          <div className="p-4 bg-amber-50 border border-amber-200 rounded-lg text-sm text-amber-800"><Shield className="w-4 h-4 inline mr-1" /> This volunteer has not completed identity verification, so their ID and selfie are not available.</div>
+        ) : (
+          <div className="space-y-4">
+            <div className="p-3 bg-neutral-50 rounded-lg text-sm"><span className="text-neutral-500">ID Number: </span><span className="font-medium">{identityFor.data.idNumber || "—"}</span></div>
+            <div className="grid grid-cols-2 gap-4">
+              <div><p className="text-sm font-medium mb-1">ID Document</p>{identityFor.data.idDocumentUrl ? <img src={resolveMediaUrl(identityFor.data.idDocumentUrl)} alt="ID document" className="w-full rounded-md border border-neutral-200 object-cover" /> : <p className="text-xs text-neutral-500">Not provided.</p>}</div>
+              <div><p className="text-sm font-medium mb-1">Selfie</p>{identityFor.data.selfieUrl ? <img src={resolveMediaUrl(identityFor.data.selfieUrl)} alt="Selfie" className="w-full rounded-md border border-neutral-200 object-cover" /> : <p className="text-xs text-neutral-500">Not provided.</p>}</div>
+            </div>
+            <p className="text-xs text-neutral-400">Verified identity — handle this information confidentially.</p>
+          </div>
+        )}
+      </Card></div>)}
 
       {showCreateProject && (<div className="fixed inset-0 bg-black/50 flex items-center justify-center z-50 p-4"><motion.div initial={{ opacity: 0, scale: 0.95 }} animate={{ opacity: 1, scale: 1 }} className="bg-white rounded-lg max-w-2xl w-full p-8 max-h-[90vh] overflow-y-auto"><div className="flex justify-between mb-6"><h3 className="font-semibold text-lg">Create Fundraiser</h3><button onClick={() => setShowCreateProject(false)}><X className="w-5 h-5" /></button></div><form className="space-y-4" onSubmit={handleCreateProject}><div><Label>Project/Initiative Name</Label><Input name="projectName" required className="mt-1" placeholder="e.g., Build Community Library" /></div><div><Label>Description</Label><Textarea name="projectDesc" rows={4} className="mt-1" placeholder="What is this fundraiser for?" /></div><div className="grid grid-cols-2 gap-4"><div><Label>Target Amount (R)</Label><Input name="targetAmount" type="number" min="1" required className="mt-1" placeholder="e.g., 100000" /></div><div><Label>Status</Label><select name="projectStatus" className="w-full mt-1 px-3 py-2 border rounded-md"><option value="Active">Active</option><option value="Planning">Planning</option></select></div></div><div><Label>Duration (days)</Label><Input name="durationDays" type="number" min="1" className="mt-1" placeholder="Optional — e.g., 30. Auto-closes when it ends." /><p className="text-xs text-neutral-500 mt-1">Leave blank for an open-ended fundraiser. It also auto-closes once the target is reached.</p></div><div><Label>Images (comma-separated URLs)</Label><Textarea name="images" rows={2} className="mt-1" placeholder="https://img1.jpg, https://img2.jpg, https://img3.jpg" /></div><div className="flex gap-3"><Button type="submit" className="flex-1 bg-orange-600 hover:bg-orange-700">Create Fundraiser</Button><Button type="button" variant="outline" onClick={() => setShowCreateProject(false)}>Cancel</Button></div></form></motion.div></div>)}
 

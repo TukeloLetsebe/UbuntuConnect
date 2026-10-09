@@ -1,5 +1,5 @@
 ﻿import { useState, useEffect, useCallback } from "react";
-import { Link, useNavigate } from "react-router";
+import { Link, useNavigate, useSearchParams } from "react-router";
 import { motion } from "motion/react";
 import { toast } from "sonner";
 import { useAuth } from "../../context/AuthContext";
@@ -7,6 +7,7 @@ import NotificationBell from "./NotificationBell";
 import EmailVerificationBanner from "./EmailVerificationBanner";
 import IdentityVerificationBanner from "./IdentityVerificationBanner";
 import CardPaymentFields, { type CardDetails, emptyCard } from "./CardPaymentFields";
+import PostDetailModal from "./PostDetailModal";
 import ReportPostButton from "./ReportPostButton";
 import { resolveMediaUrl } from "../../lib/api";
 import { individualService, getErrorMessage, type IndividualProfile, type NPOSummary, type NPODetail, type VolunteerOpportunity, type MyVolunteeringItem, type MyDonationsResponse, type MyImpact, type CommunityPost, type FollowedNPO } from "../../services/individualService";
@@ -91,7 +92,10 @@ function matchSeedSkills(required: string): string[] {
 export default function IndividualDashboard() {
   const { logout, email, userId } = useAuth();
   const navigate = useNavigate();
+  const [searchParams, setSearchParams] = useSearchParams();
   const [activeTab, setActiveTab] = useState("discover");
+  // Tracks a pending deep-linked apply (from /individual-dashboard?opp=ID)
+  const [pendingApplyOppId, setPendingApplyOppId] = useState<number | null>(null);
   const [sidebarOpen, setSidebarOpen] = useState(false);
 
   // Helper: deterministic gradient color based on NPO name
@@ -329,6 +333,21 @@ export default function IndividualDashboard() {
     if (activeTab === "profile") loadKyc();
   }, [activeTab, loadKyc]);
 
+  // Deep-link: /individual-dashboard?opp={id} jumps to the Volunteer tab and
+  // opens the apply modal for that opportunity (QA2-003). We record the id and
+  // clear the query param here; the modal opens once opportunities have loaded.
+  useEffect(() => {
+    const opp = searchParams.get("opp");
+    if (!opp) return;
+    const oppId = Number(opp);
+    if (!Number.isNaN(oppId)) {
+      setActiveTab("volunteer");
+      setPendingApplyOppId(oppId);
+    }
+    searchParams.delete("opp");
+    setSearchParams(searchParams, { replace: true });
+  }, [searchParams, setSearchParams]);
+
   // Load NPOs function
   const loadNPOs = useCallback(async () => {
     setNposLoading(true);
@@ -372,6 +391,19 @@ export default function IndividualDashboard() {
       loadOpportunities();
     }
   }, [activeTab, oppsLoaded, loadOpportunities]);
+
+  // Once opportunities are loaded, open the apply modal for a deep-linked
+  // opportunity (QA2-003). Runs only when there's a pending id and a match.
+  useEffect(() => {
+    if (pendingApplyOppId == null || opportunities.length === 0) return;
+    const match = opportunities.find((o) => o.opportunityId === pendingApplyOppId);
+    if (match) {
+      handleApplyVolunteer(pendingApplyOppId);
+    }
+    setPendingApplyOppId(null);
+    // handleApplyVolunteer is stable within a render; intentionally excluded from deps.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [pendingApplyOppId, opportunities]);
 
   // Load my volunteering data
   const loadMyVolunteering = useCallback(async () => {
@@ -1588,6 +1620,8 @@ export default function IndividualDashboard() {
                                   ? "bg-amber-100 text-amber-700"
                                   : app.status === "Accepted"
                                   ? "bg-green-100 text-green-700"
+                                  : app.status === "Completed"
+                                  ? "bg-blue-100 text-blue-700"
                                   : app.status === "Rejected"
                                   ? "bg-red-100 text-red-700"
                                   : "bg-neutral-100 text-neutral-600"
@@ -2684,58 +2718,30 @@ export default function IndividualDashboard() {
         </div>
       )}
 
-      {/* COMMENTS MODAL */}
+      {/* Shared full-post modal */}
       {selectedPost && (
-        <div className="fixed inset-0 bg-black/50 flex items-center justify-center z-50 p-4">
-          <Card className="w-full max-w-lg max-h-[85vh] overflow-y-auto p-6">
-            <div className="flex justify-between items-center mb-4">
-              <h2 className="text-lg font-bold">Comments</h2>
-              <Button variant="ghost" size="sm" onClick={() => setSelectedPost(null)}><X className="w-4 h-4" /></Button>
-            </div>
-            <div className="mb-4 p-3 bg-neutral-50 rounded-lg">
-              <p className="text-xs text-orange-600 font-medium">{selectedPost.authorName}</p>
-              <p className="font-semibold text-sm">{selectedPost.postTitle}</p>
-            </div>
-            <div className="flex gap-2 mb-4">
-              <Input
-                placeholder="Write a comment..."
-                value={newComment}
-                onChange={e => setNewComment(e.target.value)}
-                onKeyDown={e => { if (e.key === "Enter") { e.preventDefault(); handleAddComment(); } }}
-              />
-              <Button onClick={handleAddComment} disabled={commentSubmitting} className="bg-orange-600 hover:bg-orange-700">
-                {commentSubmitting ? <Loader2 className="w-4 h-4 animate-spin" /> : <Send className="w-4 h-4" />}
-              </Button>
-            </div>
-            {commentsLoading ? (
-              <div className="flex justify-center py-6"><Loader2 className="w-6 h-6 animate-spin text-orange-600" /></div>
-            ) : comments.length === 0 ? (
-              <p className="text-neutral-500 text-sm text-center py-6">No comments yet. Be the first!</p>
-            ) : (
-              <div className="space-y-3">
-                {comments.map(c => (
-                  <div key={c.commentId} className="flex gap-3 p-3 bg-neutral-50 rounded-lg">
-                    <div className="w-8 h-8 rounded-full bg-orange-100 flex items-center justify-center flex-shrink-0">
-                      <span className="text-xs font-bold">{c.authorName?.charAt(0)}</span>
-                    </div>
-                    <div className="flex-1">
-                      <div className="flex justify-between items-center">
-                        <span className="text-sm font-semibold">{c.authorName}</span>
-                        <div className="flex gap-2 items-center">
-                          <span className="text-xs text-neutral-400">{new Date(c.timestamp).toLocaleDateString()}</span>
-                          {c.userId === userId && (
-                            <button onClick={() => handleDeleteComment(c.commentId)} className="text-red-400 hover:text-red-600"><Trash2 className="w-3 h-3" /></button>
-                          )}
-                        </div>
-                      </div>
-                      <p className="text-sm mt-1">{c.content}</p>
-                    </div>
-                  </div>
-                ))}
-              </div>
-            )}
-          </Card>
-        </div>
+        <PostDetailModal
+          post={{
+            postId: selectedPost.postId,
+            postTitle: selectedPost.postTitle,
+            content: selectedPost.content,
+            mediaUrl: selectedPost.mediaUrl,
+            authorName: selectedPost.authorName,
+            likeCount: selectedPost.likeCount,
+            timestamp: selectedPost.timestamp,
+          }}
+          currentUserId={userId}
+          liked={likedPostIds.has(selectedPost.postId)}
+          onClose={() => setSelectedPost(null)}
+          onLikeChange={(postId, isLiked, newCount) => {
+            setLikedPostIds((prev) => {
+              const next = new Set(prev);
+              if (isLiked) next.add(postId); else next.delete(postId);
+              return next;
+            });
+            setCommunityPosts((prev) => prev.map((p) => p.postId === postId ? { ...p, likeCount: newCount } : p));
+          }}
+        />
       )}
 
       <EmailVerificationBanner />

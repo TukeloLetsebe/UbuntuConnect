@@ -8,6 +8,7 @@ import EmailVerificationBanner from "./EmailVerificationBanner";
 import ReportPostButton from "./ReportPostButton";
 import CardPaymentFields, { type CardDetails, emptyCard } from "./CardPaymentFields";
 import ImageUploadField from "./ImageUploadField";
+import PostDetailModal from "./PostDetailModal";
 import BusinessReportsPanel from "./reports/BusinessReportsPanel";
 import { resolveMediaUrl } from "../../lib/api";
 import { businessService, getErrorMessage, type BusinessProfile, type NPOSummary, type FollowedNPO, type Campaign, type CampaignApplication, type DonationsResponse, type BusinessImpact, type CommunityPost, type CommentItem, type Fundraiser, type NpoDocuments } from "../../services/businessService";
@@ -453,11 +454,11 @@ export default function BusinessDashboard() {
               <div className="flex items-center justify-between mb-6"><div><h1 className="text-2xl font-bold mb-2">Partnership Campaigns</h1><p className="text-neutral-600">Create campaigns for NPOs to apply to</p></div><div className="flex gap-2"><Button variant="outline" size="sm" onClick={loadCampaigns}><RefreshCw className="w-4 h-4" /></Button><Button className="bg-orange-600 hover:bg-orange-700" onClick={() => { setCampaignImageUrl(null); setShowCreateCampaign(true); }}><Plus className="w-4 h-4 mr-2" /> New Campaign</Button></div></div>
               {campaignsLoading ? <div className="flex justify-center py-12"><Loader2 className="w-8 h-8 animate-spin text-orange-600" /></div> : campaigns.length === 0 ? <Card className="p-12 text-center"><Target className="w-12 h-12 text-neutral-400 mx-auto mb-3" /><p className="text-neutral-600">No campaigns yet.</p><Button onClick={() => { setCampaignImageUrl(null); setShowCreateCampaign(true); }} className="mt-4">Create Campaign</Button></Card> : (
                 <div className="space-y-4">{campaigns.map(c => (
-                  <Card key={c.campaignId} className="p-6">
+                  <Card key={c.campaignId} className="p-6 cursor-pointer hover:shadow-md transition-shadow" onClick={() => handleViewApplications(c)}>
                     {c.imageUrl && <img src={resolveMediaUrl(c.imageUrl)} alt={c.title} className="w-full h-48 object-cover object-center rounded-lg mb-4" onError={(e) => { (e.currentTarget as HTMLImageElement).style.display = "none"; }} />}
                     <div className="flex items-start justify-between">
                       <div className="flex-1"><h3 className="font-semibold text-lg">{c.title}</h3>{c.category && <Badge variant="outline" className="mt-1">{c.category}</Badge>}{c.description && <p className="text-neutral-600 text-sm mt-2">{c.description}</p>}<div className="flex gap-4 mt-3 text-sm text-neutral-500">{c.budgetPerPartner && <span>R {c.budgetPerPartner.toLocaleString()}/partner</span>}<span><Calendar className="w-4 h-4 inline mr-1" />{c.startDate}</span>{c.applicantCount !== undefined && <span>{c.applicantCount} applicant{c.applicantCount !== 1 ? "s" : ""}</span>}</div></div>
-                      <div className="flex gap-2 ml-4"><Button size="sm" variant="outline" onClick={() => handleViewApplications(c)}><Eye className="w-4 h-4 mr-1" /> Apps</Button><Button size="sm" variant="outline" onClick={() => setEditingCampaign(c)}><Edit className="w-4 h-4" /></Button><Button size="sm" variant="outline" className="text-red-600" onClick={() => handleDeleteCampaign(c.campaignId)}><X className="w-4 h-4" /></Button></div>
+                      <div className="flex gap-2 ml-4"><Button size="sm" variant="outline" onClick={(e) => { e.stopPropagation(); handleViewApplications(c); }}><Eye className="w-4 h-4 mr-1" /> Apps</Button><Button size="sm" variant="outline" onClick={(e) => { e.stopPropagation(); setEditingCampaign(c); }}><Edit className="w-4 h-4" /></Button><Button size="sm" variant="outline" className="text-red-600" onClick={(e) => { e.stopPropagation(); handleDeleteCampaign(c.campaignId); }}><X className="w-4 h-4" /></Button></div>
                     </div>
                   </Card>
                 ))}</div>
@@ -574,27 +575,31 @@ export default function BusinessDashboard() {
         )}
       </Card></div>)}
 
-      {/* COMMENTS MODAL */}
-      {selectedPost && (<div className="fixed inset-0 bg-black/50 flex items-center justify-center z-50 p-4"><Card className="w-full max-w-lg max-h-[85vh] overflow-y-auto p-6">
-        <div className="flex justify-between items-center mb-4"><h2 className="text-lg font-bold">Post</h2><Button variant="ghost" size="sm" onClick={() => setSelectedPost(null)}><X className="w-4 h-4" /></Button></div>
-        {selectedPost.mediaUrl && <img src={resolveMediaUrl(selectedPost.mediaUrl)} alt={selectedPost.postTitle} className="w-full max-h-72 object-cover object-center rounded-lg mb-4" onError={(e) => { (e.target as HTMLImageElement).style.display = "none"; }} />}
-        <div className="mb-4 p-3 bg-neutral-50 rounded-lg"><p className="text-xs text-orange-600 font-medium">{selectedPost.authorName}</p><p className="font-semibold text-sm">{selectedPost.postTitle}</p>{selectedPost.content && <p className="text-sm text-neutral-600 mt-2 whitespace-pre-wrap">{selectedPost.content}</p>}</div>
-        <div className="flex gap-2 mb-4">
-          <Input placeholder="Write a comment..." value={newComment} onChange={e => setNewComment(e.target.value)} onKeyDown={e => { if (e.key === "Enter") { e.preventDefault(); handleAddComment(); } }} />
-          <Button onClick={handleAddComment} disabled={commentSubmitting} className="bg-orange-600 hover:bg-orange-700"><Send className="w-4 h-4" /></Button>
-        </div>
-        {commentsLoading ? <div className="flex justify-center py-6"><Loader2 className="w-6 h-6 animate-spin text-orange-600" /></div> : comments.length === 0 ? <p className="text-neutral-500 text-sm text-center py-6">No comments yet. Be the first!</p> : (
-          <div className="space-y-3">{comments.map(c => (
-            <div key={c.commentId} className="flex gap-3 p-3 bg-neutral-50 rounded-lg">
-              <div className="w-8 h-8 rounded-full bg-orange-100 flex items-center justify-center flex-shrink-0"><span className="text-xs font-bold">{c.authorName?.charAt(0)}</span></div>
-              <div className="flex-1">
-                <div className="flex justify-between items-center"><span className="text-sm font-semibold">{c.authorName}</span><div className="flex gap-2 items-center"><span className="text-xs text-neutral-400">{new Date(c.timestamp).toLocaleDateString()}</span>{c.userId === userId && <button onClick={() => handleDeleteComment(c.commentId)} className="text-red-400 hover:text-red-600"><Trash2 className="w-3 h-3" /></button>}</div></div>
-                <p className="text-sm mt-1">{c.content}</p>
-              </div>
-            </div>
-          ))}</div>
-        )}
-      </Card></div>)}
+      {/* Shared full-post modal */}
+      {selectedPost && (
+        <PostDetailModal
+          post={{
+            postId: selectedPost.postId,
+            postTitle: selectedPost.postTitle,
+            content: selectedPost.content,
+            mediaUrl: selectedPost.mediaUrl,
+            authorName: selectedPost.authorName,
+            likeCount: selectedPost.likeCount,
+            timestamp: selectedPost.timestamp,
+          }}
+          currentUserId={userId}
+          liked={likedPostIds.has(selectedPost.postId)}
+          onClose={() => setSelectedPost(null)}
+          onLikeChange={(postId, isLiked, newCount) => {
+            setLikedPostIds((prev) => {
+              const next = new Set(prev);
+              if (isLiked) next.add(postId); else next.delete(postId);
+              return next;
+            });
+            setCommunityPosts((prev) => prev.map((p) => p.postId === postId ? { ...p, likeCount: newCount } : p));
+          }}
+        />
+      )}
 
       <EmailVerificationBanner />
     </div>

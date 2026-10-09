@@ -12,6 +12,7 @@ import { Progress } from "./ui/progress";
 import { Input } from "./ui/input";
 import { Label } from "./ui/label";
 import { Tabs, TabsList, TabsTrigger, TabsContent } from "./ui/tabs";
+import PostDetailModal, { type PostDetailData } from "./PostDetailModal";
 import {
   ArrowLeft, Loader2, MapPin, Users, BadgeCheck, Mail, Phone,
   Lock, Target, HandHeart, Heart, HandCoins, X,
@@ -33,9 +34,12 @@ function getErrorMessage(error: unknown): string {
 export default function NpoProfile() {
   const { npoId } = useParams<{ npoId: string }>();
   const navigate = useNavigate();
-  const { userType } = useAuth();
+  const { userType, userId, isAuthenticated } = useAuth();
   const [profile, setProfile] = useState<PublicNpoProfile | null>(null);
   const [loading, setLoading] = useState(true);
+
+  // Shared full-post modal (QA2-002)
+  const [selectedPost, setSelectedPost] = useState<PostDetailData | null>(null);
 
   // Donate (Individual only)
   const [showDonate, setShowDonate] = useState(false);
@@ -201,11 +205,23 @@ export default function NpoProfile() {
             ) : (
               <div className="space-y-4 mt-4">
                 {profile.posts.map(p => (
-                  <Card key={p.postId} className="overflow-hidden">
+                  <Card
+                    key={p.postId}
+                    className="overflow-hidden cursor-pointer hover:shadow-lg transition-shadow"
+                    onClick={() => setSelectedPost({
+                      postId: p.postId,
+                      postTitle: p.postTitle,
+                      content: p.content,
+                      mediaUrl: p.mediaUrl,
+                      authorName: profile.organizationName,
+                      likeCount: p.likeCount,
+                      timestamp: p.timestamp,
+                    })}
+                  >
                     {p.mediaUrl && <img src={resolveMediaUrl(p.mediaUrl)} alt={p.postTitle} className="w-full h-56 object-cover object-center" />}
                     <div className="p-5">
                       <h3 className="font-semibold text-lg">{p.postTitle}</h3>
-                      {p.content && <p className="text-neutral-700 mt-1 whitespace-pre-wrap">{p.content}</p>}
+                      {p.content && <p className="text-neutral-700 mt-1 whitespace-pre-wrap line-clamp-3">{p.content}</p>}
                       <div className="flex items-center gap-2 text-sm text-neutral-500 mt-3">
                         <Heart className="w-4 h-4" /> {p.likeCount}
                         <span className="ml-auto">{new Date(p.timestamp).toLocaleDateString()}</span>
@@ -232,7 +248,7 @@ export default function NpoProfile() {
                       <p className="text-xs text-neutral-500 mt-1">R {f.raisedAmount.toLocaleString()} of R {f.targetAmount.toLocaleString()}</p>
                       {(userType === "Individual" || userType === "Business") && (
                         <Button asChild variant="outline" size="sm" className="mt-3 w-full">
-                          <Link to="/fundraisers">View &amp; donate</Link>
+                          <Link to={`/fundraisers?project=${f.projectId}`}>View &amp; donate</Link>
                         </Button>
                       )}
                     </div>
@@ -257,7 +273,7 @@ export default function NpoProfile() {
                     {o.description && <p className="text-sm text-neutral-600 line-clamp-3">{o.description}</p>}
                     {userType === "Individual" && (
                       <Button asChild variant="outline" size="sm" className="mt-3 w-full">
-                        <Link to="/individual-dashboard">View &amp; apply</Link>
+                        <Link to={`/individual-dashboard?opp=${o.opportunityId}`}>View &amp; apply</Link>
                       </Button>
                     )}
                   </Card>
@@ -296,6 +312,16 @@ export default function NpoProfile() {
             <p className="text-xs text-neutral-500 mt-2 text-center">Funds are transferred from your wallet balance.</p>
           </Card>
         </div>
+      )}
+
+      {/* Shared full-post modal */}
+      {selectedPost && (
+        <PostDetailModal
+          post={selectedPost}
+          currentUserId={userId}
+          canInteract={isAuthenticated}
+          onClose={() => setSelectedPost(null)}
+        />
       )}
     </div>
   );

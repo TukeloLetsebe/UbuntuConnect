@@ -1,5 +1,5 @@
 import { useState, useEffect, useCallback } from "react";
-import { Link } from "react-router";
+import { Link, useSearchParams } from "react-router";
 import { motion } from "motion/react";
 import { toast } from "sonner";
 import { useAuth } from "../../context/AuthContext";
@@ -73,6 +73,7 @@ function getErrorMessage(error: unknown): string {
 
 export default function Fundraisers() {
   const { logout, userId, userType } = useAuth();
+  const [searchParams, setSearchParams] = useSearchParams();
   const [fundraisers, setFundraisers] = useState<Fundraiser[]>([]);
   const [loading, setLoading] = useState(false);
   const [searchQuery, setSearchQuery] = useState("");
@@ -103,6 +104,19 @@ export default function Fundraisers() {
   }, [userId]);
 
   useEffect(() => { loadFundraisers(); loadWallet(); }, [loadFundraisers, loadWallet]);
+
+  // Deep-link: /fundraisers?project={id} opens that fundraiser's detail view
+  // once the list has loaded (QA2-004). The param is cleared after it's consumed.
+  useEffect(() => {
+    const projectId = searchParams.get("project");
+    if (!projectId || fundraisers.length === 0) return;
+    const match = fundraisers.find((f) => f.projectId === Number(projectId));
+    if (match) {
+      setDetailProject(match);
+      searchParams.delete("project");
+      setSearchParams(searchParams, { replace: true });
+    }
+  }, [searchParams, fundraisers, setSearchParams]);
 
   const handleDonate = async (e: React.FormEvent) => {
     e.preventDefault();
