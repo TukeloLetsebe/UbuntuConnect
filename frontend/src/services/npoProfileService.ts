@@ -38,6 +38,7 @@ export interface PublicNpoProfile {
   isVerified: boolean;
   bio: string | null;
   profileImage: string | null;
+  backgroundImage: string | null;
   location: string | null;
   followerCount: number;
   contactVisible: boolean;

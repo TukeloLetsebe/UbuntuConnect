@@ -15,6 +15,8 @@ public partial class Profile
 
     public string? ProfileImage { get; set; }
 
+    public string? BackgroundImage { get; set; }
+
     public int Following { get; set; }
 
     public int Followers { get; set; }

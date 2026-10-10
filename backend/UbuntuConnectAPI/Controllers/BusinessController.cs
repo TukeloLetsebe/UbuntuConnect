@@ -38,6 +38,7 @@ public class BusinessController : ControllerBase
 
         var profile = await _context.Businesses
             .Include(b => b.User)
+                .ThenInclude(u => u.Profile)
             .Where(b => b.UserId == userId)
             .Select(b => new
             {
@@ -51,12 +52,48 @@ public class BusinessController : ControllerBase
                 csrGoal = b.CsrGoal,
                 email = b.User.UserEmail,
                 contact = b.User.UserContact,
-                location = b.User.Location
+                location = b.User.Location,
+                bio = b.User.Profile != null ? b.User.Profile.Bio : null,
+                profileImage = b.User.Profile != null ? b.User.Profile.ProfileImage : null,
+                backgroundImage = b.User.Profile != null ? b.User.Profile.BackgroundImage : null
             })
             .FirstOrDefaultAsync();
 
         if (profile == null) return NotFound("Business profile not found.");
         return Ok(profile);
+    }
+
+    // ── UPDATE MY PROFILE ──────────────────────────────────────
+    // Ownership is implicit: a Business can only edit the profile linked to
+    // its own JWT. Bio + images live on the linked Profile entity.
+    [Authorize(Roles = "Business")]
+    [HttpPut("me")]
+    public async Task<IActionResult> UpdateMyProfile([FromBody] UpdateBusinessRequest req)
+    {
+        var userIdClaim = User.FindFirst(ClaimTypes.NameIdentifier)?.Value;
+        var userId = int.Parse(userIdClaim!);
+
+        var business = await _context.Businesses.FirstOrDefaultAsync(b => b.UserId == userId);
+        if (business == null) return NotFound("Business profile not found.");
+
+        if (req.Industry != null) business.Industry = req.Industry;
+        if (req.ContactPersonName != null) business.ContactPersonName = req.ContactPersonName;
+        if (req.ContactPersonTitle != null) business.ContactPersonTitle = req.ContactPersonTitle;
+        if (req.CsrGoal != null) business.CsrGoal = req.CsrGoal;
+
+        if (req.Bio != null || req.ProfileImage != null || req.BackgroundImage != null)
+        {
+            var profile = await _context.Profiles.FirstOrDefaultAsync(p => p.UserId == userId);
+            if (profile != null)
+            {
+                if (req.Bio != null) profile.Bio = req.Bio;
+                if (req.ProfileImage != null) profile.ProfileImage = req.ProfileImage;
+                if (req.BackgroundImage != null) profile.BackgroundImage = req.BackgroundImage;
+            }
+        }
+
+        await _context.SaveChangesAsync();
+        return NoContent();
     }
 
     // ── DISCOVER NPOs ──────────────────────────────────────────
@@ -65,6 +102,7 @@ public class BusinessController : ControllerBase
     {
         var npos = await _context.Npos
             .Include(n => n.User)
+                .ThenInclude(u => u.Profile)
             .Select(n => new
             {
                 npoId = n.NpoId,
@@ -72,7 +110,8 @@ public class BusinessController : ControllerBase
                 focusArea = n.NpofocusArea,
                 mission = n.Npomission,
                 location = n.User.Location,
-                isVerified = n.User.IsVerified
+                isVerified = n.User.IsVerified,
+                profileImage = n.User.Profile != null ? n.User.Profile.ProfileImage : null
             })
             .ToListAsync();
 
@@ -313,6 +352,9 @@ public class BusinessController : ControllerBase
                 authorName = p.User.Npos.Any()
                     ? p.User.Npos.First().OrganizationName
                     : p.User.UserEmail,
+                authorNpoId = p.User.Npos.Any()
+                    ? (int?)p.User.Npos.First().NpoId
+                    : null,
                 postTitle = p.PostTitle,
                 content = p.Content,
                 mediaUrl = p.MediaUrl,

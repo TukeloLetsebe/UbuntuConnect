@@ -143,7 +143,8 @@ public class IndividualController : ControllerBase
     public async Task<IActionResult> DiscoverNpos()
     {
         var npos = await _context.Npos
-            .Include(n => n.User)   // pulls in Users data (Location, IsVerified)
+            .Include(n => n.User)
+                .ThenInclude(u => u.Profile)
             .Select(n => new
             {
                 npoId = n.NpoId,
@@ -151,7 +152,8 @@ public class IndividualController : ControllerBase
                 focusArea = n.NpofocusArea,
                 mission = n.Npomission,
                 location = n.User.Location,
-                isVerified = n.User.IsVerified
+                isVerified = n.User.IsVerified,
+                profileImage = n.User.Profile != null ? n.User.Profile.ProfileImage : null
             })
             .ToListAsync();
 
@@ -469,6 +471,11 @@ public class IndividualController : ControllerBase
                 authorName = p.User.Npos.Any()
                     ? p.User.Npos.First().OrganizationName
                     : p.User.UserEmail,
+                // Author's NPO id (null when the author isn't an NPO) so the
+                // client can link the name/avatar to that NPO's profile.
+                authorNpoId = p.User.Npos.Any()
+                    ? (int?)p.User.Npos.First().NpoId
+                    : null,
                 postTitle = p.PostTitle,
                 content = p.Content,
                 mediaUrl = p.MediaUrl,

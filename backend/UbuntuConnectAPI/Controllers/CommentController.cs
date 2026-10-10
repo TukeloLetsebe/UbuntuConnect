@@ -56,6 +56,15 @@ public class CommentController : ControllerBase
         var userIdClaim = User.FindFirst(ClaimTypes.NameIdentifier)?.Value;
         var userId = int.Parse(userIdClaim!);
 
+        // Commenting requires a verified (email-confirmed) account. This keeps
+        // throwaway/unconfirmed accounts from posting comments. Enforced here on
+        // the server — a hidden UI button alone would not stop a direct API call.
+        var author = await _context.Users.FindAsync(userId);
+        if (author == null) return NotFound("User not found.");
+        if (!author.IsActive) return StatusCode(403, "Your account is not active.");
+        if (!author.IsEmailVerified)
+            return StatusCode(403, "Please verify your email address before commenting.");
+
         var post = await _context.Posts.FindAsync(postId);
         if (post == null) return NotFound("Post not found.");
         if (post.ActivityStatus != "Active") return BadRequest("Cannot comment on an inactive post.");

@@ -7,4 +7,6 @@ public class UpdateCampaignRequest
     public string? Requirements { get; set; }
     public decimal? BudgetPerPartner { get; set; }
     public string? ImageUrl { get; set; }
+    public DateOnly? StartDate { get; set; }
+    public DateOnly? EndDate { get; set; }
 }

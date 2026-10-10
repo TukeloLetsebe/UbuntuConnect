@@ -118,6 +118,10 @@ public class CampaignController : ControllerBase
         if (req.Requirements != null) campaign.Requirements = req.Requirements;
         if (req.BudgetPerPartner.HasValue) campaign.BudgetPerPartner = req.BudgetPerPartner.Value;
         if (req.ImageUrl != null) campaign.ImageUrl = req.ImageUrl;
+        if (req.StartDate.HasValue) campaign.StartDate = req.StartDate.Value;
+        // EndDate is applied as sent (the edit form always includes it); a null
+        // clears it, making the campaign open-ended.
+        campaign.EndDate = req.EndDate;
 
         await _context.SaveChangesAsync();
         return NoContent();

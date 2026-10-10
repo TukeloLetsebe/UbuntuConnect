@@ -9,6 +9,7 @@ export interface NPOSummary {
   mission: string | null;
   location: string | null;
   isVerified: boolean;
+  profileImage: string | null;
 }
 
 export interface NPODetail extends NPOSummary {
@@ -100,6 +101,7 @@ export interface WalletBalance {
 export interface CommunityPost {
   postId: number;
   authorName: string;
+  authorNpoId: number | null;
   postTitle: string;
   content: string | null;
   mediaUrl: string | null;

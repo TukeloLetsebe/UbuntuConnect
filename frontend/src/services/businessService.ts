@@ -14,6 +14,9 @@ export interface BusinessProfile {
   email: string;
   contact: string | null;
   location: string | null;
+  bio: string | null;
+  profileImage: string | null;
+  backgroundImage: string | null;
 }
 
 export interface NPOSummary {
@@ -23,6 +26,7 @@ export interface NPOSummary {
   mission: string | null;
   location: string | null;
   isVerified: boolean;
+  profileImage: string | null;
 }
 
 export interface FollowedNPO {
@@ -76,6 +80,7 @@ export interface BusinessImpact {
 export interface CommunityPost {
   postId: number;
   authorName: string;
+  authorNpoId: number | null;
   postTitle: string;
   content: string | null;
   mediaUrl: string | null;
@@ -136,6 +141,8 @@ export function getErrorMessage(error: unknown): string {
 export const businessService = {
   // Profile
   getProfile: () => api.get<BusinessProfile>("/api/business/me"),
+  updateProfile: (data: { industry?: string; contactPersonName?: string; contactPersonTitle?: string; csrGoal?: string; bio?: string; profileImage?: string | null; backgroundImage?: string | null }) =>
+    api.put("/api/business/me", data),
 
   // Discover & Follow NPOs
   discoverNPOs: () => api.get<NPOSummary[]>("/api/business/discover-npos"),
@@ -174,6 +181,8 @@ export const businessService = {
     requirements?: string;
     budgetPerPartner?: number;
     imageUrl?: string;
+    startDate?: string;
+    endDate?: string | null;
   }) => api.put(`/api/campaigns/${id}`, data),
   deleteCampaign: (id: number) => api.delete(`/api/campaigns/${id}`),
 

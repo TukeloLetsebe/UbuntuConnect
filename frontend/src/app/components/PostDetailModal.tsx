@@ -1,4 +1,5 @@
 import { useState, useEffect, useCallback } from "react";
+import { useNavigate } from "react-router";
 import { toast } from "sonner";
 import api, { resolveMediaUrl } from "../../lib/api";
 import { Card } from "./ui/card";
@@ -16,6 +17,8 @@ export interface PostDetailData {
   content: string | null;
   mediaUrl: string | null;
   authorName: string | null;
+  /** The author's NPO id, if the author is an NPO — makes the name a link. */
+  authorNpoId?: number | null;
   likeCount: number;
   timestamp: string;
 }
@@ -37,6 +40,9 @@ interface Props {
   liked?: boolean;
   /** Whether like/comment actions are available (requires an authenticated user). */
   canInteract?: boolean;
+  /** Whether the user may comment (requires a verified/email-confirmed account).
+   *  Defaults to canInteract when not provided. */
+  canComment?: boolean;
   onClose: () => void;
   /** Called after a successful like/unlike so the parent can sync its own state. */
   onLikeChange?: (postId: number, liked: boolean, newCount: number) => void;
@@ -53,9 +59,12 @@ export default function PostDetailModal({
   currentUserId,
   liked = false,
   canInteract = true,
+  canComment,
   onClose,
   onLikeChange,
 }: Props) {
+  // Commenting may require a verified account; default to the interact flag.
+  const commentingAllowed = canComment ?? canInteract;
   const [comments, setComments] = useState<CommentItem[]>([]);
   const [commentsLoading, setCommentsLoading] = useState(true);
   const [newComment, setNewComment] = useState("");
@@ -63,6 +72,7 @@ export default function PostDetailModal({
   const [likeCount, setLikeCount] = useState(post.likeCount);
   const [isLiked, setIsLiked] = useState(liked);
   const [likeBusy, setLikeBusy] = useState(false);
+  const navigate = useNavigate();
 
   const loadComments = useCallback(async () => {
     setCommentsLoading(true);
@@ -148,7 +158,18 @@ export default function PostDetailModal({
             />
           )}
 
-          {post.authorName && <p className="text-sm text-orange-600 font-medium">{post.authorName}</p>}
+          {post.authorName && (
+            post.authorNpoId ? (
+              <button
+                onClick={() => { onClose(); navigate(`/npo/${post.authorNpoId}`); }}
+                className="text-sm text-orange-600 font-medium hover:underline"
+              >
+                {post.authorName}
+              </button>
+            ) : (
+              <p className="text-sm text-orange-600 font-medium">{post.authorName}</p>
+            )
+          )}
           <h3 className="text-xl font-bold mb-1">{post.postTitle}</h3>
           <p className="text-xs text-neutral-400 mb-3">{new Date(post.timestamp).toLocaleString()}</p>
           {post.content && <p className="text-neutral-700 whitespace-pre-wrap mb-4">{post.content}</p>}
@@ -166,7 +187,7 @@ export default function PostDetailModal({
 
           <h4 className="font-semibold mb-3">Comments</h4>
 
-          {canInteract && (
+          {commentingAllowed ? (
             <div className="flex gap-2 mb-4">
               <Input
                 placeholder="Write a comment..."
@@ -178,7 +199,11 @@ export default function PostDetailModal({
                 {submitting ? <Loader2 className="w-4 h-4 animate-spin" /> : <Send className="w-4 h-4" />}
               </Button>
             </div>
-          )}
+          ) : canInteract ? (
+            <p className="text-sm text-neutral-500 bg-neutral-50 rounded-md p-3 mb-4">
+              Please verify your email address before commenting.
+            </p>
+          ) : null}
 
           {commentsLoading ? (
             <div className="flex justify-center py-6"><Loader2 className="w-6 h-6 animate-spin text-orange-600" /></div>

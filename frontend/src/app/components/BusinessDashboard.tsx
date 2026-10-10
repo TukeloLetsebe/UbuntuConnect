@@ -1,5 +1,5 @@
 import { useState, useEffect, useCallback } from "react";
-import { Link } from "react-router";
+import { Link, useNavigate } from "react-router";
 import { motion } from "motion/react";
 import { toast } from "sonner";
 import { useAuth } from "../../context/AuthContext";
@@ -8,7 +8,9 @@ import EmailVerificationBanner from "./EmailVerificationBanner";
 import ReportPostButton from "./ReportPostButton";
 import CardPaymentFields, { type CardDetails, emptyCard } from "./CardPaymentFields";
 import ImageUploadField from "./ImageUploadField";
+import ImageCropField from "./ImageCropField";
 import PostDetailModal from "./PostDetailModal";
+import { parseProvince, SA_PROVINCES, PROVINCE_OTHER } from "../../lib/registrationOptions";
 import BusinessReportsPanel from "./reports/BusinessReportsPanel";
 import { resolveMediaUrl } from "../../lib/api";
 import { businessService, getErrorMessage, type BusinessProfile, type NPOSummary, type FollowedNPO, type Campaign, type CampaignApplication, type DonationsResponse, type BusinessImpact, type CommunityPost, type CommentItem, type Fundraiser, type NpoDocuments } from "../../services/businessService";
@@ -24,17 +26,28 @@ import {
   Search, Heart, TrendingUp, LogOut, DollarSign, Users, Plus, X,
   Building2, Target, MessageSquare, Loader2, RefreshCw, Wallet,
   Calendar, FileText, CheckCircle, AlertCircle, Eye, UserCheck, Ban,
-  ArrowUpFromLine, Send, Trash2, Edit, Menu
+  ArrowUpFromLine, Send, Trash2, Edit, Menu, MapPin
 } from "lucide-react";
 
 export default function BusinessDashboard() {
   const { logout, userId } = useAuth();
+  const navigate = useNavigate();
   const [activeTab, setActiveTab] = useState("overview");
   const [sidebarOpen, setSidebarOpen] = useState(false);
   const selectTab = (id: string) => { setActiveTab(id); setSidebarOpen(false); };
 
   // Profile
   const [profile, setProfile] = useState<BusinessProfile | null>(null);
+  // Edit Profile form
+  const [editIndustry, setEditIndustry] = useState("");
+  const [editContactName, setEditContactName] = useState("");
+  const [editContactTitle, setEditContactTitle] = useState("");
+  const [editCsrGoal, setEditCsrGoal] = useState("");
+  const [editBio, setEditBio] = useState("");
+  const [editProfileImage, setEditProfileImage] = useState<string | null>(null);
+  const [editBackgroundImage, setEditBackgroundImage] = useState<string | null>(null);
+  const [editProfileSeeded, setEditProfileSeeded] = useState(false);
+  const [savingProfile, setSavingProfile] = useState(false);
 
   // Discover NPOs
   const [npos, setNpos] = useState<NPOSummary[]>([]);
@@ -42,6 +55,9 @@ export default function BusinessDashboard() {
   const [followedNpoIds, setFollowedNpoIds] = useState<Set<number>>(new Set());
   const [followedNpos, setFollowedNpos] = useState<FollowedNPO[]>([]);
   const [npoSearchQuery, setNpoSearchQuery] = useState("");
+  const [npoLocationFilter, setNpoLocationFilter] = useState("All");
+  const [npoCategoryFilter, setNpoCategoryFilter] = useState("All");
+  const [npoVerificationFilter, setNpoVerificationFilter] = useState("All");
 
   // Campaigns
   const [campaigns, setCampaigns] = useState<Campaign[]>([]);
@@ -54,6 +70,7 @@ export default function BusinessDashboard() {
   const [docsLoading, setDocsLoading] = useState(false);
   const [showCreateCampaign, setShowCreateCampaign] = useState(false);
   const [campaignImageUrl, setCampaignImageUrl] = useState<string | null>(null);
+  const [editCampaignImageUrl, setEditCampaignImageUrl] = useState<string | null>(null);
   const [editingCampaign, setEditingCampaign] = useState<Campaign | null>(null);
   const [selectedCampaign, setSelectedCampaign] = useState<Campaign | null>(null);
   const [campaignApps, setCampaignApps] = useState<CampaignApplication[]>([]);
@@ -94,6 +111,38 @@ export default function BusinessDashboard() {
   const loadProfile = useCallback(async () => {
     try { const r = await businessService.getProfile(); setProfile(r.data); } catch {}
   }, []);
+
+  // Seed the Edit Profile form from the loaded profile the first time the tab opens.
+  const seedEditProfile = useCallback(() => {
+    if (!profile || editProfileSeeded) return;
+    setEditIndustry(profile.industry || "");
+    setEditContactName(profile.contactPersonName || "");
+    setEditContactTitle(profile.contactPersonTitle || "");
+    setEditCsrGoal(profile.csrGoal || "");
+    setEditBio(profile.bio || "");
+    setEditProfileImage(profile.profileImage);
+    setEditBackgroundImage(profile.backgroundImage);
+    setEditProfileSeeded(true);
+  }, [profile, editProfileSeeded]);
+
+  const handleSaveProfile = async (e: React.FormEvent) => {
+    e.preventDefault();
+    setSavingProfile(true);
+    try {
+      await businessService.updateProfile({
+        industry: editIndustry || undefined,
+        contactPersonName: editContactName || undefined,
+        contactPersonTitle: editContactTitle || undefined,
+        csrGoal: editCsrGoal || undefined,
+        bio: editBio || undefined,
+        profileImage: editProfileImage,
+        backgroundImage: editBackgroundImage,
+      });
+      await loadProfile();
+      toast.success("Profile updated!");
+    } catch (e) { toast.error(getErrorMessage(e)); }
+    finally { setSavingProfile(false); }
+  };
 
   const loadWallet = useCallback(async () => {
     if (!userId) return;
@@ -156,7 +205,8 @@ export default function BusinessDashboard() {
     if (activeTab === "campaigns") loadCampaigns();
     if (activeTab === "donations") loadDonations();
     if (activeTab === "community") loadCommunity();
-  }, [activeTab, loadOverviewSlider, loadNPOs, loadCampaigns, loadDonations, loadCommunity]);
+    if (activeTab === "editprofile") seedEditProfile();
+  }, [activeTab, loadOverviewSlider, loadNPOs, loadCampaigns, loadDonations, loadCommunity, seedEditProfile]);
 
   // ═══ HANDLERS ═══
   const handleViewDocs = async (npoId: number, name: string) => {
@@ -252,6 +302,10 @@ export default function BusinessDashboard() {
         category: (fd.get("category") as string) || undefined,
         requirements: (fd.get("requirements") as string) || undefined,
         budgetPerPartner: fd.get("budgetPerPartner") ? parseFloat(fd.get("budgetPerPartner") as string) : undefined,
+        imageUrl: editCampaignImageUrl || undefined,
+        startDate: (fd.get("startDate") as string) || undefined,
+        // Empty end date clears it (open-ended); send null so the backend clears it.
+        endDate: (fd.get("endDate") as string) || null,
       });
       setEditingCampaign(null);
       loadCampaigns();
@@ -319,12 +373,32 @@ export default function BusinessDashboard() {
     catch (e) { toast.error(getErrorMessage(e)); }
   };
 
-  const filteredNpos = npos.filter(n => !npoSearchQuery || n.organizationName.toLowerCase().includes(npoSearchQuery.toLowerCase()) || (n.focusArea || "").toLowerCase().includes(npoSearchQuery.toLowerCase()));
+  const npoProvinces = (() => {
+    const present = new Set(npos.map(n => parseProvince(n.location) ?? (n.location ? PROVINCE_OTHER : null)).filter((p): p is string => !!p));
+    const ordered = SA_PROVINCES.filter(p => present.has(p));
+    if (present.has(PROVINCE_OTHER)) ordered.push(PROVINCE_OTHER);
+    return ordered;
+  })();
+  const filteredNpos = npos.filter(n => {
+    const q = npoSearchQuery.toLowerCase();
+    const matchesSearch = !npoSearchQuery
+      || n.organizationName.toLowerCase().includes(q)
+      || (n.focusArea || "").toLowerCase().includes(q)
+      || (n.location || "").toLowerCase().includes(q);
+    const matchesCategory = npoCategoryFilter === "All"
+      || (n.focusArea || "").toLowerCase().includes(npoCategoryFilter.toLowerCase());
+    const matchesVerification = npoVerificationFilter === "All"
+      || (npoVerificationFilter === "Verified" && n.isVerified)
+      || (npoVerificationFilter === "Pending" && !n.isVerified);
+    const prov = parseProvince(n.location) ?? (n.location ? PROVINCE_OTHER : null);
+    const matchesLocation = npoLocationFilter === "All" || prov === npoLocationFilter;
+    return matchesSearch && matchesCategory && matchesVerification && matchesLocation;
+  });
 
   // ═══ RENDER ═══
   return (
     <div className="min-h-screen bg-neutral-50">
-      <header className="bg-white border-b border-neutral-200 py-4 px-6 sticky top-0 z-40"><div className="container mx-auto max-w-7xl flex items-center justify-between"><div className="flex items-center gap-3"><button onClick={() => setSidebarOpen(true)} className="lg:hidden text-neutral-600"><Menu className="w-6 h-6" /></button><button onClick={() => setActiveTab("overview")} className="text-xl text-neutral-900 font-bold">UbuntuConnect</button></div><div className="flex items-center gap-4"><span className="text-neutral-600 hidden sm:inline">{profile?.contactPersonName || profile?.businessEmail || "Business"}</span><NotificationBell /><Button variant="outline" size="sm" onClick={logout}><LogOut className="w-4 h-4 mr-2" /> Logout</Button></div></div></header>
+      <header className="bg-white border-b border-neutral-200 py-4 px-6 sticky top-0 z-40"><div className="container mx-auto max-w-7xl flex items-center justify-between"><div className="flex items-center gap-3"><button onClick={() => setSidebarOpen(true)} className="lg:hidden text-neutral-600"><Menu className="w-6 h-6" /></button><button onClick={() => setActiveTab("overview")} className="text-xl text-neutral-900 font-bold">UbuntuConnect</button></div><div className="flex items-center gap-4"><button onClick={() => setActiveTab("editprofile")} className="text-neutral-600 hover:text-orange-600 transition-colors hidden sm:inline cursor-pointer" title="Go to Profile Settings">{profile?.contactPersonName || profile?.businessEmail || "Business"}</button><NotificationBell /><Button variant="outline" size="sm" onClick={logout}><LogOut className="w-4 h-4 mr-2" /> Logout</Button></div></div></header>
 
       <div className="flex">
         {sidebarOpen && <div className="fixed inset-0 bg-black/50 z-30 lg:hidden" onClick={() => setSidebarOpen(false)} />}
@@ -333,6 +407,7 @@ export default function BusinessDashboard() {
           <nav className="space-y-2">
             {[
               { id: "overview", icon: TrendingUp, label: "Overview" },
+              { id: "editprofile", icon: Edit, label: "Edit Profile" },
               { id: "discover", icon: Search, label: "Discover NPOs" },
               { id: "following", icon: Heart, label: "Following" },
               { id: "campaigns", icon: Target, label: "Campaigns" },
@@ -343,7 +418,7 @@ export default function BusinessDashboard() {
             ].map(item => (
               <button key={item.id} onClick={() => selectTab(item.id)} className={`w-full flex items-center gap-3 px-4 py-2 rounded-lg transition-colors ${activeTab === item.id ? "bg-orange-50 text-orange-600" : "text-neutral-600 hover:bg-neutral-50"}`}><item.icon className="w-5 h-5" /> {item.label}</button>
             ))}
-            <Link to="/fundraisers" className="w-full flex items-center gap-3 px-4 py-2 rounded-lg transition-colors text-neutral-600 hover:bg-neutral-50"><Target className="w-5 h-5" /> Fundraisers</Link>
+            <Link to="/fundraisers" onClick={() => setSidebarOpen(false)} className="w-full flex items-center gap-3 px-4 py-2 rounded-lg transition-colors text-neutral-600 hover:bg-neutral-50"><Target className="w-5 h-5" /> Fundraisers</Link>
           </nav>
         </aside>
 
@@ -412,21 +487,95 @@ export default function BusinessDashboard() {
               )}
             </div>)}
 
+            {/* EDIT PROFILE */}
+            {activeTab === "editprofile" && (<div className="max-w-2xl">
+              <div className="mb-8"><h1 className="text-2xl font-bold mb-2">Edit Profile</h1><p className="text-neutral-600">Manage how your business appears across the platform.</p></div>
+              <form onSubmit={handleSaveProfile} className="space-y-6">
+                <Card className="p-6 space-y-5">
+                  <ImageCropField label="Banner / Cover Image" value={editBackgroundImage} onChange={setEditBackgroundImage} aspect={16 / 5} rounded="lg" disabled={savingProfile} />
+                  <ImageCropField label="Profile Picture / Logo" value={editProfileImage} onChange={setEditProfileImage} aspect={1} rounded="full" disabled={savingProfile} />
+                  <div><Label>Bio</Label><Textarea value={editBio} onChange={e => setEditBio(e.target.value)} rows={4} placeholder="Tell NPOs about your business..." className="mt-1" maxLength={1000} disabled={savingProfile} /></div>
+                  <div className="grid grid-cols-2 gap-4">
+                    <div><Label>Industry</Label><Input value={editIndustry} onChange={e => setEditIndustry(e.target.value)} className="mt-1" disabled={savingProfile} /></div>
+                    <div><Label>CSR Goal</Label><Input value={editCsrGoal} onChange={e => setEditCsrGoal(e.target.value)} className="mt-1" disabled={savingProfile} /></div>
+                  </div>
+                  <div className="grid grid-cols-2 gap-4">
+                    <div><Label>Contact Person</Label><Input value={editContactName} onChange={e => setEditContactName(e.target.value)} className="mt-1" disabled={savingProfile} /></div>
+                    <div><Label>Contact Title</Label><Input value={editContactTitle} onChange={e => setEditContactTitle(e.target.value)} className="mt-1" disabled={savingProfile} /></div>
+                  </div>
+                </Card>
+                <Button type="submit" className="bg-orange-600 hover:bg-orange-700" disabled={savingProfile}>{savingProfile && <Loader2 className="w-4 h-4 mr-2 animate-spin" />}Save Changes</Button>
+              </form>
+            </div>)}
+
             {/* DISCOVER NPOs */}
             {activeTab === "discover" && (<div>
               <div className="flex items-center justify-between mb-6"><div><h1 className="text-2xl font-bold mb-2">Discover NPOs</h1><p className="text-neutral-600">Find and support organizations aligned with your CSR goals</p></div><Button variant="outline" size="sm" onClick={loadNPOs}><RefreshCw className="w-4 h-4" /></Button></div>
-              <div className="mb-6"><Input placeholder="Search by name or focus area..." value={npoSearchQuery} onChange={e => setNpoSearchQuery(e.target.value)} className="max-w-md" /></div>
+              <div className="mb-8">
+                <div className="flex gap-4 mb-6">
+                  <div className="flex-1 relative">
+                    <Search className="absolute left-3 top-1/2 transform -translate-y-1/2 w-5 h-5 text-neutral-400" />
+                    <Input placeholder="Search by name, location, or keyword..." className="pl-10" value={npoSearchQuery} onChange={e => setNpoSearchQuery(e.target.value)} />
+                  </div>
+                </div>
+                <div className="grid md:grid-cols-4 gap-4 mb-6">
+                  <div>
+                    <Label>Category</Label>
+                    <select className="w-full mt-2 px-3 py-2 border border-neutral-300 rounded-md" value={npoCategoryFilter} onChange={e => setNpoCategoryFilter(e.target.value)}>
+                      <option value="All">All Categories</option>
+                      <option value="Education">Education</option>
+                      <option value="Healthcare">Healthcare</option>
+                      <option value="Environment">Environment</option>
+                      <option value="Youth Development">Youth Development</option>
+                      <option value="Food Security">Food Security</option>
+                      <option value="Women's Rights">Women's Rights</option>
+                    </select>
+                  </div>
+                  <div>
+                    <Label>Verification</Label>
+                    <select className="w-full mt-2 px-3 py-2 border border-neutral-300 rounded-md" value={npoVerificationFilter} onChange={e => setNpoVerificationFilter(e.target.value)}>
+                      <option value="All">All NPOs</option>
+                      <option value="Verified">Verified Only</option>
+                      <option value="Pending">Pending Verification</option>
+                    </select>
+                  </div>
+                  <div>
+                    <Label>Province</Label>
+                    <select className="w-full mt-2 px-3 py-2 border border-neutral-300 rounded-md" value={npoLocationFilter} onChange={e => setNpoLocationFilter(e.target.value)}>
+                      <option value="All">All Provinces</option>
+                      {npoProvinces.map(prov => <option key={prov} value={prov}>{prov}</option>)}
+                    </select>
+                  </div>
+                  <div className="flex items-end">
+                    <Button variant="outline" className="w-full" onClick={() => { setNpoSearchQuery(""); setNpoCategoryFilter("All"); setNpoVerificationFilter("All"); setNpoLocationFilter("All"); }}>Clear Filters</Button>
+                  </div>
+                </div>
+                <p className="text-sm text-neutral-600">Showing {filteredNpos.length} organization{filteredNpos.length !== 1 ? "s" : ""}</p>
+              </div>
               {nposLoading ? <div className="flex justify-center py-12"><Loader2 className="w-8 h-8 animate-spin text-orange-600" /></div> : filteredNpos.length === 0 ? <Card className="p-12 text-center"><p className="text-neutral-600">No NPOs found.</p></Card> : (
                 <div className="grid md:grid-cols-2 lg:grid-cols-3 gap-6">{filteredNpos.map(npo => (
-                  <Card key={npo.npoId} className="p-6 hover:shadow-lg transition-shadow">
-                    <div className="flex items-center gap-3 mb-4"><div className="w-12 h-12 rounded-full bg-orange-100 flex items-center justify-center"><span className="text-lg font-bold text-orange-600">{npo.organizationName.charAt(0)}</span></div><div><h3 className="font-semibold">{npo.organizationName}</h3>{npo.focusArea && <Badge variant="outline" className="text-xs">{npo.focusArea}</Badge>}</div></div>
-                    {npo.mission && <p className="text-sm text-neutral-600 mb-4 line-clamp-2">{npo.mission}</p>}
-                    {npo.isVerified && <Badge className="mb-3 bg-green-100 text-green-700"><CheckCircle className="w-3 h-3 mr-1" /> Verified</Badge>}
-                    <div className="flex gap-2">
-                      <Button variant={followedNpoIds.has(npo.npoId) ? "default" : "outline"} size="sm" className={`flex-1 ${followedNpoIds.has(npo.npoId) ? "bg-orange-600 hover:bg-orange-700" : ""}`} onClick={() => handleFollow(npo.npoId)}><Heart className={`w-4 h-4 mr-1 ${followedNpoIds.has(npo.npoId) ? "fill-current" : ""}`} /> {followedNpoIds.has(npo.npoId) ? "Following" : "Follow"}</Button>
-                      <Button variant="outline" size="sm" onClick={() => { setDonateNpoId(npo.npoId); setDonateAmount(""); setShowDonateModal(true); }}><DollarSign className="w-4 h-4" /></Button>
+                  <Card key={npo.npoId} className="overflow-hidden hover:shadow-lg transition-shadow cursor-pointer" onClick={() => navigate(`/npo/${npo.npoId}`)}>
+                    <div className="h-40 bg-gradient-to-br from-orange-400 to-orange-600 flex items-center justify-center overflow-hidden">
+                      {npo.profileImage
+                        ? <img src={resolveMediaUrl(npo.profileImage)} alt={npo.organizationName} className="w-full h-full object-cover" onError={(e) => { (e.currentTarget as HTMLImageElement).style.display = "none"; }} />
+                        : <span className="text-5xl font-bold text-white/80">{npo.organizationName.charAt(0).toUpperCase()}</span>}
                     </div>
-                    <Link to={`/npo/${npo.npoId}`} className="block text-center text-sm text-orange-600 hover:underline mt-3">View full profile</Link>
+                    <div className="p-6">
+                      <div className="flex items-center gap-2 mb-1">
+                        <span className="text-lg font-semibold">{npo.organizationName}</span>
+                        {npo.isVerified && <CheckCircle className="w-5 h-5 text-green-600" />}
+                      </div>
+                      <div className="flex items-center gap-4 text-sm text-neutral-600 mb-3">
+                        {npo.location && <span className="flex items-center gap-1"><MapPin className="w-4 h-4" /> {npo.location}</span>}
+                        {npo.focusArea && <Badge variant="outline">{npo.focusArea}</Badge>}
+                      </div>
+                      {npo.mission && <p className="text-sm text-neutral-600 mb-4 line-clamp-2">{npo.mission}</p>}
+                      <div className="flex gap-2">
+                        <Button variant={followedNpoIds.has(npo.npoId) ? "default" : "outline"} className={`flex-1 ${followedNpoIds.has(npo.npoId) ? "bg-orange-600 hover:bg-orange-700" : ""}`} onClick={(e) => { e.stopPropagation(); handleFollow(npo.npoId); }}><Heart className={`w-4 h-4 mr-1 ${followedNpoIds.has(npo.npoId) ? "fill-current" : ""}`} /> {followedNpoIds.has(npo.npoId) ? "Following" : "Follow"}</Button>
+                        <Button className="flex-1 bg-orange-600 hover:bg-orange-700" onClick={(e) => { e.stopPropagation(); setDonateNpoId(npo.npoId); setDonateAmount(""); setShowDonateModal(true); }}>Donate</Button>
+                      </div>
+                      <p className="text-center text-sm text-orange-600 mt-3">View full profile →</p>
+                    </div>
                   </Card>
                 ))}</div>
               )}
@@ -458,7 +607,7 @@ export default function BusinessDashboard() {
                     {c.imageUrl && <img src={resolveMediaUrl(c.imageUrl)} alt={c.title} className="w-full h-48 object-cover object-center rounded-lg mb-4" onError={(e) => { (e.currentTarget as HTMLImageElement).style.display = "none"; }} />}
                     <div className="flex items-start justify-between">
                       <div className="flex-1"><h3 className="font-semibold text-lg">{c.title}</h3>{c.category && <Badge variant="outline" className="mt-1">{c.category}</Badge>}{c.description && <p className="text-neutral-600 text-sm mt-2">{c.description}</p>}<div className="flex gap-4 mt-3 text-sm text-neutral-500">{c.budgetPerPartner && <span>R {c.budgetPerPartner.toLocaleString()}/partner</span>}<span><Calendar className="w-4 h-4 inline mr-1" />{c.startDate}</span>{c.applicantCount !== undefined && <span>{c.applicantCount} applicant{c.applicantCount !== 1 ? "s" : ""}</span>}</div></div>
-                      <div className="flex gap-2 ml-4"><Button size="sm" variant="outline" onClick={(e) => { e.stopPropagation(); handleViewApplications(c); }}><Eye className="w-4 h-4 mr-1" /> Apps</Button><Button size="sm" variant="outline" onClick={(e) => { e.stopPropagation(); setEditingCampaign(c); }}><Edit className="w-4 h-4" /></Button><Button size="sm" variant="outline" className="text-red-600" onClick={(e) => { e.stopPropagation(); handleDeleteCampaign(c.campaignId); }}><X className="w-4 h-4" /></Button></div>
+                      <div className="flex gap-2 ml-4"><Button size="sm" variant="outline" onClick={(e) => { e.stopPropagation(); handleViewApplications(c); }}><Eye className="w-4 h-4 mr-1" /> Apps</Button><Button size="sm" variant="outline" onClick={(e) => { e.stopPropagation(); setEditCampaignImageUrl(c.imageUrl ?? null); setEditingCampaign(c); }}><Edit className="w-4 h-4" /></Button><Button size="sm" variant="outline" className="text-red-600" onClick={(e) => { e.stopPropagation(); handleDeleteCampaign(c.campaignId); }}><X className="w-4 h-4" /></Button></div>
                     </div>
                   </Card>
                 ))}</div>
@@ -499,9 +648,9 @@ export default function BusinessDashboard() {
               <div className="flex items-center justify-between mb-6"><h1 className="text-2xl font-bold">Community Feed</h1><Button variant="outline" size="sm" onClick={loadCommunity}><RefreshCw className="w-4 h-4 mr-2" /> Refresh</Button></div>
               {communityLoading ? <div className="flex justify-center py-12"><Loader2 className="w-8 h-8 animate-spin" /></div> : communityPosts.length === 0 ? <Card className="p-12 text-center"><p className="text-neutral-600">No posts yet.</p></Card> : (
                 <div className="grid md:grid-cols-2 gap-6">{communityPosts.map(post => (
-                  <Card key={post.postId} className="overflow-hidden hover:shadow-lg transition-shadow">
-                    {post.mediaUrl && <img src={resolveMediaUrl(post.mediaUrl)} alt="" className="w-full h-48 object-cover cursor-pointer" onClick={() => handleOpenComments(post)} />}
-                    <div className="p-6"><p className="text-xs text-orange-600 font-medium mb-1">{post.authorName}</p><h3 className="font-semibold mb-2">{post.postTitle}</h3>{post.content && <p className="text-neutral-600 text-sm mb-4 line-clamp-3">{post.content}</p>}<div className="flex items-center justify-between text-sm"><div className="flex items-center gap-4"><button onClick={() => handleLikePost(post.postId)} className={`flex items-center gap-1 ${likedPostIds.has(post.postId) ? "text-red-500" : "text-neutral-600"}`}><Heart className={`w-4 h-4 ${likedPostIds.has(post.postId) ? "fill-current" : ""}`} /> {post.likeCount}</button><button onClick={() => handleOpenComments(post)} className="flex items-center gap-1 text-neutral-600 hover:text-orange-600"><MessageSquare className="w-4 h-4" /> Comment</button><ReportPostButton postId={post.postId} /></div><span className="text-neutral-500 text-xs">{new Date(post.timestamp).toLocaleDateString()}</span></div></div>
+                  <Card key={post.postId} className="overflow-hidden hover:shadow-lg transition-shadow cursor-pointer" onClick={() => handleOpenComments(post)}>
+                    {post.mediaUrl && <img src={resolveMediaUrl(post.mediaUrl)} alt="" className="w-full h-48 object-cover" />}
+                    <div className="p-6">{post.authorNpoId ? <button onClick={(e) => { e.stopPropagation(); navigate(`/npo/${post.authorNpoId}`); }} className="text-xs text-orange-600 font-medium mb-1 hover:underline">{post.authorName}</button> : <p className="text-xs text-orange-600 font-medium mb-1">{post.authorName}</p>}<h3 className="font-semibold mb-2">{post.postTitle}</h3>{post.content && <p className="text-neutral-600 text-sm mb-4 line-clamp-3">{post.content}</p>}<div className="flex items-center justify-between text-sm"><div className="flex items-center gap-4"><button onClick={(e) => { e.stopPropagation(); handleLikePost(post.postId); }} className={`flex items-center gap-1 ${likedPostIds.has(post.postId) ? "text-red-500" : "text-neutral-600"}`}><Heart className={`w-4 h-4 ${likedPostIds.has(post.postId) ? "fill-current" : ""}`} /> {post.likeCount}</button><button onClick={(e) => { e.stopPropagation(); handleOpenComments(post); }} className="flex items-center gap-1 text-neutral-600 hover:text-orange-600"><MessageSquare className="w-4 h-4" /> Comment</button><span onClick={(e) => e.stopPropagation()}><ReportPostButton postId={post.postId} /></span></div><span className="text-neutral-500 text-xs">{new Date(post.timestamp).toLocaleDateString()}</span></div></div>
                   </Card>
                 ))}</div>
               )}
@@ -536,6 +685,8 @@ export default function BusinessDashboard() {
           <div><Label>Description</Label><Textarea name="description" defaultValue={editingCampaign.description || ""} /></div>
           <div className="grid grid-cols-2 gap-4"><div><Label>Category</Label><Input name="category" defaultValue={editingCampaign.category || ""} placeholder="e.g. Education" /></div><div><Label>Budget per Partner (R)</Label><Input name="budgetPerPartner" type="number" step="0.01" defaultValue={editingCampaign.budgetPerPartner ?? ""} /></div></div>
           <div><Label>Requirements</Label><Textarea name="requirements" defaultValue={editingCampaign.requirements || ""} placeholder="What you expect from partner NPOs..." /></div>
+          <div className="grid grid-cols-2 gap-4"><div><Label>Start Date</Label><Input name="startDate" type="date" defaultValue={editingCampaign.startDate ? editingCampaign.startDate.slice(0, 10) : ""} /></div><div><Label>End Date</Label><Input name="endDate" type="date" defaultValue={editingCampaign.endDate ? editingCampaign.endDate.slice(0, 10) : ""} /><p className="text-xs text-neutral-500 mt-1">Leave blank for open-ended.</p></div></div>
+          <ImageUploadField label="Campaign Image (optional)" value={editCampaignImageUrl} onChange={setEditCampaignImageUrl} />
           <div className="flex gap-3"><Button type="submit" className="flex-1 bg-orange-600 hover:bg-orange-700">Save Changes</Button><Button type="button" variant="outline" onClick={() => setEditingCampaign(null)}>Cancel</Button></div>
         </form>
       </Card></div>)}
@@ -584,6 +735,7 @@ export default function BusinessDashboard() {
             content: selectedPost.content,
             mediaUrl: selectedPost.mediaUrl,
             authorName: selectedPost.authorName,
+            authorNpoId: selectedPost.authorNpoId,
             likeCount: selectedPost.likeCount,
             timestamp: selectedPost.timestamp,
           }}

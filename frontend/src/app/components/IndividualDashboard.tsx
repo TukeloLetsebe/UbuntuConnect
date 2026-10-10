@@ -9,6 +9,8 @@ import IdentityVerificationBanner from "./IdentityVerificationBanner";
 import CardPaymentFields, { type CardDetails, emptyCard } from "./CardPaymentFields";
 import PostDetailModal from "./PostDetailModal";
 import ReportPostButton from "./ReportPostButton";
+import LocationPicker, { composeLocation } from "./registration/LocationPicker";
+import { parseLocation, parseProvince, SA_PROVINCES, PROVINCE_OTHER, VOLUNTEER_SKILLS } from "../../lib/registrationOptions";
 import { resolveMediaUrl } from "../../lib/api";
 import { individualService, getErrorMessage, type IndividualProfile, type NPOSummary, type NPODetail, type VolunteerOpportunity, type MyVolunteeringItem, type MyDonationsResponse, type MyImpact, type CommunityPost, type FollowedNPO } from "../../services/individualService";
 import { kycService, type KycStatus } from "../../services/kycService";
@@ -58,23 +60,9 @@ import {
 
 // Common volunteer skills offered as quick checkboxes. Keeps applications
 // consistent and fast to fill while still allowing a free-text "Other".
-const SKILL_OPTIONS = [
-  "Teaching / Tutoring",
-  "Mentoring",
-  "First Aid",
-  "Administration",
-  "Fundraising",
-  "Social Media",
-  "Event Planning",
-  "Gardening",
-  "Cooking / Catering",
-  "Driving",
-  "IT / Computer Skills",
-  "Photography",
-  "Translation",
-  "Counselling",
-  "Construction / Handywork",
-];
+// Canonical skill list lives in registrationOptions so the NPO opportunity
+// form and the individual application form stay in sync.
+const SKILL_OPTIONS = VOLUNTEER_SKILLS;
 
 const AVAILABILITY_DAYS = ["Mon", "Tue", "Wed", "Thu", "Fri", "Sat", "Sun"];
 const AVAILABILITY_TIMES = ["Morning", "Afternoon", "Evening"];
@@ -90,13 +78,14 @@ function matchSeedSkills(required: string): string[] {
 }
 
 export default function IndividualDashboard() {
-  const { logout, email, userId } = useAuth();
+  const { logout, email, userId, isEmailVerified } = useAuth();
   const navigate = useNavigate();
   const [searchParams, setSearchParams] = useSearchParams();
   const [activeTab, setActiveTab] = useState("discover");
   // Tracks a pending deep-linked apply (from /individual-dashboard?opp=ID)
   const [pendingApplyOppId, setPendingApplyOppId] = useState<number | null>(null);
   const [sidebarOpen, setSidebarOpen] = useState(false);
+  const selectTab = (id: string) => { setActiveTab(id); setSidebarOpen(false); };
 
   // Helper: deterministic gradient color based on NPO name
   const getNpoColor = (name: string): string => {
@@ -147,6 +136,7 @@ export default function IndividualDashboard() {
   const [searchQuery, setSearchQuery] = useState("");
   const [selectedCategory, setSelectedCategory] = useState("All");
   const [selectedVerification, setSelectedVerification] = useState("All");
+  const [selectedLocation, setSelectedLocation] = useState("All");
 
   // Discover NPOs state
   const [npos, setNpos] = useState<NPOSummary[]>([]);
@@ -169,6 +159,10 @@ export default function IndividualDashboard() {
   const [profileCauseOfCare, setProfileCauseOfCare] = useState("");
   const [profileContact, setProfileContact] = useState("");
   const [profileLocation, setProfileLocation] = useState("");
+  // Structured location (province + city) backing the picker; composed back
+  // into "City, Province" for profileLocation on submit.
+  const [profileProvince, setProfileProvince] = useState("");
+  const [profileCity, setProfileCity] = useState("");
 
   // Change Password state
   const [currentPassword, setCurrentPassword] = useState("");
@@ -302,6 +296,11 @@ export default function IndividualDashboard() {
       setProfileCauseOfCare(data.causeOfCare || "");
       setProfileContact(data.contact || "");
       setProfileLocation(data.location || "");
+      {
+        const parsed = parseLocation(data.location);
+        setProfileProvince(parsed.province);
+        setProfileCity(parsed.city);
+      }
     } catch (err) {
       setProfileError(getErrorMessage(err));
     } finally {
@@ -621,14 +620,18 @@ export default function IndividualDashboard() {
   const handleProfileUpdate = async (e: React.FormEvent) => {
     e.preventDefault();
     setProfileUpdating(true);
+    // Compose the structured picker back into "City, Province". Falls back to
+    // the existing value if nothing was selected.
+    const composedLocation = composeLocation(profileProvince, profileCity) ?? null;
     try {
       await individualService.updateProfile({
         firstName: profileFirstName,
         lastName: profileLastName,
         causeOfCare: profileCauseOfCare || null,
         userContact: profileContact || null,
-        location: profileLocation || null,
+        location: composedLocation,
       });
+      setProfileLocation(composedLocation ?? "");
       toast.success("Profile updated successfully.");
       setProfile((prev) =>
         prev
@@ -638,7 +641,7 @@ export default function IndividualDashboard() {
               lastName: profileLastName,
               causeOfCare: profileCauseOfCare || null,
               contact: profileContact || null,
-              location: profileLocation || null,
+              location: composedLocation,
             }
           : prev
       );
@@ -941,6 +944,16 @@ export default function IndividualDashboard() {
   const activeVolunteerRoles = myVolunteering.filter(a => a.status === "Accepted").length;
   const pendingApplications = myVolunteering.filter(a => a.status === "Pending").length;
 
+  // Provinces present in the loaded NPO list, derived from each location
+  // string. Fixed-order (official SA provinces) + an "Other" bucket for
+  // records whose province can't be determined.
+  const npoProvinces = (() => {
+    const present = new Set(npos.map((n) => parseProvince(n.location) ?? (n.location ? PROVINCE_OTHER : null)).filter((p): p is string => !!p));
+    const ordered = SA_PROVINCES.filter((p) => present.has(p));
+    if (present.has(PROVINCE_OTHER)) ordered.push(PROVINCE_OTHER);
+    return ordered;
+  })();
+
   // Client-side filtered NPOs
   const filteredNPOs = npos.filter((npo) => {
     const matchesSearch =
@@ -959,7 +972,11 @@ export default function IndividualDashboard() {
       (selectedVerification === "Verified" && npo.isVerified) ||
       (selectedVerification === "Pending" && !npo.isVerified);
 
-    return matchesSearch && matchesCategory && matchesVerification;
+    const npoProvince = parseProvince(npo.location) ?? (npo.location ? PROVINCE_OTHER : null);
+    const matchesLocation =
+      selectedLocation === "All" || npoProvince === selectedLocation;
+
+    return matchesSearch && matchesCategory && matchesVerification && matchesLocation;
   });
 
   return (
@@ -971,12 +988,11 @@ export default function IndividualDashboard() {
             <button onClick={() => setSidebarOpen(true)} className="lg:hidden text-neutral-600">
               <Menu className="w-6 h-6" />
             </button>
-            <button onClick={() => setActiveTab("discover")} className="text-xl text-neutral-900">
+            <button onClick={() => setActiveTab("discover")} className="text-xl text-neutral-900 font-bold">
               UbuntuConnect
             </button>
           </div>
           <div className="flex items-center gap-4">
-            <NotificationBell />
             <button
               onClick={() => setActiveTab("profile")}
               className="text-neutral-600 hover:text-orange-600 transition-colors hidden sm:inline cursor-pointer"
@@ -984,6 +1000,7 @@ export default function IndividualDashboard() {
             >
               {profile ? `${profile.firstName} ${profile.lastName}` : email || "User"}
             </button>
+            <NotificationBell />
             <Button variant="outline" size="sm" onClick={handleLogout}>
               <LogOut className="w-4 h-4 mr-2" />
               Logout
@@ -997,110 +1014,25 @@ export default function IndividualDashboard() {
         {sidebarOpen && <div className="fixed inset-0 bg-black/50 z-30 lg:hidden" onClick={() => setSidebarOpen(false)} />}
         <aside className={`${sidebarOpen ? "translate-x-0" : "-translate-x-full"} lg:translate-x-0 transition-transform fixed lg:sticky top-0 lg:top-[73px] left-0 z-40 lg:z-30 w-64 bg-white border-r border-neutral-200 h-screen lg:h-[calc(100vh-73px)] p-6 overflow-y-auto`}>
           <div className="flex justify-between items-center mb-4 lg:hidden"><span className="font-bold">Menu</span><button onClick={() => setSidebarOpen(false)}><X className="w-5 h-5" /></button></div>
-          <nav className="space-y-2" onClick={() => setSidebarOpen(false)}>
-            <button
-              onClick={() => setActiveTab("discover")}
-              className={`w-full flex items-center gap-3 px-4 py-2 rounded-lg transition-colors ${
-                activeTab === "discover"
-                  ? "bg-orange-50 text-orange-600"
-                  : "text-neutral-600 hover:bg-neutral-50"
-              }`}
-            >
-              <Search className="w-5 h-5" />
-              Discover NPOs
-            </button>
-            <button
-              onClick={() => setActiveTab("following")}
-              className={`w-full flex items-center gap-3 px-4 py-2 rounded-lg transition-colors ${
-                activeTab === "following"
-                  ? "bg-orange-50 text-orange-600"
-                  : "text-neutral-600 hover:bg-neutral-50"
-              }`}
-            >
-              <Heart className="w-5 h-5" />
-              Following ({followedNpos.length})
-            </button>
-            <button
-              onClick={() => setActiveTab("volunteer")}
-              className={`w-full flex items-center gap-3 px-4 py-2 rounded-lg transition-colors ${
-                activeTab === "volunteer"
-                  ? "bg-orange-50 text-orange-600"
-                  : "text-neutral-600 hover:bg-neutral-50"
-              }`}
-            >
-              <Briefcase className="w-5 h-5" />
-              Volunteer Opportunities
-            </button>
-            <button
-              onClick={() => setActiveTab("donations")}
-              className={`w-full flex items-center gap-3 px-4 py-2 rounded-lg transition-colors ${
-                activeTab === "donations"
-                  ? "bg-orange-50 text-orange-600"
-                  : "text-neutral-600 hover:bg-neutral-50"
-              }`}
-            >
-              <Banknote className="w-5 h-5" />
-              Donations
-            </button>
-            <button
-              onClick={() => setActiveTab("wallet")}
-              className={`w-full flex items-center gap-3 px-4 py-2 rounded-lg transition-colors ${
-                activeTab === "wallet"
-                  ? "bg-orange-50 text-orange-600"
-                  : "text-neutral-600 hover:bg-neutral-50"
-              }`}
-            >
-              <Wallet className="w-5 h-5" />
-              Wallet
-            </button>
-            <Link to="/fundraisers" className="w-full flex items-center gap-3 px-4 py-2 rounded-lg transition-colors text-neutral-600 hover:bg-neutral-50">
-              <TrendingUp className="w-5 h-5" />
-              Fundraisers
-            </Link>
-            <button
-              onClick={() => setActiveTab("myvolunteering")}
-              className={`w-full flex items-center gap-3 px-4 py-2 rounded-lg transition-colors ${
-                activeTab === "myvolunteering"
-                  ? "bg-orange-50 text-orange-600"
-                  : "text-neutral-600 hover:bg-neutral-50"
-              }`}
-            >
-              <UserCheck className="w-5 h-5" />
-              My Volunteering
-            </button>
-            <button
-              onClick={() => setActiveTab("impact")}
-              className={`w-full flex items-center gap-3 px-4 py-2 rounded-lg transition-colors ${
-                activeTab === "impact"
-                  ? "bg-orange-50 text-orange-600"
-                  : "text-neutral-600 hover:bg-neutral-50"
-              }`}
-            >
-              <TrendingUp className="w-5 h-5" />
-              My Impact
-            </button>
-            <button
-              onClick={() => setActiveTab("community")}
-              className={`w-full flex items-center gap-3 px-4 py-2 rounded-lg transition-colors ${
-                activeTab === "community"
-                  ? "bg-orange-50 text-orange-600"
-                  : "text-neutral-600 hover:bg-neutral-50"
-              }`}
-            >
-              <MessageSquare className="w-5 h-5" />
-              Community Updates
-            </button>
-            <button
-              onClick={() => setActiveTab("profile")}
-              className={`w-full flex items-center gap-3 px-4 py-2 rounded-lg transition-colors ${
-                activeTab === "profile"
-                  ? "bg-orange-50 text-orange-600"
-                  : "text-neutral-600 hover:bg-neutral-50"
-              }`}
-            >
-              <Settings className="w-5 h-5" />
-              Profile Settings
-            </button>
+          <nav className="space-y-2">
+            {[
+              { id: "discover", icon: Search, label: "Discover NPOs" },
+              { id: "following", icon: Heart, label: `Following (${followedNpos.length})` },
+              { id: "volunteer", icon: Briefcase, label: "Volunteer Opportunities" },
+              { id: "donations", icon: Banknote, label: "Donations" },
+              { id: "wallet", icon: Wallet, label: "Wallet" },
+            ].map(item => (
+              <button key={item.id} onClick={() => selectTab(item.id)} className={`w-full flex items-center gap-3 px-4 py-2 rounded-lg transition-colors ${activeTab === item.id ? "bg-orange-50 text-orange-600" : "text-neutral-600 hover:bg-neutral-50"}`}><item.icon className="w-5 h-5" /> {item.label}</button>
+            ))}
+            <Link to="/fundraisers" onClick={() => setSidebarOpen(false)} className="w-full flex items-center gap-3 px-4 py-2 rounded-lg transition-colors text-neutral-600 hover:bg-neutral-50"><TrendingUp className="w-5 h-5" /> Fundraisers</Link>
+            {[
+              { id: "myvolunteering", icon: UserCheck, label: "My Volunteering" },
+              { id: "impact", icon: TrendingUp, label: "My Impact" },
+              { id: "community", icon: MessageSquare, label: "Community Updates" },
+              { id: "profile", icon: Settings, label: "Profile Settings" },
+            ].map(item => (
+              <button key={item.id} onClick={() => selectTab(item.id)} className={`w-full flex items-center gap-3 px-4 py-2 rounded-lg transition-colors ${activeTab === item.id ? "bg-orange-50 text-orange-600" : "text-neutral-600 hover:bg-neutral-50"}`}><item.icon className="w-5 h-5" /> {item.label}</button>
+            ))}
           </nav>
         </aside>
 
@@ -1211,6 +1143,19 @@ export default function IndividualDashboard() {
                             <option value="Pending">Pending Verification</option>
                           </select>
                         </div>
+                        <div>
+                          <Label>Province</Label>
+                          <select
+                            className="w-full mt-2 px-3 py-2 border border-neutral-300 rounded-md"
+                            value={selectedLocation}
+                            onChange={(e) => setSelectedLocation(e.target.value)}
+                          >
+                            <option value="All">All Provinces</option>
+                            {npoProvinces.map((prov) => (
+                              <option key={prov} value={prov}>{prov}</option>
+                            ))}
+                          </select>
+                        </div>
                         <div className="flex items-end">
                           <Button
                             variant="outline"
@@ -1219,6 +1164,7 @@ export default function IndividualDashboard() {
                               setSearchQuery("");
                               setSelectedCategory("All");
                               setSelectedVerification("All");
+                              setSelectedLocation("All");
                             }}
                           >
                             Clear Filters
@@ -1239,10 +1185,12 @@ export default function IndividualDashboard() {
                           className="overflow-hidden hover:shadow-lg transition-shadow cursor-pointer"
                           onClick={() => navigate(`/npo/${npo.npoId}`)}
                         >
-                          <div className={`h-40 bg-gradient-to-br ${getNpoColor(npo.organizationName)} flex items-center justify-center`}>
-                            <span className="text-5xl font-bold text-white/80">
-                              {npo.organizationName.charAt(0).toUpperCase()}
-                            </span>
+                          <div className={`h-40 bg-gradient-to-br ${getNpoColor(npo.organizationName)} flex items-center justify-center overflow-hidden`}>
+                            {npo.profileImage
+                              ? <img src={resolveMediaUrl(npo.profileImage)} alt={npo.organizationName} className="w-full h-full object-cover" onError={(e) => { (e.currentTarget as HTMLImageElement).style.display = "none"; }} />
+                              : <span className="text-5xl font-bold text-white/80">
+                                  {npo.organizationName.charAt(0).toUpperCase()}
+                                </span>}
                           </div>
                           <div className="p-6">
                             <div className="flex items-start justify-between mb-3">
@@ -1303,6 +1251,7 @@ export default function IndividualDashboard() {
                             setSearchQuery("");
                             setSelectedCategory("All");
                             setSelectedVerification("All");
+                            setSelectedLocation("All");
                           }}
                         >
                           Clear All Filters
@@ -1922,7 +1871,11 @@ export default function IndividualDashboard() {
                       return (
                         <div className="grid md:grid-cols-2 gap-6">
                           {filteredPosts.map((post) => (
-                            <Card key={post.postId} className="overflow-hidden hover:shadow-lg transition-shadow">
+                            <Card
+                              key={post.postId}
+                              className="overflow-hidden hover:shadow-lg transition-shadow cursor-pointer"
+                              onClick={() => handleOpenComments(post)}
+                            >
                               {/* Image Area - full width at top */}
                               {post.mediaUrl && post.mediaUrl.trim() !== "" ? (
                                 <div className="h-48">
@@ -1944,13 +1897,32 @@ export default function IndividualDashboard() {
                               )}
 
                               <div className="p-6">
-                                {/* Author row - orange heart icon circle + name */}
+                                {/* Author row - avatar + name link to the NPO profile */}
                                 <div className="flex items-center gap-3 mb-3">
-                                  <div className="w-10 h-10 rounded-full bg-orange-100 flex items-center justify-center">
-                                    <Heart className="w-5 h-5 text-orange-600" />
-                                  </div>
+                                  {post.authorNpoId ? (
+                                    <button
+                                      onClick={(e) => { e.stopPropagation(); navigate(`/npo/${post.authorNpoId}`); }}
+                                      className="w-10 h-10 rounded-full bg-orange-100 flex items-center justify-center hover:ring-2 hover:ring-orange-300"
+                                      title={`View ${post.authorName}`}
+                                    >
+                                      <Heart className="w-5 h-5 text-orange-600" />
+                                    </button>
+                                  ) : (
+                                    <div className="w-10 h-10 rounded-full bg-orange-100 flex items-center justify-center">
+                                      <Heart className="w-5 h-5 text-orange-600" />
+                                    </div>
+                                  )}
                                   <div>
-                                    <p className="font-medium text-neutral-900 text-sm">{post.authorName}</p>
+                                    {post.authorNpoId ? (
+                                      <button
+                                        onClick={(e) => { e.stopPropagation(); navigate(`/npo/${post.authorNpoId}`); }}
+                                        className="font-medium text-neutral-900 text-sm hover:text-orange-600 hover:underline"
+                                      >
+                                        {post.authorName}
+                                      </button>
+                                    ) : (
+                                      <p className="font-medium text-neutral-900 text-sm">{post.authorName}</p>
+                                    )}
                                   </div>
                                 </div>
 
@@ -1967,19 +1939,21 @@ export default function IndividualDashboard() {
                                   <div className="flex items-center gap-4">
                                     <button
                                       className="flex items-center gap-1 text-neutral-600 hover:text-red-500 transition-colors"
-                                      onClick={() => handleLikePost(post.postId)}
+                                      onClick={(e) => { e.stopPropagation(); handleLikePost(post.postId); }}
                                     >
                                       <Heart className={`w-4 h-4 ${likedPostIds.has(post.postId) ? "fill-red-500 text-red-500" : ""}`} />
                                       {post.likeCount}
                                     </button>
                                     <button
                                       className="flex items-center gap-1 text-neutral-600 hover:text-orange-600 transition-colors"
-                                      onClick={() => handleOpenComments(post)}
+                                      onClick={(e) => { e.stopPropagation(); handleOpenComments(post); }}
                                     >
                                       <MessageSquare className="w-4 h-4" />
                                       Comment
                                     </button>
-                                    <ReportPostButton postId={post.postId} />
+                                    <span onClick={(e) => e.stopPropagation()}>
+                                      <ReportPostButton postId={post.postId} />
+                                    </span>
                                   </div>
                                   <span className="text-neutral-500">
                                     {new Date(post.timestamp).toLocaleDateString("en-ZA", {
@@ -2238,13 +2212,13 @@ export default function IndividualDashboard() {
                           />
                         </div>
                         <div>
-                          <Label htmlFor="location">Location</Label>
-                          <Input
-                            id="location"
-                            value={profileLocation}
-                            onChange={(e) => setProfileLocation(e.target.value)}
-                            placeholder="e.g., Johannesburg"
-                            className="mt-2"
+                          <LocationPicker
+                            province={profileProvince}
+                            city={profileCity}
+                            onProvinceChange={setProfileProvince}
+                            onCityChange={setProfileCity}
+                            disabled={profileUpdating}
+                            required
                           />
                         </div>
                         <div>
@@ -2727,10 +2701,12 @@ export default function IndividualDashboard() {
             content: selectedPost.content,
             mediaUrl: selectedPost.mediaUrl,
             authorName: selectedPost.authorName,
+            authorNpoId: selectedPost.authorNpoId,
             likeCount: selectedPost.likeCount,
             timestamp: selectedPost.timestamp,
           }}
           currentUserId={userId}
+          canComment={isEmailVerified}
           liked={likedPostIds.has(selectedPost.postId)}
           onClose={() => setSelectedPost(null)}
           onLikeChange={(postId, isLiked, newCount) => {

@@ -378,6 +378,7 @@ public partial class AppDbContext : DbContext
 
             entity.Property(e => e.Bio).HasMaxLength(1000);
             entity.Property(e => e.ProfileImage).HasMaxLength(500);
+            entity.Property(e => e.BackgroundImage).HasMaxLength(500);
             entity.Property(e => e.ProfileName).HasMaxLength(150);
 
             entity.HasOne(d => d.User).WithOne(p => p.Profile)

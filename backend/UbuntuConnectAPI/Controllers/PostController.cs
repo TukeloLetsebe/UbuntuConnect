@@ -30,6 +30,14 @@ public class PostController : ControllerBase
             {
                 postId = p.PostId,
                 userId = p.UserId,
+                // Author name + NPO id (null when the author isn't an NPO) so the
+                // community feed can show and link the author.
+                authorName = p.User.Npos.Any()
+                    ? p.User.Npos.First().OrganizationName
+                    : p.User.UserEmail,
+                authorNpoId = p.User.Npos.Any()
+                    ? (int?)p.User.Npos.First().NpoId
+                    : null,
                 postTitle = p.PostTitle,
                 content = p.Content,
                 mediaUrl = p.MediaUrl,
@@ -50,6 +58,12 @@ public class PostController : ControllerBase
             {
                 postId = p.PostId,
                 userId = p.UserId,
+                authorName = p.User.Npos.Any()
+                    ? p.User.Npos.First().OrganizationName
+                    : p.User.UserEmail,
+                authorNpoId = p.User.Npos.Any()
+                    ? (int?)p.User.Npos.First().NpoId
+                    : null,
                 postTitle = p.PostTitle,
                 content = p.Content,
                 mediaUrl = p.MediaUrl,
@@ -72,6 +86,12 @@ public class PostController : ControllerBase
             {
                 postId = p.PostId,
                 userId = p.UserId,
+                authorName = p.User.Npos.Any()
+                    ? p.User.Npos.First().OrganizationName
+                    : p.User.UserEmail,
+                authorNpoId = p.User.Npos.Any()
+                    ? (int?)p.User.Npos.First().NpoId
+                    : null,
                 postTitle = p.PostTitle,
                 content = p.Content,
                 mediaUrl = p.MediaUrl,

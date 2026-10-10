@@ -8,6 +8,8 @@ import EmailVerificationBanner from "./EmailVerificationBanner";
 import ImageUploadField from "./ImageUploadField";
 import DocumentUploadField from "./DocumentUploadField";
 import PostDetailModal from "./PostDetailModal";
+import ImageCropField from "./ImageCropField";
+import { parseProvince, SA_PROVINCES, PROVINCE_OTHER, NPO_FOCUS_AREAS, OPPORTUNITY_CATEGORIES, VOLUNTEER_SKILLS, TIME_COMMITMENTS, DURATIONS, OTHER } from "../../lib/registrationOptions";
 import NpoReportsPanel from "./reports/NpoReportsPanel";
 import { resolveMediaUrl } from "../../lib/api";
 import { npoService, getErrorMessage } from "../../services/npoService";
@@ -20,6 +22,7 @@ import { Tabs, TabsContent, TabsList, TabsTrigger } from "./ui/tabs";
 import { Input } from "./ui/input";
 import { Label } from "./ui/label";
 import { Textarea } from "./ui/textarea";
+import { Checkbox } from "./ui/checkbox";
 import {
   Users, Heart, TrendingUp, FileText, CheckCircle, AlertCircle, Plus,
   Settings, LogOut, BarChart3, Upload, DollarSign, UserPlus, X, Check,
@@ -53,6 +56,12 @@ export default function NPODashboard() {
   const [editingPost, setEditingPost] = useState<PostItem | null>(null);
   const [selectedPost, setSelectedPost] = useState<PostItem | null>(null);
   const [identityFor, setIdentityFor] = useState<{ name: string; loading: boolean; data: { verified: boolean; idNumber: string | null; idDocumentUrl: string | null; selfieUrl: string | null } | null } | null>(null);
+  // Log-hours modal state
+  const [logHoursApp, setLogHoursApp] = useState<VolunteerApplicationItem | null>(null);
+  const [logHoursValue, setLogHoursValue] = useState("");
+  const [logHoursDate, setLogHoursDate] = useState("");
+  const [logHoursNotes, setLogHoursNotes] = useState("");
+  const [loggingHours, setLoggingHours] = useState(false);
   const [postImageUrl, setPostImageUrl] = useState<string | null>(null);
   const [likedPostIds, setLikedPostIds] = useState<Set<number>>(new Set());
 
@@ -76,6 +85,16 @@ export default function NPODashboard() {
   const [showCreateOpportunity, setShowCreateOpportunity] = useState(false);
   const [opportunityImageUrl, setOpportunityImageUrl] = useState<string | null>(null);
   const [editingOpportunity, setEditingOpportunity] = useState<VolunteerOpportunityItem | null>(null);
+  // Controlled fields for the create/edit opportunity form (structured inputs).
+  const [oppCategory, setOppCategory] = useState("");
+  const [oppCategoryOther, setOppCategoryOther] = useState("");
+  const [oppSkillSet, setOppSkillSet] = useState<string[]>([]);
+  const [oppSkillsOther, setOppSkillsOther] = useState("");
+  const [oppTime, setOppTime] = useState("");
+  const [oppTimeOther, setOppTimeOther] = useState("");
+  const [oppDuration, setOppDuration] = useState("");
+  const [oppDurationOther, setOppDurationOther] = useState("");
+  const [savingOpportunity, setSavingOpportunity] = useState(false);
 
   // Verification
   const [verifications, setVerifications] = useState<VerificationItem[]>([]);
@@ -101,6 +120,9 @@ export default function NPODashboard() {
   const [selectedNpoDetail, setSelectedNpoDetail] = useState<NpoDiscoverItem | null>(null);
   const [followedNpoIds, setFollowedNpoIds] = useState<Set<number>>(new Set());
   const [npoSearchQuery, setNpoSearchQuery] = useState("");
+  const [npoLocationFilter, setNpoLocationFilter] = useState("All");
+  const [npoCategoryFilter, setNpoCategoryFilter] = useState("All");
+  const [npoVerificationFilter, setNpoVerificationFilter] = useState("All");
 
   // Community
   const [communityPosts, setCommunityPosts] = useState<PostItem[]>([]);
@@ -111,8 +133,55 @@ export default function NPODashboard() {
   const [donors, setDonors] = useState<DonorItem[]>([]);
   const [supportersLoading, setSupportersLoading] = useState(false);
 
+  // Edit Profile (bio + images + org fields)
+  const [editBio, setEditBio] = useState("");
+  const [editMission, setEditMission] = useState("");
+  const [editFocusSet, setEditFocusSet] = useState<string[]>([]);
+  const [editFocusOther, setEditFocusOther] = useState("");
+  const [editProfileImage, setEditProfileImage] = useState<string | null>(null);
+  const [editBackgroundImage, setEditBackgroundImage] = useState<string | null>(null);
+  const [editProfileLoaded, setEditProfileLoaded] = useState(false);
+  const [savingProfile, setSavingProfile] = useState(false);
+
   // ═══ LOADERS ═══
   const loadProfile = useCallback(async () => { if (!userId) return; try { const r = await npoService.getProfileByUserId(userId); setNpoProfile(r.data); } catch {} }, [userId]);
+
+  // Seed the Edit Profile form from the public profile (which carries bio + images).
+  const loadEditProfile = useCallback(async () => {
+    if (!npoProfile) return;
+    try {
+      const r = await npoService.getPublicProfile(npoProfile.npoId);
+      setEditBio(r.data.bio || "");
+      setEditMission(r.data.npomission || "");
+      // Split the stored comma string into known options vs free-text "other".
+      {
+        const parts = (r.data.npofocusArea || "").split(",").map(s => s.trim()).filter(Boolean);
+        setEditFocusSet(parts.filter(p => NPO_FOCUS_AREAS.includes(p)));
+        setEditFocusOther(parts.filter(p => !NPO_FOCUS_AREAS.includes(p)).join(", "));
+      }
+      setEditProfileImage(r.data.profileImage);
+      setEditBackgroundImage(r.data.backgroundImage);
+      setEditProfileLoaded(true);
+    } catch (e) { toast.error(getErrorMessage(e)); }
+  }, [npoProfile]);
+
+  const handleSaveProfile = async (e: React.FormEvent) => {
+    e.preventDefault();
+    if (!npoProfile) return;
+    setSavingProfile(true);
+    try {
+      const focusArea = [...editFocusSet, editFocusOther.trim()].filter(Boolean).join(", ");
+      await npoService.updateProfile(npoProfile.npoId, {
+        NPOMission: editMission || undefined,
+        NPOFocusArea: focusArea || undefined,
+        Bio: editBio || undefined,
+        ProfileImage: editProfileImage,
+        BackgroundImage: editBackgroundImage,
+      });
+      toast.success("Profile updated!");
+    } catch (e) { toast.error(getErrorMessage(e)); }
+    finally { setSavingProfile(false); }
+  };
 
   const loadPosts = useCallback(async () => { if (!userId) return; setPostsLoading(true); try { const [a, l] = await Promise.all([npoService.getMyPosts(userId), npoService.getMyLikes()]); setPosts(a.data.filter(p => p.activityStatus === "Active")); setLikedPostIds(new Set(l.data)); } catch (e) { toast.error(getErrorMessage(e)); } finally { setPostsLoading(false); } }, [userId]);
 
@@ -140,7 +209,8 @@ export default function NPODashboard() {
     if (activeTab === "community") loadCommunityPosts();
     if (activeTab === "discover") loadDiscoverNpos();
     if (activeTab === "supporters") loadSupporters();
-  }, [activeTab, loadProjects, loadApplications, loadOpportunities, loadVerification, loadCommunityPosts, loadDiscoverNpos, loadSupporters]);
+    if (activeTab === "editprofile" && !editProfileLoaded) loadEditProfile();
+  }, [activeTab, loadProjects, loadApplications, loadOpportunities, loadVerification, loadCommunityPosts, loadDiscoverNpos, loadSupporters, editProfileLoaded, loadEditProfile]);
 
   // ═══ HANDLERS ═══
   const handleCreatePost = async (e: React.FormEvent) => { e.preventDefault(); const fd = new FormData(e.currentTarget as HTMLFormElement); try { const r = await npoService.createPost({ postTitle: fd.get("title") as string, content: fd.get("content") as string, mediaUrl: (fd.get("mediaUrl") as string) || undefined }); setPosts(p => [r.data, ...p]); setShowCreatePost(false); toast.success("Post created!"); } catch (e) { toast.error(getErrorMessage(e)); } };
@@ -165,6 +235,30 @@ export default function NPODashboard() {
   const handleAcceptApplication = async (id: number) => { try { await npoService.acceptApplication(id); setApplications(p => p.map(a => a.applicationId === id ? { ...a, status: "Accepted" } : a)); toast.success("Accepted!"); } catch (e) { toast.error(getErrorMessage(e)); } };
   const handleRejectApplication = async (id: number) => { try { await npoService.rejectApplication(id); setApplications(p => p.map(a => a.applicationId === id ? { ...a, status: "Rejected" } : a)); toast.success("Rejected."); } catch (e) { toast.error(getErrorMessage(e)); } };
   const handleCompleteApplication = async (id: number) => { if (!confirm("Mark this volunteer as completed? Their logged hours are kept.")) return; try { await npoService.completeApplication(id); setApplications(p => p.map(a => a.applicationId === id ? { ...a, status: "Completed" } : a)); toast.success("Volunteer marked as completed."); } catch (e) { toast.error(getErrorMessage(e)); } };
+  const openLogHours = (a: VolunteerApplicationItem) => {
+    setLogHoursApp(a);
+    setLogHoursValue("");
+    setLogHoursDate("");
+    setLogHoursNotes("");
+  };
+  const handleLogHours = async (e: React.FormEvent) => {
+    e.preventDefault();
+    if (!logHoursApp) return;
+    const hours = parseFloat(logHoursValue);
+    if (isNaN(hours) || hours <= 0) { toast.error("Enter a valid number of hours."); return; }
+    setLoggingHours(true);
+    try {
+      await npoService.logHours(logHoursApp.applicationId, hours, logHoursDate || undefined, logHoursNotes || undefined);
+      // Reflect the new total locally.
+      setApplications(prev => prev.map(a => a.applicationId === logHoursApp.applicationId
+        ? { ...a, totalHoursLogged: (a.totalHoursLogged || 0) + hours }
+        : a));
+      toast.success(`Logged ${hours}h for ${logHoursApp.firstName} ${logHoursApp.lastName}.`);
+      setLogHoursApp(null);
+    } catch (e) { toast.error(getErrorMessage(e)); }
+    finally { setLoggingHours(false); }
+  };
+
   const handleViewIdentity = async (a: VolunteerApplicationItem) => {
     setIdentityFor({ name: `${a.firstName} ${a.lastName}`, loading: true, data: null });
     try {
@@ -176,9 +270,89 @@ export default function NPODashboard() {
     }
   };
   const handleDeleteApplication = async (id: number) => { if (!confirm("Delete?")) return; try { await npoService.deleteApplication(id); setApplications(p => p.filter(a => a.applicationId !== id)); toast.success("Deleted."); } catch (e) { toast.error(getErrorMessage(e)); } };
-  const handleCreateOpportunity = async (e: React.FormEvent) => { e.preventDefault(); const fd = new FormData(e.currentTarget as HTMLFormElement); try { const r = await npoService.createOpportunity({ roleTitle: fd.get("roleTitle") as string, category: (fd.get("category") as string) || undefined, numOfPositions: parseInt(fd.get("numOfPositions") as string) || 1, description: (fd.get("description") as string) || undefined, skillsRequired: (fd.get("skillsRequired") as string) || undefined, timeCommitment: (fd.get("timeCommitment") as string) || undefined, duration: (fd.get("duration") as string) || undefined, mediaURL: opportunityImageUrl || undefined }); setOpportunities(p => [r.data, ...p]); setShowCreateOpportunity(false); setOpportunityImageUrl(null); toast.success("Opportunity created!"); } catch (e) { toast.error(getErrorMessage(e)); } };
+  // Resolve a select value against its "Other" free-text companion.
+  const resolveOther = (value: string, other: string) => value === OTHER ? other.trim() : value;
+  // Serialize the opportunity form's structured fields into the API shape.
+  const buildOpportunitySkills = () => [...oppSkillSet, oppSkillsOther.trim()].filter(Boolean).join(", ");
+  // Reset the controlled opportunity fields (used when opening Create).
+  const resetOpportunityForm = () => {
+    setOppCategory(""); setOppCategoryOther("");
+    setOppSkillSet([]); setOppSkillsOther("");
+    setOppTime(""); setOppTimeOther("");
+    setOppDuration(""); setOppDurationOther("");
+    setOpportunityImageUrl(null);
+  };
+  const openCreateOpportunity = () => { resetOpportunityForm(); setShowCreateOpportunity(true); };
+  // Seed the controlled fields from an existing opportunity, splitting known
+  // options from free-text "Other" values.
+  const openEditOpportunity = (o: VolunteerOpportunityItem) => {
+    const cat = o.category || "";
+    setOppCategory(cat ? (OPPORTUNITY_CATEGORIES.includes(cat) ? cat : OTHER) : "");
+    setOppCategoryOther(cat && !OPPORTUNITY_CATEGORIES.includes(cat) ? cat : "");
+    const skills = (o.skillsRequired || "").split(",").map(s => s.trim()).filter(Boolean);
+    setOppSkillSet(skills.filter(s => VOLUNTEER_SKILLS.includes(s)));
+    setOppSkillsOther(skills.filter(s => !VOLUNTEER_SKILLS.includes(s)).join(", "));
+    const tc = o.timeCommitment || "";
+    setOppTime(tc ? (TIME_COMMITMENTS.includes(tc) ? tc : OTHER) : "");
+    setOppTimeOther(tc && !TIME_COMMITMENTS.includes(tc) ? tc : "");
+    const dur = o.duration || "";
+    setOppDuration(dur ? (DURATIONS.includes(dur) ? dur : OTHER) : "");
+    setOppDurationOther(dur && !DURATIONS.includes(dur) ? dur : "");
+    setEditingOpportunity(o);
+  };
+
+  const handleCreateOpportunity = async (e: React.FormEvent) => {
+    e.preventDefault();
+    const fd = new FormData(e.currentTarget as HTMLFormElement);
+    const category = resolveOther(oppCategory, oppCategoryOther);
+    const skills = buildOpportunitySkills();
+    if (!category) { toast.error("Please select a category."); return; }
+    if (!skills) { toast.error("Please select at least one required skill."); return; }
+    setSavingOpportunity(true);
+    try {
+      const r = await npoService.createOpportunity({
+        roleTitle: fd.get("roleTitle") as string,
+        category,
+        numOfPositions: parseInt(fd.get("numOfPositions") as string) || 1,
+        description: (fd.get("description") as string) || undefined,
+        skillsRequired: skills,
+        timeCommitment: resolveOther(oppTime, oppTimeOther) || undefined,
+        duration: resolveOther(oppDuration, oppDurationOther) || undefined,
+        mediaURL: opportunityImageUrl || undefined,
+      });
+      setOpportunities(p => [r.data, ...p]);
+      setShowCreateOpportunity(false);
+      resetOpportunityForm();
+      toast.success("Opportunity created!");
+    } catch (e) { toast.error(getErrorMessage(e)); }
+    finally { setSavingOpportunity(false); }
+  };
   const handleDeleteOpportunity = async (id: number) => { if (!confirm("Delete?")) return; try { await npoService.deleteOpportunity(id); setOpportunities(p => p.filter(o => o.opportunityId !== id)); toast.success("Deleted."); } catch (e) { toast.error(getErrorMessage(e)); } };
-  const handleUpdateOpportunity = async (e: React.FormEvent) => { e.preventDefault(); if (!editingOpportunity) return; const fd = new FormData(e.currentTarget as HTMLFormElement); try { await npoService.updateOpportunity(editingOpportunity.opportunityId, { roleTitle: (fd.get("roleTitle") as string) || undefined, category: (fd.get("category") as string) || undefined, numOfPositions: fd.get("numOfPositions") ? parseInt(fd.get("numOfPositions") as string) : undefined, description: (fd.get("description") as string) || undefined, skillsRequired: (fd.get("skillsRequired") as string) || undefined, timeCommitment: (fd.get("timeCommitment") as string) || undefined, duration: (fd.get("duration") as string) || undefined }); setEditingOpportunity(null); loadOpportunities(); toast.success("Opportunity updated!"); } catch (e) { toast.error(getErrorMessage(e)); } };
+  const handleUpdateOpportunity = async (e: React.FormEvent) => {
+    e.preventDefault();
+    if (!editingOpportunity) return;
+    const fd = new FormData(e.currentTarget as HTMLFormElement);
+    const category = resolveOther(oppCategory, oppCategoryOther);
+    const skills = buildOpportunitySkills();
+    if (!category) { toast.error("Please select a category."); return; }
+    if (!skills) { toast.error("Please select at least one required skill."); return; }
+    setSavingOpportunity(true);
+    try {
+      await npoService.updateOpportunity(editingOpportunity.opportunityId, {
+        roleTitle: (fd.get("roleTitle") as string) || undefined,
+        category,
+        numOfPositions: fd.get("numOfPositions") ? parseInt(fd.get("numOfPositions") as string) : undefined,
+        description: (fd.get("description") as string) || undefined,
+        skillsRequired: skills,
+        timeCommitment: resolveOther(oppTime, oppTimeOther) || undefined,
+        duration: resolveOther(oppDuration, oppDurationOther) || undefined,
+      });
+      setEditingOpportunity(null);
+      loadOpportunities();
+      toast.success("Opportunity updated!");
+    } catch (e) { toast.error(getErrorMessage(e)); }
+    finally { setSavingOpportunity(false); }
+  };
 
   const handleSubmitVerification = async (e: React.FormEvent) => { e.preventDefault(); if (!npoCertUrl && !npoTaxCertUrl) { toast.error("Please upload at least one document (PDF)."); return; } try { await npoService.submitVerification({ npoCertificate: npoCertUrl || undefined, npoTaxCertificate: npoTaxCertUrl || undefined }); setShowVerificationForm(false); setNpoCertUrl(null); setNpoTaxCertUrl(null); loadVerification(); toast.success("Documents submitted for verification!"); } catch (e) { toast.error(getErrorMessage(e)); } };
 
@@ -189,12 +363,32 @@ export default function NPODashboard() {
   const pendingApps = applications.filter(a => a.status === "Pending");
   const acceptedApps = applications.filter(a => a.status === "Accepted");
   const completedApps = applications.filter(a => a.status === "Completed");
-  const filteredNpos = discoverNpos.filter(n => !npoSearchQuery || n.organizationName.toLowerCase().includes(npoSearchQuery.toLowerCase()) || (n.npofocusArea || "").toLowerCase().includes(npoSearchQuery.toLowerCase()));
+  const npoProvinces = (() => {
+    const present = new Set(discoverNpos.map(n => parseProvince(n.location) ?? (n.location ? PROVINCE_OTHER : null)).filter((p): p is string => !!p));
+    const ordered = SA_PROVINCES.filter(p => present.has(p));
+    if (present.has(PROVINCE_OTHER)) ordered.push(PROVINCE_OTHER);
+    return ordered;
+  })();
+  const filteredNpos = discoverNpos.filter(n => {
+    const q = npoSearchQuery.toLowerCase();
+    const matchesSearch = !npoSearchQuery
+      || n.organizationName.toLowerCase().includes(q)
+      || (n.npofocusArea || "").toLowerCase().includes(q)
+      || (n.location || "").toLowerCase().includes(q);
+    const matchesCategory = npoCategoryFilter === "All"
+      || (n.npofocusArea || "").toLowerCase().includes(npoCategoryFilter.toLowerCase());
+    const matchesVerification = npoVerificationFilter === "All"
+      || (npoVerificationFilter === "Verified" && n.isVerified)
+      || (npoVerificationFilter === "Pending" && !n.isVerified);
+    const prov = parseProvince(n.location) ?? (n.location ? PROVINCE_OTHER : null);
+    const matchesLocation = npoLocationFilter === "All" || prov === npoLocationFilter;
+    return matchesSearch && matchesCategory && matchesVerification && matchesLocation;
+  });
 
   // ═══ RENDER ═══
   return (
     <div className="min-h-screen bg-neutral-50">
-      <header className="bg-white border-b border-neutral-200 py-4 px-6 sticky top-0 z-40"><div className="container mx-auto max-w-7xl flex items-center justify-between"><div className="flex items-center gap-3"><button onClick={() => setSidebarOpen(true)} className="lg:hidden text-neutral-600"><Menu className="w-6 h-6" /></button><button onClick={() => setActiveTab("overview")} className="text-xl text-neutral-900 font-bold">UbuntuConnect</button></div><div className="flex items-center gap-4"><span className="text-neutral-600 hidden sm:inline">{npoProfile?.organizationName || "NPO"}</span>{npoProfile && <Button asChild variant="outline" size="sm" className="hidden sm:inline-flex"><Link to={`/npo/${npoProfile.npoId}`}><Eye className="w-4 h-4 mr-2" /> Public Profile</Link></Button>}<NotificationBell /><Button variant="outline" size="sm" onClick={logout}><LogOut className="w-4 h-4 mr-2" /> Logout</Button></div></div></header>
+      <header className="bg-white border-b border-neutral-200 py-4 px-6 sticky top-0 z-40"><div className="container mx-auto max-w-7xl flex items-center justify-between"><div className="flex items-center gap-3"><button onClick={() => setSidebarOpen(true)} className="lg:hidden text-neutral-600"><Menu className="w-6 h-6" /></button><button onClick={() => setActiveTab("overview")} className="text-xl text-neutral-900 font-bold">UbuntuConnect</button></div><div className="flex items-center gap-4"><button onClick={() => setActiveTab("editprofile")} className="text-neutral-600 hover:text-orange-600 transition-colors hidden sm:inline cursor-pointer" title="Go to Profile Settings">{npoProfile?.organizationName || "NPO"}</button>{npoProfile && <Button asChild variant="outline" size="sm" className="hidden sm:inline-flex"><Link to={`/npo/${npoProfile.npoId}`}><Eye className="w-4 h-4 mr-2" /> Public Profile</Link></Button>}<NotificationBell /><Button variant="outline" size="sm" onClick={logout}><LogOut className="w-4 h-4 mr-2" /> Logout</Button></div></div></header>
 
       <div className="flex">
         {sidebarOpen && <div className="fixed inset-0 bg-black/50 z-30 lg:hidden" onClick={() => setSidebarOpen(false)} />}
@@ -213,6 +407,7 @@ export default function NPODashboard() {
               { id: "verification", icon: Shield, label: "Verification" },
               { id: "campaigns", icon: Target, label: "Campaigns" },
               { id: "reports", icon: BarChart3, label: "Reports" },
+              { id: "editprofile", icon: Settings, label: "Profile Settings" },
             ].map(item => (
               <button key={item.id} onClick={() => selectTab(item.id)} className={`w-full flex items-center gap-3 px-4 py-2 rounded-lg transition-colors ${activeTab === item.id ? "bg-orange-50 text-orange-600" : "text-neutral-600 hover:bg-neutral-50"}`}><item.icon className="w-5 h-5" /> {item.label}</button>
             ))}
@@ -233,20 +428,106 @@ export default function NPODashboard() {
               </div>
             </div>)}
 
+            {/* PROFILE SETTINGS */}
+            {activeTab === "editprofile" && (<div className="max-w-2xl">
+              <div className="mb-8"><h1 className="text-2xl font-bold mb-2">Profile Settings</h1><p className="text-neutral-600">Manage how your organization appears to supporters.</p></div>
+              {!editProfileLoaded ? <div className="flex justify-center py-12"><Loader2 className="w-8 h-8 animate-spin text-orange-600" /></div> : (
+                <form onSubmit={handleSaveProfile} className="space-y-6">
+                  <Card className="p-6 space-y-5">
+                    <ImageCropField label="Banner / Cover Image" value={editBackgroundImage} onChange={setEditBackgroundImage} aspect={16 / 5} rounded="lg" disabled={savingProfile} />
+                    <ImageCropField label="Profile Picture" value={editProfileImage} onChange={setEditProfileImage} aspect={1} rounded="full" disabled={savingProfile} />
+                    <div><Label>Bio</Label><Textarea value={editBio} onChange={e => setEditBio(e.target.value)} rows={4} placeholder="Tell supporters about your organization..." className="mt-1" maxLength={1000} disabled={savingProfile} /></div>
+                    <div>
+                      <Label>Focus Areas</Label>
+                      <p className="text-xs text-neutral-500 mt-1">Select all that apply.</p>
+                      <div className="mt-2 grid grid-cols-2 gap-2">
+                        {NPO_FOCUS_AREAS.filter(f => f !== "Other").map(area => {
+                          const checked = editFocusSet.includes(area);
+                          return (
+                            <label key={area} className="flex items-center gap-2 text-sm text-neutral-700 cursor-pointer">
+                              <Checkbox checked={checked} disabled={savingProfile} onCheckedChange={(v) => setEditFocusSet(prev => v === true ? [...prev, area] : prev.filter(a => a !== area))} />
+                              <span>{area}</span>
+                            </label>
+                          );
+                        })}
+                      </div>
+                      <Input placeholder="Other focus areas (optional)" className="mt-3" value={editFocusOther} onChange={e => setEditFocusOther(e.target.value)} disabled={savingProfile} />
+                    </div>
+                    <div><Label>Mission</Label><Textarea value={editMission} onChange={e => setEditMission(e.target.value)} rows={3} placeholder="Your mission statement..." className="mt-1" disabled={savingProfile} /></div>
+                  </Card>
+                  <div className="flex gap-3">
+                    <Button type="submit" className="bg-orange-600 hover:bg-orange-700" disabled={savingProfile}>{savingProfile && <Loader2 className="w-4 h-4 mr-2 animate-spin" />}Save Changes</Button>
+                    {npoProfile && <Button asChild type="button" variant="outline"><Link to={`/npo/${npoProfile.npoId}`}><Eye className="w-4 h-4 mr-2" /> View Public Profile</Link></Button>}
+                  </div>
+                </form>
+              )}
+            </div>)}
+
             {/* DISCOVER NPOs */}
             {activeTab === "discover" && (<div>
               <div className="flex items-center justify-between mb-6"><div><h1 className="text-2xl font-bold mb-2">Discover NPOs</h1><p className="text-neutral-600">Browse and follow other organizations</p></div><Button variant="outline" size="sm" onClick={loadDiscoverNpos}><RefreshCw className="w-4 h-4" /></Button></div>
-              <div className="mb-6"><Input placeholder="Search by name or focus area..." value={npoSearchQuery} onChange={e => setNpoSearchQuery(e.target.value)} className="max-w-md" /></div>
+              <div className="mb-8">
+                <div className="flex gap-4 mb-6">
+                  <div className="flex-1 relative">
+                    <Search className="absolute left-3 top-1/2 transform -translate-y-1/2 w-5 h-5 text-neutral-400" />
+                    <Input placeholder="Search by name, location, or keyword..." className="pl-10" value={npoSearchQuery} onChange={e => setNpoSearchQuery(e.target.value)} />
+                  </div>
+                </div>
+                <div className="grid md:grid-cols-4 gap-4 mb-6">
+                  <div>
+                    <Label>Category</Label>
+                    <select className="w-full mt-2 px-3 py-2 border border-neutral-300 rounded-md" value={npoCategoryFilter} onChange={e => setNpoCategoryFilter(e.target.value)}>
+                      <option value="All">All Categories</option>
+                      <option value="Education">Education</option>
+                      <option value="Healthcare">Healthcare</option>
+                      <option value="Environment">Environment</option>
+                      <option value="Youth Development">Youth Development</option>
+                      <option value="Food Security">Food Security</option>
+                      <option value="Women's Rights">Women's Rights</option>
+                    </select>
+                  </div>
+                  <div>
+                    <Label>Verification</Label>
+                    <select className="w-full mt-2 px-3 py-2 border border-neutral-300 rounded-md" value={npoVerificationFilter} onChange={e => setNpoVerificationFilter(e.target.value)}>
+                      <option value="All">All NPOs</option>
+                      <option value="Verified">Verified Only</option>
+                      <option value="Pending">Pending Verification</option>
+                    </select>
+                  </div>
+                  <div>
+                    <Label>Province</Label>
+                    <select className="w-full mt-2 px-3 py-2 border border-neutral-300 rounded-md" value={npoLocationFilter} onChange={e => setNpoLocationFilter(e.target.value)}>
+                      <option value="All">All Provinces</option>
+                      {npoProvinces.map(prov => <option key={prov} value={prov}>{prov}</option>)}
+                    </select>
+                  </div>
+                  <div className="flex items-end">
+                    <Button variant="outline" className="w-full" onClick={() => { setNpoSearchQuery(""); setNpoCategoryFilter("All"); setNpoVerificationFilter("All"); setNpoLocationFilter("All"); }}>Clear Filters</Button>
+                  </div>
+                </div>
+                <p className="text-sm text-neutral-600">Showing {filteredNpos.length} organization{filteredNpos.length !== 1 ? "s" : ""}</p>
+              </div>
               {discoverLoading ? <div className="flex justify-center py-12"><Loader2 className="w-8 h-8 animate-spin text-orange-600" /></div> : filteredNpos.length === 0 ? <Card className="p-12 text-center"><p className="text-neutral-600">No NPOs found.</p></Card> : (
                 <div className="grid md:grid-cols-2 lg:grid-cols-3 gap-6">{filteredNpos.map(npo => (
-                  <Card key={npo.npoId} className="p-6 hover:shadow-lg transition-shadow cursor-pointer" onClick={() => navigate(`/npo/${npo.npoId}`)}>
-                    <div className="flex items-center gap-3 mb-4"><div className="w-12 h-12 rounded-full bg-orange-100 flex items-center justify-center"><span className="text-lg font-bold text-orange-600">{npo.organizationName.charAt(0)}</span></div><div><h3 className="font-semibold">{npo.organizationName}</h3>{npo.npofocusArea && <Badge variant="outline" className="text-xs">{npo.npofocusArea}</Badge>}</div></div>
-                    {npo.npomission && <p className="text-sm text-neutral-600 mb-4 line-clamp-2">{npo.npomission}</p>}
-                    <div className="flex gap-2">
-                      <Button variant={followedNpoIds.has(npo.npoId) ? "default" : "outline"} size="sm" className={`flex-1 ${followedNpoIds.has(npo.npoId) ? "bg-orange-600 hover:bg-orange-700" : ""}`} onClick={(e) => { e.stopPropagation(); handleFollowNpo(npo.npoId); }}><Heart className={`w-4 h-4 mr-1 ${followedNpoIds.has(npo.npoId) ? "fill-current" : ""}`} /> {followedNpoIds.has(npo.npoId) ? "Following" : "Follow"}</Button>
-                      <Button variant="outline" size="sm" onClick={(e) => { e.stopPropagation(); navigate(`/npo/${npo.npoId}`); }}><Eye className="w-4 h-4" /></Button>
+                  <Card key={npo.npoId} className="overflow-hidden hover:shadow-lg transition-shadow cursor-pointer" onClick={() => navigate(`/npo/${npo.npoId}`)}>
+                    <div className="h-40 bg-gradient-to-br from-orange-400 to-orange-600 flex items-center justify-center overflow-hidden">
+                      {npo.profileImage
+                        ? <img src={resolveMediaUrl(npo.profileImage)} alt={npo.organizationName} className="w-full h-full object-cover" onError={(e) => { (e.currentTarget as HTMLImageElement).style.display = "none"; }} />
+                        : <span className="text-5xl font-bold text-white/80">{npo.organizationName.charAt(0).toUpperCase()}</span>}
                     </div>
-                    <p className="text-center text-sm text-orange-600 mt-3">View full profile →</p>
+                    <div className="p-6">
+                      <div className="flex items-center gap-2 mb-1">
+                        <span className="text-lg font-semibold">{npo.organizationName}</span>
+                        {npo.isVerified && <CheckCircle className="w-5 h-5 text-green-600" />}
+                      </div>
+                      <div className="flex items-center gap-4 text-sm text-neutral-600 mb-3">
+                        {npo.location && <span className="flex items-center gap-1"><MapPin className="w-4 h-4" /> {npo.location}</span>}
+                        {npo.npofocusArea && <Badge variant="outline">{npo.npofocusArea}</Badge>}
+                      </div>
+                      {npo.npomission && <p className="text-sm text-neutral-600 mb-4 line-clamp-2">{npo.npomission}</p>}
+                      <Button variant={followedNpoIds.has(npo.npoId) ? "default" : "outline"} className={`w-full ${followedNpoIds.has(npo.npoId) ? "bg-orange-600 hover:bg-orange-700" : ""}`} onClick={(e) => { e.stopPropagation(); handleFollowNpo(npo.npoId); }}><Heart className={`w-4 h-4 mr-1 ${followedNpoIds.has(npo.npoId) ? "fill-current" : ""}`} /> {followedNpoIds.has(npo.npoId) ? "Following" : "Follow"}</Button>
+                      <p className="text-center text-sm text-orange-600 mt-3">View full profile →</p>
+                    </div>
                   </Card>
                 ))}</div>
               )}
@@ -287,7 +568,17 @@ export default function NPODashboard() {
               <div className="flex items-center justify-between mb-8"><div><h1 className="text-2xl font-bold mb-2">Community Feed</h1></div><Button variant="outline" size="sm" onClick={loadCommunityPosts}><RefreshCw className="w-4 h-4 mr-2" /> Refresh</Button></div>
               {communityLoading ? <div className="flex justify-center py-12"><Loader2 className="w-8 h-8 animate-spin" /></div> : communityPosts.length === 0 ? <Card className="p-12 text-center"><p className="text-neutral-600">No posts yet.</p></Card> : (
                 <div className="grid md:grid-cols-2 gap-6">{communityPosts.map(post => (
-                  <Card key={post.postId} className="overflow-hidden hover:shadow-lg"><div className="p-6"><h3 className="font-semibold mb-2">{post.postTitle}</h3><p className="text-neutral-600 text-sm mb-4 line-clamp-3">{post.content}</p><div className="flex items-center justify-between text-sm"><div className="flex gap-4"><button onClick={() => handleLikePost(post.postId)} className={`flex items-center gap-1 ${likedPostIds.has(post.postId) ? "text-red-500" : "text-neutral-600"}`}><Heart className={`w-4 h-4 ${likedPostIds.has(post.postId) ? "fill-current" : ""}`} /> {post.likeCount}</button><button onClick={() => { setSelectedPost(post); loadComments(post.postId); }} className="flex items-center gap-1 text-neutral-600 hover:text-orange-600"><MessageSquare className="w-4 h-4" /></button></div><span className="text-xs text-neutral-500">{new Date(post.timestamp).toLocaleDateString()}</span></div></div></Card>
+                  <Card key={post.postId} className="overflow-hidden hover:shadow-lg transition-shadow cursor-pointer" onClick={() => { setSelectedPost(post); loadComments(post.postId); }}>
+                    {post.mediaUrl && <img src={resolveMediaUrl(post.mediaUrl)} alt="" className="w-full h-48 object-cover" onError={(e) => { (e.currentTarget as HTMLImageElement).style.display = "none"; }} />}
+                    <div className="p-6">
+                      {post.authorName && (post.authorNpoId
+                        ? <button onClick={(e) => { e.stopPropagation(); navigate(`/npo/${post.authorNpoId}`); }} className="text-xs text-orange-600 font-medium mb-1 hover:underline">{post.authorName}</button>
+                        : <p className="text-xs text-orange-600 font-medium mb-1">{post.authorName}</p>)}
+                      <h3 className="font-semibold mb-2">{post.postTitle}</h3>
+                      <p className="text-neutral-600 text-sm mb-4 line-clamp-3">{post.content}</p>
+                      <div className="flex items-center justify-between text-sm"><div className="flex gap-4"><button onClick={(e) => { e.stopPropagation(); handleLikePost(post.postId); }} className={`flex items-center gap-1 ${likedPostIds.has(post.postId) ? "text-red-500" : "text-neutral-600"}`}><Heart className={`w-4 h-4 ${likedPostIds.has(post.postId) ? "fill-current" : ""}`} /> {post.likeCount}</button><button onClick={(e) => { e.stopPropagation(); setSelectedPost(post); loadComments(post.postId); }} className="flex items-center gap-1 text-neutral-600 hover:text-orange-600"><MessageSquare className="w-4 h-4" /> Comments</button></div><span className="text-xs text-neutral-500">{new Date(post.timestamp).toLocaleDateString()}</span></div>
+                    </div>
+                  </Card>
                 ))}</div>
               )}
             </div>)}
@@ -335,11 +626,11 @@ export default function NPODashboard() {
 
             {/* VOLUNTEERS */}
             {activeTab === "volunteers" && (<div>
-              <div className="flex items-center justify-between mb-8"><div><h1 className="text-2xl font-bold mb-2">Volunteers</h1></div><div className="flex gap-2"><Button variant="outline" size="sm" onClick={() => { loadApplications(); loadOpportunities(); }}><RefreshCw className="w-4 h-4" /></Button><Button className="bg-orange-600 hover:bg-orange-700" onClick={() => { setOpportunityImageUrl(null); setShowCreateOpportunity(true); }}><Plus className="w-4 h-4 mr-2" /> Create Opportunity</Button></div></div>
+              <div className="flex items-center justify-between mb-8"><div><h1 className="text-2xl font-bold mb-2">Volunteers</h1></div><div className="flex gap-2"><Button variant="outline" size="sm" onClick={() => { loadApplications(); loadOpportunities(); }}><RefreshCw className="w-4 h-4" /></Button><Button className="bg-orange-600 hover:bg-orange-700" onClick={() => openCreateOpportunity()}><Plus className="w-4 h-4 mr-2" /> Create Opportunity</Button></div></div>
               <Tabs defaultValue="opportunities"><TabsList className="mb-6"><TabsTrigger value="opportunities">Opportunities ({opportunities.length})</TabsTrigger><TabsTrigger value="pending">Pending ({pendingApps.length})</TabsTrigger><TabsTrigger value="accepted">Accepted ({acceptedApps.length})</TabsTrigger><TabsTrigger value="completed">Completed ({completedApps.length})</TabsTrigger></TabsList>
-                <TabsContent value="opportunities">{opportunitiesLoading ? <div className="flex justify-center py-8"><Loader2 className="w-6 h-6 animate-spin" /></div> : opportunities.length === 0 ? <Card className="p-12 text-center"><p className="text-neutral-600 mb-4">No opportunities. Create one for supporters to apply.</p><Button onClick={() => { setOpportunityImageUrl(null); setShowCreateOpportunity(true); }}>Create Opportunity</Button></Card> : <div className="grid md:grid-cols-2 gap-6">{opportunities.map(o => (<Card key={o.opportunityId} className="p-6"><div className="flex justify-between mb-2"><div><h3 className="font-semibold">{o.roleTitle}</h3>{o.category && <Badge variant="outline">{o.category}</Badge>}</div><Badge className="bg-green-100 text-green-700">{o.numOfPositions} pos.</Badge></div>{o.description && <p className="text-sm text-neutral-600 mb-3 line-clamp-2">{o.description}</p>}<div className="flex gap-2"><Button variant="outline" size="sm" className="flex-1" onClick={() => setEditingOpportunity(o)}><Edit className="w-4 h-4 mr-1" /> Edit</Button><Button variant="outline" size="sm" className="text-red-600 flex-1" onClick={() => handleDeleteOpportunity(o.opportunityId)}><Trash2 className="w-4 h-4 mr-1" /> Delete</Button></div></Card>))}</div>}</TabsContent>
+                <TabsContent value="opportunities">{opportunitiesLoading ? <div className="flex justify-center py-8"><Loader2 className="w-6 h-6 animate-spin" /></div> : opportunities.length === 0 ? <Card className="p-12 text-center"><p className="text-neutral-600 mb-4">No opportunities. Create one for supporters to apply.</p><Button onClick={() => openCreateOpportunity()}>Create Opportunity</Button></Card> : <div className="grid md:grid-cols-2 gap-6">{opportunities.map(o => (<Card key={o.opportunityId} className="p-6"><div className="flex justify-between mb-2"><div><h3 className="font-semibold">{o.roleTitle}</h3>{o.category && <Badge variant="outline">{o.category}</Badge>}</div><Badge className="bg-green-100 text-green-700">{o.numOfPositions} pos.</Badge></div>{o.description && <p className="text-sm text-neutral-600 mb-3 line-clamp-2">{o.description}</p>}<div className="flex gap-2"><Button variant="outline" size="sm" className="flex-1" onClick={() => openEditOpportunity(o)}><Edit className="w-4 h-4 mr-1" /> Edit</Button><Button variant="outline" size="sm" className="text-red-600 flex-1" onClick={() => handleDeleteOpportunity(o.opportunityId)}><Trash2 className="w-4 h-4 mr-1" /> Delete</Button></div></Card>))}</div>}</TabsContent>
                 <TabsContent value="pending">{pendingApps.length === 0 ? <Card className="p-8 text-center"><p className="text-neutral-600">No pending applications.</p></Card> : <div className="space-y-4">{pendingApps.map(a => (<Card key={a.applicationId} className="p-6"><div className="flex justify-between"><div><h3 className="font-semibold">{a.firstName} {a.lastName}</h3>{a.roleTitle && <Badge variant="outline" className="mt-1">{a.roleTitle}</Badge>}<p className="text-sm text-neutral-600 mt-1">{a.email}{a.phoneNum ? ` · ${a.phoneNum}` : ""}</p>{a.skills && <p className="text-xs text-neutral-500 mt-1">Skills: {a.skills}</p>}{a.availability && <p className="text-xs text-neutral-500 mt-0.5">Availability: {a.availability}</p>}{a.whyVolunteer && <p className="text-sm text-neutral-600 mt-2 italic">“{a.whyVolunteer}”</p>}<p className="text-xs text-neutral-400 mt-1">Applied {new Date(a.applicationDate).toLocaleDateString()}</p></div><div className="flex gap-2"><Button size="sm" variant="outline" onClick={() => handleViewIdentity(a)}><Shield className="w-4 h-4 mr-1" /> ID</Button><Button size="sm" className="bg-green-600 hover:bg-green-700" onClick={() => handleAcceptApplication(a.applicationId)}><Check className="w-4 h-4" /></Button><Button size="sm" variant="outline" className="text-red-600" onClick={() => handleRejectApplication(a.applicationId)}><X className="w-4 h-4" /></Button></div></div></Card>))}</div>}</TabsContent>
-                <TabsContent value="accepted">{acceptedApps.length === 0 ? <Card className="p-8 text-center"><p className="text-neutral-600">No accepted volunteers.</p></Card> : <div className="space-y-4">{acceptedApps.map(a => (<Card key={a.applicationId} className="p-4"><div className="flex justify-between items-center"><div><span className="font-semibold">{a.firstName} {a.lastName}</span> <Badge className="bg-green-100 text-green-700 ml-2">Active</Badge></div><div className="flex gap-2"><Button size="sm" variant="outline" onClick={() => handleViewIdentity(a)}><Shield className="w-4 h-4 mr-1" /> ID</Button><Button size="sm" className="bg-blue-600 hover:bg-blue-700" onClick={() => handleCompleteApplication(a.applicationId)}><Check className="w-4 h-4 mr-1" /> Mark Completed</Button><Button size="sm" variant="outline" className="text-red-600" onClick={() => handleDeleteApplication(a.applicationId)}><Trash2 className="w-4 h-4" /></Button></div></div></Card>))}</div>}</TabsContent>
+                <TabsContent value="accepted">{acceptedApps.length === 0 ? <Card className="p-8 text-center"><p className="text-neutral-600">No accepted volunteers.</p></Card> : <div className="space-y-4">{acceptedApps.map(a => (<Card key={a.applicationId} className="p-4"><div className="flex justify-between items-center"><div><span className="font-semibold">{a.firstName} {a.lastName}</span> <Badge className="bg-green-100 text-green-700 ml-2">Active</Badge>{a.roleTitle && <Badge variant="outline" className="ml-2">{a.roleTitle}</Badge>}<span className="ml-2 inline-flex items-center text-xs text-neutral-500"><Clock className="w-3.5 h-3.5 mr-1" />{(a.totalHoursLogged || 0)}h logged</span></div><div className="flex gap-2"><Button size="sm" variant="outline" onClick={() => openLogHours(a)}><Clock className="w-4 h-4 mr-1" /> Log Hours</Button><Button size="sm" variant="outline" onClick={() => handleViewIdentity(a)}><Shield className="w-4 h-4 mr-1" /> ID</Button><Button size="sm" className="bg-blue-600 hover:bg-blue-700" onClick={() => handleCompleteApplication(a.applicationId)}><Check className="w-4 h-4 mr-1" /> Mark Completed</Button><Button size="sm" variant="outline" className="text-red-600" onClick={() => handleDeleteApplication(a.applicationId)}><Trash2 className="w-4 h-4" /></Button></div></div></Card>))}</div>}</TabsContent>
                 <TabsContent value="completed">{completedApps.length === 0 ? <Card className="p-8 text-center"><p className="text-neutral-600">No completed volunteers yet.</p></Card> : <div className="space-y-4">{completedApps.map(a => (<Card key={a.applicationId} className="p-4"><div className="flex justify-between items-center"><div><span className="font-semibold">{a.firstName} {a.lastName}</span> <Badge className="bg-blue-100 text-blue-700 ml-2">Completed</Badge>{a.roleTitle && <Badge variant="outline" className="ml-2">{a.roleTitle}</Badge>}</div></div></Card>))}</div>}</TabsContent>
               </Tabs>
             </div>)}
@@ -389,7 +680,8 @@ export default function NPODashboard() {
             postTitle: selectedPost.postTitle,
             content: selectedPost.content,
             mediaUrl: selectedPost.mediaUrl,
-            authorName: selectedPost.userId === userId ? (npoProfile?.organizationName ?? null) : null,
+            authorName: selectedPost.authorName ?? (selectedPost.userId === userId ? (npoProfile?.organizationName ?? null) : null),
+            authorNpoId: selectedPost.authorNpoId,
             likeCount: selectedPost.likeCount,
             timestamp: selectedPost.timestamp,
           }}
@@ -425,13 +717,118 @@ export default function NPODashboard() {
         )}
       </Card></div>)}
 
+      {/* Log volunteer hours */}
+      {logHoursApp && (<div className="fixed inset-0 bg-black/50 flex items-center justify-center z-50 p-4" onClick={() => !loggingHours && setLogHoursApp(null)}><Card className="w-full max-w-md p-6" onClick={e => e.stopPropagation()}>
+        <div className="flex justify-between items-center mb-4"><h3 className="font-semibold text-lg">Log Hours — {logHoursApp.firstName} {logHoursApp.lastName}</h3><Button variant="ghost" size="sm" onClick={() => setLogHoursApp(null)} disabled={loggingHours}><X className="w-4 h-4" /></Button></div>
+        <p className="text-sm text-neutral-500 mb-4">Currently {(logHoursApp.totalHoursLogged || 0)}h logged{logHoursApp.roleTitle ? ` for ${logHoursApp.roleTitle}` : ""}.</p>
+        <form className="space-y-4" onSubmit={handleLogHours}>
+          <div><Label>Hours *</Label><Input type="number" step="0.25" min="0.25" max="999.99" value={logHoursValue} onChange={e => setLogHoursValue(e.target.value)} placeholder="e.g., 4" className="mt-1" required disabled={loggingHours} /></div>
+          <div><Label>Date</Label><Input type="date" value={logHoursDate} onChange={e => setLogHoursDate(e.target.value)} className="mt-1" disabled={loggingHours} /><p className="text-xs text-neutral-500 mt-1">Optional — defaults to today.</p></div>
+          <div><Label>Notes</Label><Textarea rows={2} value={logHoursNotes} onChange={e => setLogHoursNotes(e.target.value)} placeholder="Optional — what did they work on?" className="mt-1" disabled={loggingHours} /></div>
+          <div className="flex gap-3"><Button type="submit" className="flex-1 bg-orange-600 hover:bg-orange-700" disabled={loggingHours}>{loggingHours ? <Loader2 className="w-4 h-4 animate-spin" /> : "Log Hours"}</Button><Button type="button" variant="outline" onClick={() => setLogHoursApp(null)} disabled={loggingHours}>Cancel</Button></div>
+        </form>
+      </Card></div>)}
+
       {showCreateProject && (<div className="fixed inset-0 bg-black/50 flex items-center justify-center z-50 p-4"><motion.div initial={{ opacity: 0, scale: 0.95 }} animate={{ opacity: 1, scale: 1 }} className="bg-white rounded-lg max-w-2xl w-full p-8 max-h-[90vh] overflow-y-auto"><div className="flex justify-between mb-6"><h3 className="font-semibold text-lg">Create Fundraiser</h3><button onClick={() => setShowCreateProject(false)}><X className="w-5 h-5" /></button></div><form className="space-y-4" onSubmit={handleCreateProject}><div><Label>Project/Initiative Name</Label><Input name="projectName" required className="mt-1" placeholder="e.g., Build Community Library" /></div><div><Label>Description</Label><Textarea name="projectDesc" rows={4} className="mt-1" placeholder="What is this fundraiser for?" /></div><div className="grid grid-cols-2 gap-4"><div><Label>Target Amount (R)</Label><Input name="targetAmount" type="number" min="1" required className="mt-1" placeholder="e.g., 100000" /></div><div><Label>Status</Label><select name="projectStatus" className="w-full mt-1 px-3 py-2 border rounded-md"><option value="Active">Active</option><option value="Planning">Planning</option></select></div></div><div><Label>Duration (days)</Label><Input name="durationDays" type="number" min="1" className="mt-1" placeholder="Optional — e.g., 30. Auto-closes when it ends." /><p className="text-xs text-neutral-500 mt-1">Leave blank for an open-ended fundraiser. It also auto-closes once the target is reached.</p></div><div><Label>Images (comma-separated URLs)</Label><Textarea name="images" rows={2} className="mt-1" placeholder="https://img1.jpg, https://img2.jpg, https://img3.jpg" /></div><div className="flex gap-3"><Button type="submit" className="flex-1 bg-orange-600 hover:bg-orange-700">Create Fundraiser</Button><Button type="button" variant="outline" onClick={() => setShowCreateProject(false)}>Cancel</Button></div></form></motion.div></div>)}
 
       {editingProject && (<div className="fixed inset-0 bg-black/50 flex items-center justify-center z-50 p-4"><motion.div initial={{ opacity: 0, scale: 0.95 }} animate={{ opacity: 1, scale: 1 }} className="bg-white rounded-lg max-w-2xl w-full p-8 max-h-[90vh] overflow-y-auto"><div className="flex justify-between mb-6"><h3 className="font-semibold text-lg">Edit Fundraiser</h3><button onClick={() => setEditingProject(null)}><X className="w-5 h-5" /></button></div><form className="space-y-4" onSubmit={handleUpdateProject}><div><Label>Name</Label><Input name="projectName" defaultValue={editingProject.projectName} required className="mt-1" /></div><div><Label>Description</Label><Textarea name="projectDesc" defaultValue={editingProject.projectDesc || ""} rows={4} className="mt-1" /></div><div className="grid grid-cols-2 gap-4"><div><Label>Target Amount (R)</Label><Input name="targetAmount" type="number" defaultValue={editingProject.targetAmount} className="mt-1" /></div><div><Label>Status</Label><select name="projectStatus" defaultValue={editingProject.projectStatus} className="w-full mt-1 px-3 py-2 border rounded-md"><option value="Active">Active</option><option value="Planning">Planning</option><option value="Completed">Completed</option><option value="Suspended">Suspended</option></select></div></div><div><Label>End Date</Label><Input name="endDate" type="date" defaultValue={editingProject.endDate ? editingProject.endDate.slice(0, 10) : ""} className="mt-1" /><p className="text-xs text-neutral-500 mt-1">Auto-closes on this date. Leave blank for open-ended.</p></div><div><Label>Images (comma-separated URLs)</Label><Textarea name="images" defaultValue={editingProject.images || ""} rows={2} className="mt-1" /></div><div className="flex gap-3"><Button type="submit" className="flex-1 bg-orange-600 hover:bg-orange-700">Save</Button><Button type="button" variant="outline" onClick={() => setEditingProject(null)}>Cancel</Button></div></form></motion.div></div>)}
 
-      {showCreateOpportunity && (<div className="fixed inset-0 bg-black/50 flex items-center justify-center z-50 p-4"><motion.div initial={{ opacity: 0, scale: 0.95 }} animate={{ opacity: 1, scale: 1 }} className="bg-white rounded-lg max-w-2xl w-full p-8 max-h-[90vh] overflow-y-auto"><div className="flex justify-between mb-6"><h3 className="font-semibold text-lg">Create Volunteer Opportunity</h3><button onClick={() => setShowCreateOpportunity(false)}><X className="w-5 h-5" /></button></div><form className="space-y-4" onSubmit={handleCreateOpportunity}><div><Label>Role Title</Label><Input name="roleTitle" required className="mt-1" placeholder="e.g., Youth Mentor" /></div><div className="grid grid-cols-2 gap-4"><div><Label>Category</Label><Input name="category" className="mt-1" placeholder="e.g., Education" /></div><div><Label>Positions</Label><Input name="numOfPositions" type="number" min="1" defaultValue="1" className="mt-1" /></div></div><div><Label>Description</Label><Textarea name="description" rows={3} className="mt-1" /></div><div><Label>Skills Required</Label><Input name="skillsRequired" className="mt-1" /></div><div className="grid grid-cols-2 gap-4"><div><Label>Time Commitment</Label><Input name="timeCommitment" className="mt-1" placeholder="4 hours/week" /></div><div><Label>Duration</Label><Input name="duration" className="mt-1" placeholder="3 months" /></div></div><ImageUploadField label="Image (optional)" value={opportunityImageUrl} onChange={setOpportunityImageUrl} /><div className="flex gap-3"><Button type="submit" className="flex-1 bg-orange-600 hover:bg-orange-700">Create</Button><Button type="button" variant="outline" onClick={() => setShowCreateOpportunity(false)}>Cancel</Button></div></form></motion.div></div>)}
+      {showCreateOpportunity && (<div className="fixed inset-0 bg-black/50 flex items-center justify-center z-50 p-4"><motion.div initial={{ opacity: 0, scale: 0.95 }} animate={{ opacity: 1, scale: 1 }} className="bg-white rounded-lg max-w-2xl w-full p-8 max-h-[90vh] overflow-y-auto"><div className="flex justify-between mb-6"><h3 className="font-semibold text-lg">Create Volunteer Opportunity</h3><button onClick={() => setShowCreateOpportunity(false)}><X className="w-5 h-5" /></button></div><form className="space-y-4" onSubmit={handleCreateOpportunity}>
+          <div><Label>Role Title</Label><Input name="roleTitle" required className="mt-1" placeholder="e.g., Youth Mentor" /></div>
+          <div className="grid grid-cols-2 gap-4">
+            <div>
+              <Label>Category *</Label>
+              <select className="w-full mt-1 px-3 py-2 border border-neutral-300 rounded-md" value={oppCategory} onChange={e => setOppCategory(e.target.value)} required>
+                <option value="" disabled>Select a category</option>
+                {OPPORTUNITY_CATEGORIES.map(c => <option key={c} value={c}>{c}</option>)}
+              </select>
+              {oppCategory === OTHER && <Input className="mt-2" placeholder="Specify category" value={oppCategoryOther} onChange={e => setOppCategoryOther(e.target.value)} required />}
+            </div>
+            <div><Label>Positions</Label><Input name="numOfPositions" type="number" min="1" defaultValue="1" className="mt-1" /></div>
+          </div>
+          <div><Label>Description</Label><Textarea name="description" rows={3} className="mt-1" placeholder="What will the volunteer do?" /></div>
+          <div>
+            <Label>Skills Required *</Label>
+            <p className="text-xs text-neutral-500 mt-1">Select all that apply.</p>
+            <div className="mt-2 grid grid-cols-2 gap-2">
+              {VOLUNTEER_SKILLS.map(skill => (
+                <label key={skill} className="flex items-center gap-2 text-sm text-neutral-700 cursor-pointer">
+                  <Checkbox checked={oppSkillSet.includes(skill)} onCheckedChange={(v) => setOppSkillSet(prev => v === true ? [...prev, skill] : prev.filter(s => s !== skill))} />
+                  <span>{skill}</span>
+                </label>
+              ))}
+            </div>
+            <Input className="mt-3" placeholder="Other skills (optional, comma-separated)" value={oppSkillsOther} onChange={e => setOppSkillsOther(e.target.value)} />
+          </div>
+          <div className="grid grid-cols-2 gap-4">
+            <div>
+              <Label>Time Commitment</Label>
+              <select className="w-full mt-1 px-3 py-2 border border-neutral-300 rounded-md" value={oppTime} onChange={e => setOppTime(e.target.value)}>
+                <option value="">Not specified</option>
+                {TIME_COMMITMENTS.map(t => <option key={t} value={t}>{t}</option>)}
+              </select>
+              {oppTime === OTHER && <Input className="mt-2" placeholder="Specify time commitment" value={oppTimeOther} onChange={e => setOppTimeOther(e.target.value)} />}
+            </div>
+            <div>
+              <Label>Duration</Label>
+              <select className="w-full mt-1 px-3 py-2 border border-neutral-300 rounded-md" value={oppDuration} onChange={e => setOppDuration(e.target.value)}>
+                <option value="">Not specified</option>
+                {DURATIONS.map(d => <option key={d} value={d}>{d}</option>)}
+              </select>
+              {oppDuration === OTHER && <Input className="mt-2" placeholder="Specify duration" value={oppDurationOther} onChange={e => setOppDurationOther(e.target.value)} />}
+            </div>
+          </div>
+          <ImageUploadField label="Image (optional)" value={opportunityImageUrl} onChange={setOpportunityImageUrl} />
+          <div className="flex gap-3"><Button type="submit" className="flex-1 bg-orange-600 hover:bg-orange-700" disabled={savingOpportunity}>{savingOpportunity && <Loader2 className="w-4 h-4 mr-2 animate-spin" />}Create</Button><Button type="button" variant="outline" onClick={() => setShowCreateOpportunity(false)}>Cancel</Button></div>
+        </form></motion.div></div>)}
 
-      {editingOpportunity && (<div className="fixed inset-0 bg-black/50 flex items-center justify-center z-50 p-4"><motion.div initial={{ opacity: 0, scale: 0.95 }} animate={{ opacity: 1, scale: 1 }} className="bg-white rounded-lg max-w-2xl w-full p-8 max-h-[90vh] overflow-y-auto"><div className="flex justify-between mb-6"><h3 className="font-semibold text-lg">Edit Volunteer Opportunity</h3><button onClick={() => setEditingOpportunity(null)}><X className="w-5 h-5" /></button></div><form className="space-y-4" onSubmit={handleUpdateOpportunity}><div><Label>Role Title</Label><Input name="roleTitle" defaultValue={editingOpportunity.roleTitle} required className="mt-1" /></div><div className="grid grid-cols-2 gap-4"><div><Label>Category</Label><Input name="category" defaultValue={editingOpportunity.category || ""} className="mt-1" /></div><div><Label>Positions</Label><Input name="numOfPositions" type="number" min="1" defaultValue={editingOpportunity.numOfPositions} className="mt-1" /></div></div><div><Label>Description</Label><Textarea name="description" defaultValue={editingOpportunity.description || ""} rows={3} className="mt-1" /></div><div><Label>Skills Required</Label><Input name="skillsRequired" defaultValue={editingOpportunity.skillsRequired || ""} className="mt-1" /></div><div className="grid grid-cols-2 gap-4"><div><Label>Time Commitment</Label><Input name="timeCommitment" defaultValue={editingOpportunity.timeCommitment || ""} className="mt-1" /></div><div><Label>Duration</Label><Input name="duration" defaultValue={editingOpportunity.duration || ""} className="mt-1" /></div></div><div className="flex gap-3"><Button type="submit" className="flex-1 bg-orange-600 hover:bg-orange-700">Save Changes</Button><Button type="button" variant="outline" onClick={() => setEditingOpportunity(null)}>Cancel</Button></div></form></motion.div></div>)}
+      {editingOpportunity && (<div className="fixed inset-0 bg-black/50 flex items-center justify-center z-50 p-4"><motion.div initial={{ opacity: 0, scale: 0.95 }} animate={{ opacity: 1, scale: 1 }} className="bg-white rounded-lg max-w-2xl w-full p-8 max-h-[90vh] overflow-y-auto"><div className="flex justify-between mb-6"><h3 className="font-semibold text-lg">Edit Volunteer Opportunity</h3><button onClick={() => setEditingOpportunity(null)}><X className="w-5 h-5" /></button></div><form className="space-y-4" onSubmit={handleUpdateOpportunity}>
+          <div><Label>Role Title</Label><Input name="roleTitle" defaultValue={editingOpportunity.roleTitle} required className="mt-1" /></div>
+          <div className="grid grid-cols-2 gap-4">
+            <div>
+              <Label>Category *</Label>
+              <select className="w-full mt-1 px-3 py-2 border border-neutral-300 rounded-md" value={oppCategory} onChange={e => setOppCategory(e.target.value)} required>
+                <option value="" disabled>Select a category</option>
+                {OPPORTUNITY_CATEGORIES.map(c => <option key={c} value={c}>{c}</option>)}
+              </select>
+              {oppCategory === OTHER && <Input className="mt-2" placeholder="Specify category" value={oppCategoryOther} onChange={e => setOppCategoryOther(e.target.value)} required />}
+            </div>
+            <div><Label>Positions</Label><Input name="numOfPositions" type="number" min="1" defaultValue={editingOpportunity.numOfPositions} className="mt-1" /></div>
+          </div>
+          <div><Label>Description</Label><Textarea name="description" defaultValue={editingOpportunity.description || ""} rows={3} className="mt-1" /></div>
+          <div>
+            <Label>Skills Required *</Label>
+            <p className="text-xs text-neutral-500 mt-1">Select all that apply.</p>
+            <div className="mt-2 grid grid-cols-2 gap-2">
+              {VOLUNTEER_SKILLS.map(skill => (
+                <label key={skill} className="flex items-center gap-2 text-sm text-neutral-700 cursor-pointer">
+                  <Checkbox checked={oppSkillSet.includes(skill)} onCheckedChange={(v) => setOppSkillSet(prev => v === true ? [...prev, skill] : prev.filter(s => s !== skill))} />
+                  <span>{skill}</span>
+                </label>
+              ))}
+            </div>
+            <Input className="mt-3" placeholder="Other skills (optional, comma-separated)" value={oppSkillsOther} onChange={e => setOppSkillsOther(e.target.value)} />
+          </div>
+          <div className="grid grid-cols-2 gap-4">
+            <div>
+              <Label>Time Commitment</Label>
+              <select className="w-full mt-1 px-3 py-2 border border-neutral-300 rounded-md" value={oppTime} onChange={e => setOppTime(e.target.value)}>
+                <option value="">Not specified</option>
+                {TIME_COMMITMENTS.map(t => <option key={t} value={t}>{t}</option>)}
+              </select>
+              {oppTime === OTHER && <Input className="mt-2" placeholder="Specify time commitment" value={oppTimeOther} onChange={e => setOppTimeOther(e.target.value)} />}
+            </div>
+            <div>
+              <Label>Duration</Label>
+              <select className="w-full mt-1 px-3 py-2 border border-neutral-300 rounded-md" value={oppDuration} onChange={e => setOppDuration(e.target.value)}>
+                <option value="">Not specified</option>
+                {DURATIONS.map(d => <option key={d} value={d}>{d}</option>)}
+              </select>
+              {oppDuration === OTHER && <Input className="mt-2" placeholder="Specify duration" value={oppDurationOther} onChange={e => setOppDurationOther(e.target.value)} />}
+            </div>
+          </div>
+          <div className="flex gap-3"><Button type="submit" className="flex-1 bg-orange-600 hover:bg-orange-700" disabled={savingOpportunity}>{savingOpportunity && <Loader2 className="w-4 h-4 mr-2 animate-spin" />}Save Changes</Button><Button type="button" variant="outline" onClick={() => setEditingOpportunity(null)}>Cancel</Button></div>
+        </form></motion.div></div>)}
 
       {/* NPO Top-Up removed — NPOs receive funds via donations, not top-up */}
 

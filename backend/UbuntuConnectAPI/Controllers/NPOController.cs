@@ -29,6 +29,8 @@ public class NPOController : ControllerBase
     public async Task<IActionResult> GetAll()
     {
         var list = await _context.Npos
+            .Include(n => n.User)
+                .ThenInclude(u => u.Profile)
             .Select(n => new
             {
                 npoId = n.NpoId,
@@ -36,7 +38,10 @@ public class NPOController : ControllerBase
                 nporegNum = n.NporegNum,
                 organizationName = n.OrganizationName,
                 npofocusArea = n.NpofocusArea,
-                npomission = n.Npomission
+                npomission = n.Npomission,
+                location = n.User.Location,
+                isVerified = n.User.IsVerified,
+                profileImage = n.User.Profile != null ? n.User.Profile.ProfileImage : null
             })
             .ToListAsync();
         return Ok(list);
@@ -54,7 +59,8 @@ public class NPOController : ControllerBase
                 nporegNum = n.NporegNum,
                 organizationName = n.OrganizationName,
                 npofocusArea = n.NpofocusArea,
-                npomission = n.Npomission
+                npomission = n.Npomission,
+                location = n.User.Location
             })
             .FirstOrDefaultAsync();
 
@@ -150,6 +156,7 @@ public class NPOController : ControllerBase
             isVerified = npo.User.IsVerified,
             bio = npo.User.Profile != null ? npo.User.Profile.Bio : null,
             profileImage = npo.User.Profile != null ? npo.User.Profile.ProfileImage : null,
+            backgroundImage = npo.User.Profile != null ? npo.User.Profile.BackgroundImage : null,
             location = npo.User.Location,
             followerCount,
             // Contact block — null when the viewer isn't allowed to see it.
@@ -199,6 +206,18 @@ public class NPOController : ControllerBase
         if (req.OrganizationName != null) npo.OrganizationName = req.OrganizationName;
         if (req.NPOFocusArea != null) npo.NpofocusArea = req.NPOFocusArea;
         if (req.NPOMission != null) npo.Npomission = req.NPOMission;
+
+        // Bio + images live on the linked Profile (created at registration).
+        if (req.Bio != null || req.ProfileImage != null || req.BackgroundImage != null)
+        {
+            var profile = await _context.Profiles.FirstOrDefaultAsync(p => p.UserId == npo.UserId);
+            if (profile != null)
+            {
+                if (req.Bio != null) profile.Bio = req.Bio;
+                if (req.ProfileImage != null) profile.ProfileImage = req.ProfileImage;
+                if (req.BackgroundImage != null) profile.BackgroundImage = req.BackgroundImage;
+            }
+        }
 
         await _context.SaveChangesAsync();
         return NoContent();

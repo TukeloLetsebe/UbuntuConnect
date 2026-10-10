@@ -58,7 +58,8 @@ public class VolunteerApplicationController : ControllerBase
                 availability = a.Availability,
                 whyVolunteer = a.WhyVolunteer,
                 status = a.Status,
-                applicationDate = a.ApplicationDate
+                applicationDate = a.ApplicationDate,
+                totalHoursLogged = a.VolunteerLogs.Sum(l => l.LogHours)
             })
             .ToListAsync();
         return Ok(list);

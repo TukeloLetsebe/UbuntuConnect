@@ -14,6 +14,8 @@ export interface NpoProfile {
 export interface PostItem {
   postId: number;
   userId: number;
+  authorName?: string | null;
+  authorNpoId?: number | null;
   postTitle: string;
   content: string | null;
   mediaUrl: string | null;
@@ -60,6 +62,7 @@ export interface VolunteerApplicationItem {
   whyVolunteer?: string | null;
   status: string;
   applicationDate: string;
+  totalHoursLogged?: number;
 }
 
 export interface VolunteerOpportunityItem {
@@ -76,12 +79,15 @@ export interface VolunteerOpportunityItem {
 }
 
 export interface NpoDiscoverItem {
+  location?: string | null;
   npoId: number;
   userId: number;
   nporegNum: string;
   organizationName: string;
   npofocusArea: string | null;
   npomission: string | null;
+  isVerified?: boolean;
+  profileImage?: string | null;
 }
 
 export interface VerificationItem {
@@ -161,8 +167,13 @@ export const npoService = {
   // Profile
   getMyProfile: () => api.get<NpoProfile>("/api/npo/user/{userId}"),
   getProfileByUserId: (userId: number) => api.get<NpoProfile>(`/api/npo/user/${userId}`),
-  updateProfile: (npoId: number, data: { OrganizationName?: string; NPOFocusArea?: string; NPOMission?: string }) =>
+  updateProfile: (npoId: number, data: { OrganizationName?: string; NPOFocusArea?: string; NPOMission?: string; Bio?: string; ProfileImage?: string | null; BackgroundImage?: string | null }) =>
     api.put(`/api/npo/${npoId}`, data),
+  /** Public profile (also used to seed the edit form with bio/images). */
+  getPublicProfile: (npoId: number) => api.get<{
+    npoId: number; organizationName: string; npofocusArea: string | null; npomission: string | null;
+    bio: string | null; profileImage: string | null; backgroundImage: string | null;
+  }>(`/api/npo/${npoId}/public`),
 
   // Posts (NPO manages their own)
   getMyPosts: (userId: number) => api.get<PostItem[]>(`/api/post/user/${userId}`),

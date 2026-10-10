@@ -34,7 +34,7 @@ function getErrorMessage(error: unknown): string {
 export default function NpoProfile() {
   const { npoId } = useParams<{ npoId: string }>();
   const navigate = useNavigate();
-  const { userType, userId, isAuthenticated } = useAuth();
+  const { userType, userId, isAuthenticated, isEmailVerified } = useAuth();
   const [profile, setProfile] = useState<PublicNpoProfile | null>(null);
   const [loading, setLoading] = useState(true);
 
@@ -113,9 +113,17 @@ export default function NpoProfile() {
 
   return (
     <div className="min-h-screen bg-neutral-50 pb-12">
-      {/* Cover */}
-      <div className="relative h-48 md:h-64 bg-gradient-to-r from-orange-500 to-amber-500">
-        <div className="absolute top-4 left-4">
+      {/* Cover — uses the uploaded background image when set, else a gradient */}
+      <div className="relative h-48 md:h-64 bg-gradient-to-r from-orange-500 to-amber-500 overflow-hidden">
+        {profile.backgroundImage && (
+          <img
+            src={resolveMediaUrl(profile.backgroundImage)}
+            alt=""
+            className="absolute inset-0 w-full h-full object-cover"
+            onError={(e) => { (e.currentTarget as HTMLImageElement).style.display = "none"; }}
+          />
+        )}
+        <div className="absolute top-4 left-4 z-10">
           <Button variant="secondary" size="sm" onClick={goBack}>
             <ArrowLeft className="w-4 h-4 mr-1" /> Back
           </Button>
@@ -320,6 +328,7 @@ export default function NpoProfile() {
           post={selectedPost}
           currentUserId={userId}
           canInteract={isAuthenticated}
+          canComment={isAuthenticated && isEmailVerified}
           onClose={() => setSelectedPost(null)}
         />
       )}
