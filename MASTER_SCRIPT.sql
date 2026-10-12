@@ -4,7 +4,7 @@
 -- Builds the ENTIRE UbuntuConnect_DB schema in one run:
 -- creates the database (if missing) and every table in
 -- dependency order, then applies all later column/constraint
--- alterations (migrations 002–031 consolidated).
+-- alterations (migrations 002–032 consolidated).
 --
 -- Idempotent: every object is guarded with IF NOT EXISTS, so it
 -- is safe to run repeatedly. It does NOT insert any data — run
@@ -122,11 +122,12 @@ BEGIN
         UserId       INT            NOT NULL UNIQUE
                      CONSTRAINT FK_Profile_Users
                      FOREIGN KEY REFERENCES Users(UserId) ON DELETE CASCADE,
-        ProfileName  NVARCHAR(150)  NOT NULL,
-        Bio          NVARCHAR(1000) NULL,
-        ProfileImage NVARCHAR(500)  NULL,
-        Following    INT            NOT NULL DEFAULT 0,
-        Followers    INT            NOT NULL DEFAULT 0
+        ProfileName     NVARCHAR(150)  NOT NULL,
+        Bio             NVARCHAR(1000) NULL,
+        ProfileImage    NVARCHAR(500)  NULL,
+        BackgroundImage NVARCHAR(500)  NULL,
+        Following       INT            NOT NULL DEFAULT 0,
+        Followers       INT            NOT NULL DEFAULT 0
     );
     PRINT '006 | Profile table created.';
 END
@@ -614,6 +615,15 @@ BEGIN
     PRINT '031 | PartnershipCampaign.ImageUrl added.';
 END
 ELSE PRINT '031 | PartnershipCampaign.ImageUrl already exists, skipped.';
+GO
+
+-- 032 | Profile.BackgroundImage  (NPO/Business banner / cover image)
+IF NOT EXISTS (SELECT * FROM sys.columns WHERE object_id = OBJECT_ID('Profile') AND name = 'BackgroundImage')
+BEGIN
+    ALTER TABLE Profile ADD BackgroundImage NVARCHAR(500) NULL;
+    PRINT '032 | Profile.BackgroundImage added.';
+END
+ELSE PRINT '032 | Profile.BackgroundImage already exists, skipped.';
 GO
 
 PRINT '=============================================================';

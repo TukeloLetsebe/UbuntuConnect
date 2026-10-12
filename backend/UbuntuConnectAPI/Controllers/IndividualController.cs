@@ -227,6 +227,7 @@ public class IndividualController : ControllerBase
             .Where(f => f.UserId == userId)
             .Include(f => f.Npo)
                 .ThenInclude(n => n.User)
+                    .ThenInclude(u => u.Profile)
             .Select(f => new
             {
                 npoId = f.NpoId,
@@ -235,6 +236,7 @@ public class IndividualController : ControllerBase
                 mission = f.Npo.Npomission,
                 location = f.Npo.User.Location,
                 isVerified = f.Npo.User.IsVerified,
+                profileImage = f.Npo.User.Profile != null ? f.Npo.User.Profile.ProfileImage : null,
                 followDate = f.FollowDate
             })
             .OrderByDescending(f => f.followDate)
@@ -352,10 +354,14 @@ public class IndividualController : ControllerBase
 
         var user = await _context.Users.FirstOrDefaultAsync(u => u.UserId == userId);
 
+        // Optional phone: if provided, it must be a valid SA number.
+        if (!string.IsNullOrWhiteSpace(dto.UserContact) && !ValidationPatterns.IsValidPhone(dto.UserContact))
+            return BadRequest("Enter a valid South African phone number, e.g. +27821234567 or 0821234567.");
+
         if (!string.IsNullOrEmpty(dto.FirstName)) individual.FirstName = dto.FirstName;
         if (!string.IsNullOrEmpty(dto.LastName)) individual.LastName = dto.LastName;
         if (dto.CauseOfCare != null) individual.CauseOfCare = dto.CauseOfCare;
-        if (!string.IsNullOrEmpty(dto.UserContact)) user!.UserContact = dto.UserContact;
+        if (!string.IsNullOrEmpty(dto.UserContact)) user!.UserContact = ValidationPatterns.NormalizePhone(dto.UserContact);
         if (!string.IsNullOrEmpty(dto.Location)) user!.Location = dto.Location;
 
         await _context.SaveChangesAsync();

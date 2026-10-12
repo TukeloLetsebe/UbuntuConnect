@@ -11,6 +11,7 @@ import PostDetailModal from "./PostDetailModal";
 import ReportPostButton from "./ReportPostButton";
 import LocationPicker, { composeLocation } from "./registration/LocationPicker";
 import { parseLocation, parseProvince, SA_PROVINCES, PROVINCE_OTHER, VOLUNTEER_SKILLS } from "../../lib/registrationOptions";
+import { isValidPhone, validationMessages } from "../../lib/validators";
 import { resolveMediaUrl } from "../../lib/api";
 import { individualService, getErrorMessage, type IndividualProfile, type NPOSummary, type NPODetail, type VolunteerOpportunity, type MyVolunteeringItem, type MyDonationsResponse, type MyImpact, type CommunityPost, type FollowedNPO } from "../../services/individualService";
 import { kycService, type KycStatus } from "../../services/kycService";
@@ -619,6 +620,11 @@ export default function IndividualDashboard() {
   // Handle profile update
   const handleProfileUpdate = async (e: React.FormEvent) => {
     e.preventDefault();
+    // Phone is optional, but if provided it must be a valid SA number.
+    if (profileContact.trim() && !isValidPhone(profileContact)) {
+      toast.error(validationMessages.phone);
+      return;
+    }
     setProfileUpdating(true);
     // Compose the structured picker back into "City, Province". Falls back to
     // the existing value if nothing was selected.
@@ -1302,49 +1308,53 @@ export default function IndividualDashboard() {
                           className="overflow-hidden hover:shadow-lg transition-shadow cursor-pointer"
                           onClick={() => navigate(`/npo/${npo.npoId}`)}
                         >
-                          <div className={`h-16 bg-gradient-to-r ${getNpoColor(npo.organizationName)} flex items-center justify-center`}>
-                            <span className="text-2xl font-bold text-white/90">
-                              {npo.organizationName.charAt(0).toUpperCase()}
-                            </span>
+                          <div className={`h-40 bg-gradient-to-br ${getNpoColor(npo.organizationName)} flex items-center justify-center overflow-hidden`}>
+                            {npo.profileImage
+                              ? <img src={resolveMediaUrl(npo.profileImage)} alt={npo.organizationName} className="w-full h-full object-cover" onError={(e) => { (e.currentTarget as HTMLImageElement).style.display = "none"; }} />
+                              : <span className="text-5xl font-bold text-white/80">
+                                  {npo.organizationName.charAt(0).toUpperCase()}
+                                </span>}
                           </div>
                           <div className="p-6">
-                          <div className="flex items-start justify-between mb-3">
-                            <div>
-                              <div className="flex items-center gap-2 mb-1">
-                                <span className="text-lg font-semibold">
-                                  {npo.organizationName}
-                                </span>
-                                {npo.isVerified && <CheckCircle className="w-5 h-5 text-green-600" />}
-                              </div>
-                              <div className="flex items-center gap-3 text-sm text-neutral-600 mb-2">
-                                {npo.location && (
-                                  <span className="flex items-center gap-1">
-                                    <MapPin className="w-4 h-4" />
-                                    {npo.location}
+                            <div className="flex items-start justify-between mb-3">
+                              <div>
+                                <div className="flex items-center gap-2 mb-1">
+                                  <span className="text-lg font-semibold group-hover:text-orange-600">
+                                    {npo.organizationName}
                                   </span>
-                                )}
-                                {npo.focusArea && <Badge variant="outline">{npo.focusArea}</Badge>}
+                                  {npo.isVerified && <CheckCircle className="w-5 h-5 text-green-600" />}
+                                </div>
+                                <div className="flex items-center gap-4 text-sm text-neutral-600">
+                                  {npo.location && (
+                                    <span className="flex items-center gap-1">
+                                      <MapPin className="w-4 h-4" />
+                                      {npo.location}
+                                    </span>
+                                  )}
+                                  {npo.focusArea && <Badge variant="outline">{npo.focusArea}</Badge>}
+                                </div>
                               </div>
                             </div>
-                            <Button
-                              variant="outline"
-                              size="sm"
-                              onClick={(e) => { e.stopPropagation(); handleFollow(npo.npoId); }}
-                            >
-                              Unfollow
-                            </Button>
-                          </div>
-                          {npo.mission && (
-                            <p className="text-neutral-600 text-sm mb-4">{npo.mission}</p>
-                          )}
-                          <Button
-                            size="sm"
-                            className="bg-orange-600 hover:bg-orange-700"
-                            onClick={(e) => { e.stopPropagation(); handleDonate(npo.npoId); }}
-                          >
-                            Donate
-                          </Button>
-                          <p className="text-center text-sm text-orange-600 mt-3">View full profile →</p>
+                            {npo.mission && (
+                              <p className="text-neutral-600 text-sm mb-4 line-clamp-2">{npo.mission}</p>
+                            )}
+                            <div className="flex gap-2">
+                              <Button
+                                variant="outline"
+                                className="flex-1"
+                                onClick={(e) => { e.stopPropagation(); handleFollow(npo.npoId); }}
+                              >
+                                <Heart className="w-4 h-4 mr-2 fill-red-500 text-red-500" />
+                                Following
+                              </Button>
+                              <Button
+                                className="flex-1 bg-orange-600 hover:bg-orange-700"
+                                onClick={(e) => { e.stopPropagation(); handleDonate(npo.npoId); }}
+                              >
+                                Donate
+                              </Button>
+                            </div>
+                            <p className="text-center text-sm text-orange-600 mt-3">View full profile →</p>
                           </div>
                         </Card>
                       ))}
@@ -2209,7 +2219,11 @@ export default function IndividualDashboard() {
                             onChange={(e) => setProfileContact(e.target.value)}
                             placeholder="+27 XX XXX XXXX"
                             className="mt-2"
+                            aria-invalid={!!profileContact.trim() && !isValidPhone(profileContact)}
                           />
+                          {!!profileContact.trim() && !isValidPhone(profileContact) && (
+                            <p className="text-xs text-red-500 mt-1">{validationMessages.phone}</p>
+                          )}
                         </div>
                         <div>
                           <LocationPicker

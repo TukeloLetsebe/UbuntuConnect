@@ -586,12 +586,27 @@ export default function BusinessDashboard() {
               <h1 className="text-2xl font-bold mb-6">Following</h1>
               {followedNpos.length === 0 ? <Card className="p-12 text-center"><p className="text-neutral-600">You're not following any NPOs yet.</p><Button onClick={() => setActiveTab("discover")} className="mt-4">Discover NPOs</Button></Card> : (
                 <div className="grid md:grid-cols-2 lg:grid-cols-3 gap-6">{followedNpos.map(npo => (
-                  <Card key={npo.npoId} className="p-6">
-                    <div className="flex items-center gap-3 mb-3"><div className="w-10 h-10 rounded-full bg-orange-100 flex items-center justify-center"><span className="font-bold text-orange-600">{npo.organizationName.charAt(0)}</span></div><div><h3 className="font-semibold text-sm">{npo.organizationName}</h3>{npo.focusArea && <p className="text-xs text-neutral-500">{npo.focusArea}</p>}</div></div>
-                    <p className="text-xs text-neutral-500 mb-3">Following since {new Date(npo.followDate).toLocaleDateString()}</p>
-                    <div className="flex gap-2">
-                      <Button size="sm" variant="outline" className="flex-1" onClick={() => { setDonateNpoId(npo.npoId); setDonateAmount(""); setShowDonateModal(true); }}><DollarSign className="w-4 h-4 mr-1" /> Donate</Button>
-                      <Button size="sm" variant="outline" className="text-red-600" onClick={() => handleFollow(npo.npoId)}><X className="w-4 h-4" /></Button>
+                  <Card key={npo.npoId} className="overflow-hidden hover:shadow-lg transition-shadow cursor-pointer" onClick={() => navigate(`/npo/${npo.npoId}`)}>
+                    <div className="h-40 bg-gradient-to-br from-orange-400 to-orange-600 flex items-center justify-center overflow-hidden">
+                      {npo.profileImage
+                        ? <img src={resolveMediaUrl(npo.profileImage)} alt={npo.organizationName} className="w-full h-full object-cover" onError={(e) => { (e.currentTarget as HTMLImageElement).style.display = "none"; }} />
+                        : <span className="text-5xl font-bold text-white/80">{npo.organizationName.charAt(0).toUpperCase()}</span>}
+                    </div>
+                    <div className="p-6">
+                      <div className="flex items-center gap-2 mb-1">
+                        <span className="text-lg font-semibold">{npo.organizationName}</span>
+                        {npo.isVerified && <CheckCircle className="w-5 h-5 text-green-600" />}
+                      </div>
+                      <div className="flex items-center gap-4 text-sm text-neutral-600 mb-3">
+                        {npo.location && <span className="flex items-center gap-1"><MapPin className="w-4 h-4" /> {npo.location}</span>}
+                        {npo.focusArea && <Badge variant="outline">{npo.focusArea}</Badge>}
+                      </div>
+                      {npo.mission && <p className="text-sm text-neutral-600 mb-4 line-clamp-2">{npo.mission}</p>}
+                      <div className="flex gap-2">
+                        <Button variant="default" className="flex-1 bg-orange-600 hover:bg-orange-700" onClick={(e) => { e.stopPropagation(); handleFollow(npo.npoId); }}><Heart className="w-4 h-4 mr-1 fill-current" /> Following</Button>
+                        <Button className="flex-1 bg-orange-600 hover:bg-orange-700" onClick={(e) => { e.stopPropagation(); setDonateNpoId(npo.npoId); setDonateAmount(""); setShowDonateModal(true); }}>Donate</Button>
+                      </div>
+                      <p className="text-center text-sm text-orange-600 mt-3">View full profile →</p>
                     </div>
                   </Card>
                 ))}</div>

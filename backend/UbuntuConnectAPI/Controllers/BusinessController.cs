@@ -170,6 +170,9 @@ public class BusinessController : ControllerBase
                 organizationName = f.Npo.OrganizationName,
                 focusArea = f.Npo.NpofocusArea,
                 mission = f.Npo.Npomission,
+                location = f.Npo.User.Location,
+                isVerified = f.Npo.User.IsVerified,
+                profileImage = f.Npo.User.Profile != null ? f.Npo.User.Profile.ProfileImage : null,
                 followDate = f.FollowDate
             })
             .OrderByDescending(f => f.followDate)

@@ -34,6 +34,9 @@ export interface FollowedNPO {
   organizationName: string;
   focusArea: string | null;
   mission: string | null;
+  location: string | null;
+  isVerified: boolean;
+  profileImage: string | null;
   followDate: string;
 }
 
