@@ -257,6 +257,21 @@ public class VolunteerApplicationController : ControllerBase
 
         app.Status = "Completed";
         await _context.SaveChangesAsync();
+
+        // Best-effort: thank the volunteer for completing their role.
+        if (_notifications != null)
+        {
+            try
+            {
+                await _notifications.CreateAsync(
+                    app.UserId,
+                    "VolunteerCompleted",
+                    $"{app.Opportunity.Npo.OrganizationName} marked your volunteering for \"{app.Opportunity.RoleTitle}\" as completed. Thank you for your time!",
+                    app.ApplicationId);
+            }
+            catch { /* notifications are non-critical */ }
+        }
+
         return NoContent();
     }
 

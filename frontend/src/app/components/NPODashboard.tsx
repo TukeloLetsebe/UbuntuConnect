@@ -112,7 +112,7 @@ export default function NPODashboard() {
   const [withdrawing, setWithdrawing] = useState(false);
 
   // Profile
-  const [npoProfile, setNpoProfile] = useState<{ npoId: number; organizationName: string; npofocusArea: string | null; npomission: string | null } | null>(null);
+  const [npoProfile, setNpoProfile] = useState<{ npoId: number; organizationName: string; npofocusArea: string | null; npomission: string | null; isVerified?: boolean } | null>(null);
 
   // Discover NPOs
   const [discoverNpos, setDiscoverNpos] = useState<NpoDiscoverItem[]>([]);
@@ -282,7 +282,14 @@ export default function NPODashboard() {
     setOppDuration(""); setOppDurationOther("");
     setOpportunityImageUrl(null);
   };
-  const openCreateOpportunity = () => { resetOpportunityForm(); setShowCreateOpportunity(true); };
+  const openCreateOpportunity = () => {
+    if (!npoProfile?.isVerified) {
+      toast.error("Your NPO must be verified before you can post volunteer opportunities. Submit your documents under Verification and wait for admin approval.");
+      return;
+    }
+    resetOpportunityForm();
+    setShowCreateOpportunity(true);
+  };
   // Seed the controlled fields from an existing opportunity, splitting known
   // options from free-text "Other" values.
   const openEditOpportunity = (o: VolunteerOpportunityItem) => {
@@ -363,6 +370,10 @@ export default function NPODashboard() {
   const pendingApps = applications.filter(a => a.status === "Pending");
   const acceptedApps = applications.filter(a => a.status === "Accepted");
   const completedApps = applications.filter(a => a.status === "Completed");
+  // Verified NPOs unlock the trust-sensitive actions (fundraisers, volunteer
+  // opportunities, campaign applications, withdrawals, donating).
+  const isNpoVerified = npoProfile?.isVerified === true;
+  const verifyGateMessage = "Your NPO must be verified before you can use this. Submit your documents under Verification and wait for admin approval.";
   const npoProvinces = (() => {
     const present = new Set(discoverNpos.map(n => parseProvince(n.location) ?? (n.location ? PROVINCE_OTHER : null)).filter((p): p is string => !!p));
     const ordered = SA_PROVINCES.filter(p => present.has(p));
@@ -416,6 +427,18 @@ export default function NPODashboard() {
 
         <main className="flex-1 p-4 md:p-8 w-full min-w-0">
           <motion.div key={activeTab} initial={{ opacity: 0, y: 20 }} animate={{ opacity: 1, y: 0 }} transition={{ duration: 0.3 }}>
+
+            {/* Verification gate banner — shown on every tab until the NPO is verified. */}
+            {npoProfile && !isNpoVerified && activeTab !== "verification" && (
+              <div className="mb-6 flex items-start gap-3 rounded-lg border border-amber-200 bg-amber-50 p-4">
+                <AlertCircle className="w-5 h-5 text-amber-600 shrink-0 mt-0.5" />
+                <div className="flex-1">
+                  <p className="font-medium text-amber-800">Your NPO isn't verified yet</p>
+                  <p className="text-sm text-amber-700 mt-0.5">Verify your organization to create fundraisers, post volunteer opportunities, apply to campaigns, donate, and withdraw funds.</p>
+                </div>
+                <Button size="sm" className="bg-amber-600 hover:bg-amber-700 shrink-0" onClick={() => setActiveTab("verification")}><Shield className="w-4 h-4 mr-1" /> Get verified</Button>
+              </div>
+            )}
 
             {/* OVERVIEW */}
             {activeTab === "overview" && (<div>
@@ -585,7 +608,7 @@ export default function NPODashboard() {
 
             {/* FUNDRAISERS (Projects) */}
             {activeTab === "projects" && (<div>
-              <div className="flex items-center justify-between mb-8"><div><h1 className="text-2xl font-bold mb-2">Fundraisers</h1><p className="text-neutral-600">Create fundraisers for your initiatives. Supporters can donate directly.</p></div><div className="flex gap-2"><Button variant="outline" size="sm" onClick={loadProjects}><RefreshCw className="w-4 h-4" /></Button><Button className="bg-orange-600 hover:bg-orange-700" onClick={() => setShowCreateProject(true)}><Plus className="w-4 h-4 mr-2" /> New Fundraiser</Button></div></div>
+              <div className="flex items-center justify-between mb-8"><div><h1 className="text-2xl font-bold mb-2">Fundraisers</h1><p className="text-neutral-600">Create fundraisers for your initiatives. Supporters can donate directly.</p></div><div className="flex gap-2"><Button variant="outline" size="sm" onClick={loadProjects}><RefreshCw className="w-4 h-4" /></Button><Button className="bg-orange-600 hover:bg-orange-700" disabled={!isNpoVerified} title={!isNpoVerified ? verifyGateMessage : undefined} onClick={() => isNpoVerified ? setShowCreateProject(true) : toast.error(verifyGateMessage)}><Plus className="w-4 h-4 mr-2" /> New Fundraiser</Button></div></div>
               {(() => { const active = projects.filter(p => p.projectStatus === "Active"); if (active.length === 0) return null; return (
                 <div className="mb-8">
                   <h2 className="text-lg font-semibold mb-3">Currently Running</h2>
@@ -610,7 +633,7 @@ export default function NPODashboard() {
                   </Carousel>
                 </div>
               ); })()}
-              {projectsLoading ? <div className="flex justify-center py-12"><Loader2 className="w-8 h-8 animate-spin text-orange-600" /></div> : projects.length === 0 ? <Card className="p-12 text-center"><Target className="w-12 h-12 text-neutral-400 mx-auto mb-3" /><h3 className="font-semibold mb-2">No fundraisers yet</h3><p className="text-neutral-600 mb-4">Create a fundraiser to collect donations for your projects</p><Button onClick={() => setShowCreateProject(true)}>Create Fundraiser</Button></Card> : (
+              {projectsLoading ? <div className="flex justify-center py-12"><Loader2 className="w-8 h-8 animate-spin text-orange-600" /></div> : projects.length === 0 ? <Card className="p-12 text-center"><Target className="w-12 h-12 text-neutral-400 mx-auto mb-3" /><h3 className="font-semibold mb-2">No fundraisers yet</h3><p className="text-neutral-600 mb-4">Create a fundraiser to collect donations for your projects</p><Button disabled={!isNpoVerified} title={!isNpoVerified ? verifyGateMessage : undefined} onClick={() => isNpoVerified ? setShowCreateProject(true) : toast.error(verifyGateMessage)}>Create Fundraiser</Button></Card> : (
                 <div className="grid md:grid-cols-2 gap-6">{projects.map(project => (
                   <Card key={project.projectId} className="overflow-hidden hover:shadow-lg">
                     {project.images && <div className="flex overflow-x-auto gap-1">{project.images.split(",").map((img, i) => <img key={i} src={img.trim()} alt="" className="w-full h-48 object-cover flex-shrink-0" />)}</div>}
@@ -626,7 +649,7 @@ export default function NPODashboard() {
 
             {/* VOLUNTEERS */}
             {activeTab === "volunteers" && (<div>
-              <div className="flex items-center justify-between mb-8"><div><h1 className="text-2xl font-bold mb-2">Volunteers</h1></div><div className="flex gap-2"><Button variant="outline" size="sm" onClick={() => { loadApplications(); loadOpportunities(); }}><RefreshCw className="w-4 h-4" /></Button><Button className="bg-orange-600 hover:bg-orange-700" onClick={() => openCreateOpportunity()}><Plus className="w-4 h-4 mr-2" /> Create Opportunity</Button></div></div>
+              <div className="flex items-center justify-between mb-8"><div><h1 className="text-2xl font-bold mb-2">Volunteers</h1></div><div className="flex gap-2"><Button variant="outline" size="sm" onClick={() => { loadApplications(); loadOpportunities(); }}><RefreshCw className="w-4 h-4" /></Button><Button className="bg-orange-600 hover:bg-orange-700" disabled={!isNpoVerified} title={!isNpoVerified ? verifyGateMessage : undefined} onClick={() => openCreateOpportunity()}><Plus className="w-4 h-4 mr-2" /> Create Opportunity</Button></div></div>
               <Tabs defaultValue="opportunities"><TabsList className="mb-6"><TabsTrigger value="opportunities">Opportunities ({opportunities.length})</TabsTrigger><TabsTrigger value="pending">Pending ({pendingApps.length})</TabsTrigger><TabsTrigger value="accepted">Accepted ({acceptedApps.length})</TabsTrigger><TabsTrigger value="completed">Completed ({completedApps.length})</TabsTrigger></TabsList>
                 <TabsContent value="opportunities">{opportunitiesLoading ? <div className="flex justify-center py-8"><Loader2 className="w-6 h-6 animate-spin" /></div> : opportunities.length === 0 ? <Card className="p-12 text-center"><p className="text-neutral-600 mb-4">No opportunities. Create one for supporters to apply.</p><Button onClick={() => openCreateOpportunity()}>Create Opportunity</Button></Card> : <div className="grid md:grid-cols-2 gap-6">{opportunities.map(o => (<Card key={o.opportunityId} className="p-6"><div className="flex justify-between mb-2"><div><h3 className="font-semibold">{o.roleTitle}</h3>{o.category && <Badge variant="outline">{o.category}</Badge>}</div><Badge className="bg-green-100 text-green-700">{o.numOfPositions} pos.</Badge></div>{o.description && <p className="text-sm text-neutral-600 mb-3 line-clamp-2">{o.description}</p>}<div className="flex gap-2"><Button variant="outline" size="sm" className="flex-1" onClick={() => openEditOpportunity(o)}><Edit className="w-4 h-4 mr-1" /> Edit</Button><Button variant="outline" size="sm" className="text-red-600 flex-1" onClick={() => handleDeleteOpportunity(o.opportunityId)}><Trash2 className="w-4 h-4 mr-1" /> Delete</Button></div></Card>))}</div>}</TabsContent>
                 <TabsContent value="pending">{pendingApps.length === 0 ? <Card className="p-8 text-center"><p className="text-neutral-600">No pending applications.</p></Card> : <div className="space-y-4">{pendingApps.map(a => (<Card key={a.applicationId} className="p-6"><div className="flex justify-between"><div><h3 className="font-semibold">{a.firstName} {a.lastName}</h3>{a.roleTitle && <Badge variant="outline" className="mt-1">{a.roleTitle}</Badge>}<p className="text-sm text-neutral-600 mt-1">{a.email}{a.phoneNum ? ` · ${a.phoneNum}` : ""}</p>{a.skills && <p className="text-xs text-neutral-500 mt-1">Skills: {a.skills}</p>}{a.availability && <p className="text-xs text-neutral-500 mt-0.5">Availability: {a.availability}</p>}{a.whyVolunteer && <p className="text-sm text-neutral-600 mt-2 italic">“{a.whyVolunteer}”</p>}<p className="text-xs text-neutral-400 mt-1">Applied {new Date(a.applicationDate).toLocaleDateString()}</p></div><div className="flex gap-2"><Button size="sm" variant="outline" onClick={() => handleViewIdentity(a)}><Shield className="w-4 h-4 mr-1" /> ID</Button><Button size="sm" className="bg-green-600 hover:bg-green-700" onClick={() => handleAcceptApplication(a.applicationId)}><Check className="w-4 h-4" /></Button><Button size="sm" variant="outline" className="text-red-600" onClick={() => handleRejectApplication(a.applicationId)}><X className="w-4 h-4" /></Button></div></div></Card>))}</div>}</TabsContent>
@@ -637,7 +660,7 @@ export default function NPODashboard() {
 
             {/* FINANCES */}
             {activeTab === "finances" && (<div>
-              <div className="flex items-center justify-between mb-8"><div><h1 className="text-2xl font-bold mb-2">Finances & Wallet</h1></div><div className="flex gap-2"><Button variant="outline" size="sm" onClick={loadWallet}><RefreshCw className="w-4 h-4" /></Button><Button className="bg-green-600 hover:bg-green-700" onClick={() => setShowWithdrawModal(true)}><ArrowDownToLine className="w-4 h-4 mr-2" /> Withdraw</Button></div></div>
+              <div className="flex items-center justify-between mb-8"><div><h1 className="text-2xl font-bold mb-2">Finances & Wallet</h1></div><div className="flex gap-2"><Button variant="outline" size="sm" onClick={loadWallet}><RefreshCw className="w-4 h-4" /></Button><Button className="bg-green-600 hover:bg-green-700" disabled={!isNpoVerified} title={!isNpoVerified ? verifyGateMessage : undefined} onClick={() => isNpoVerified ? setShowWithdrawModal(true) : toast.error(verifyGateMessage)}><ArrowDownToLine className="w-4 h-4 mr-2" /> Withdraw</Button></div></div>
               {walletLoading ? <div className="flex justify-center py-12"><Loader2 className="w-8 h-8 animate-spin" /></div> : (<>
                 <div className="grid md:grid-cols-3 gap-6 mb-8">
                   <Card className="p-8 bg-gradient-to-br from-green-500 to-green-600 text-white"><div className="flex items-center gap-3"><div className="w-12 h-12 rounded-full bg-white/20 flex items-center justify-center"><Wallet className="w-6 h-6" /></div><div><p className="text-white/80 text-sm">Balance</p><h2 className="text-2xl font-bold">R {walletBalance.toLocaleString()}</h2></div></div></Card>

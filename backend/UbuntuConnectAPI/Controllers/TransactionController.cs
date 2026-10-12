@@ -6,6 +6,7 @@ using UbuntuConnectAPI.Data;
 using UbuntuConnectAPI.DTOs.Requests;
 using UbuntuConnectAPI.Models;
 using UbuntuConnectAPI.Services.Payments;
+using UbuntuConnectAPI.Services.Verification;
 using Microsoft.Extensions.Options;
 
 namespace UbuntuConnectAPI.Controllers;
@@ -16,10 +17,12 @@ public class TransactionController : ControllerBase
 {
     private readonly AppDbContext _context;
     private readonly WalletLimitsOptions _limits;
+    private readonly IVerificationGate _gate;
 
-    public TransactionController(AppDbContext context, IOptions<WalletLimitsOptions>? limits = null)
+    public TransactionController(AppDbContext context, IVerificationGate gate, IOptions<WalletLimitsOptions>? limits = null)
     {
         _context = context;
+        _gate = gate;
         _limits = limits?.Value ?? new WalletLimitsOptions();
     }
 
@@ -94,6 +97,10 @@ public class TransactionController : ControllerBase
     {
         var userIdClaim = User.FindFirst(ClaimTypes.NameIdentifier)?.Value;
         var userId = int.Parse(userIdClaim!);
+
+        // Withdrawing money out requires a verified identity.
+        var gate = await _gate.CanTransactAsync(userId);
+        if (!gate.Allowed) return StatusCode(403, gate.Reason);
 
         if (req.Amount <= 0) return BadRequest("Amount must be greater than 0");
 

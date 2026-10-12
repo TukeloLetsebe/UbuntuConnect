@@ -251,14 +251,40 @@ export default function AdminDashboard() {
               {verificationsLoading ? <div className="flex justify-center py-12"><Loader2 className="w-8 h-8 animate-spin text-purple-600" /></div> : verifications.length === 0 ? <Card className="p-12 text-center"><Shield className="w-12 h-12 text-neutral-400 mx-auto mb-3" /><p className="text-neutral-600">No {verificationFilter.toLowerCase()} verifications.</p></Card> : (
                 <div className="space-y-3">{verifications.map(v => (
                   <Card key={v.verificationId} className="p-5">
-                    <div className="flex items-center justify-between">
-                      <div>
-                        <div className="flex items-center gap-3"><p className="font-semibold">NPO #{v.npoId}</p><Badge className={v.status === "Pending" ? "bg-yellow-100 text-yellow-700" : v.status === "Approved" ? "bg-green-100 text-green-700" : "bg-red-100 text-red-700"}>{v.status}</Badge></div>
-                        <p className="text-sm text-neutral-500 mt-1">Submitted: {new Date(v.submittedDate).toLocaleDateString()}</p>
-                        {v.reviewedDate && <p className="text-sm text-neutral-500">Reviewed: {new Date(v.reviewedDate).toLocaleDateString()}</p>}
+                    <div className="flex flex-col lg:flex-row gap-6 justify-between">
+                      <div className="flex-1 min-w-0">
+                        <div className="flex items-center gap-3 flex-wrap">
+                          <h3 className="font-semibold text-lg">{v.organizationName || `NPO #${v.npoId}`}</h3>
+                          <Badge className={v.status === "Pending" ? "bg-yellow-100 text-yellow-700" : v.status === "Approved" ? "bg-green-100 text-green-700" : "bg-red-100 text-red-700"}>{v.status}</Badge>
+                          {v.isVerified && <Badge className="bg-green-100 text-green-700"><CheckCircle className="w-3 h-3 mr-1" /> Verified</Badge>}
+                        </div>
+                        <div className="grid sm:grid-cols-2 gap-x-6 gap-y-1 mt-3 text-sm text-neutral-600">
+                          <p><span className="text-neutral-400">Reg No:</span> <span className="font-medium">{v.npoRegNum || "—"}</span></p>
+                          <p><span className="text-neutral-400">Focus:</span> <span className="font-medium">{v.focusArea || "—"}</span></p>
+                          <p><span className="text-neutral-400">Email:</span> <span className="font-medium break-all">{v.email || "—"}</span></p>
+                          <p><span className="text-neutral-400">Phone:</span> <span className="font-medium">{v.contact || "—"}</span></p>
+                          <p><span className="text-neutral-400">Location:</span> <span className="font-medium">{v.location || "—"}</span></p>
+                          <p><span className="text-neutral-400">NPO ID:</span> <span className="font-medium">#{v.npoId}</span></p>
+                        </div>
+                        {v.mission && <p className="text-sm text-neutral-600 mt-2"><span className="text-neutral-400">Mission:</span> {v.mission}</p>}
+                        <p className="text-xs text-neutral-400 mt-2">Submitted {new Date(v.submittedDate).toLocaleDateString()}{v.reviewedDate ? ` · Reviewed ${new Date(v.reviewedDate).toLocaleDateString()}` : ""}</p>
+
+                        {/* Supporting documents */}
+                        <div className="flex flex-wrap gap-3 mt-4">
+                          {v.npoCertificate ? (
+                            <a href={resolveMediaUrl(v.npoCertificate)} target="_blank" rel="noreferrer" className="inline-flex items-center gap-2 px-3 py-2 rounded-md border border-neutral-200 text-sm text-purple-700 hover:bg-purple-50">
+                              <FileText className="w-4 h-4" /> NPO Certificate
+                            </a>
+                          ) : <span className="inline-flex items-center gap-2 px-3 py-2 rounded-md border border-dashed border-neutral-200 text-sm text-neutral-400"><FileText className="w-4 h-4" /> No NPO certificate</span>}
+                          {v.npoTaxCertificate ? (
+                            <a href={resolveMediaUrl(v.npoTaxCertificate)} target="_blank" rel="noreferrer" className="inline-flex items-center gap-2 px-3 py-2 rounded-md border border-neutral-200 text-sm text-purple-700 hover:bg-purple-50">
+                              <FileText className="w-4 h-4" /> Tax Certificate
+                            </a>
+                          ) : <span className="inline-flex items-center gap-2 px-3 py-2 rounded-md border border-dashed border-neutral-200 text-sm text-neutral-400"><FileText className="w-4 h-4" /> No tax certificate</span>}
+                        </div>
                       </div>
                       {v.status === "Pending" && (
-                        <div className="flex gap-2">
+                        <div className="flex lg:flex-col gap-2 shrink-0">
                           <Button size="sm" className="bg-green-600 hover:bg-green-700" onClick={() => handleApproveVerification(v.verificationId)}><CheckCircle className="w-4 h-4 mr-1" /> Approve</Button>
                           <Button size="sm" variant="outline" className="text-red-600" onClick={() => handleRejectVerification(v.verificationId)}><X className="w-4 h-4 mr-1" /> Reject</Button>
                         </div>

@@ -8,6 +8,7 @@ using UbuntuConnectAPI.Models;
 using UbuntuConnectAPI.Services.Verification;
 using UbuntuConnectAPI.Services.FaceVerification;
 using UbuntuConnectAPI.Services.Payments;
+using UbuntuConnectAPI.Services.Notifications;
 using UbuntuConnectAPI.Validation;
 using Microsoft.Extensions.Options;
 
@@ -23,6 +24,9 @@ public class IndividualController : ControllerBase
     private readonly IFaceVerificationService _faceService;
     private readonly IPaymentSimulationService? _payments;
     private readonly WalletLimitsOptions _limits;
+    // Optional so existing tests constructing this controller keep working;
+    // notifications are best-effort and never block a donation.
+    private readonly INotificationService? _notifications;
 
     // Auto-approve threshold for the self-service face-scan route.
     private const double FaceMatchThreshold = 0.62;
@@ -32,13 +36,15 @@ public class IndividualController : ControllerBase
         IVerificationGate gate,
         IFaceVerificationService faceService,
         IPaymentSimulationService? payments = null,
-        IOptions<WalletLimitsOptions>? limits = null)
+        IOptions<WalletLimitsOptions>? limits = null,
+        INotificationService? notifications = null)
     {
         _context = context;
         _gate = gate;
         _faceService = faceService;
         _payments = payments;
         _limits = limits?.Value ?? new WalletLimitsOptions();
+        _notifications = notifications;
     }
 
     // ── SUBMIT IDENTITY VERIFICATION (KYC) ─────────────────────
@@ -170,8 +176,8 @@ public class IndividualController : ControllerBase
         var userId = int.Parse(userIdClaim!);
 
         //Check the NPO actually exists
-        var npoExists = await _context.Npos.AnyAsync(n => n.NpoId == npoId);
-        if (!npoExists)
+        var npo = await _context.Npos.FirstOrDefaultAsync(n => n.NpoId == npoId);
+        if (npo == null)
             return NotFound("NPO not found.");
 
         //Check they aren't already following this NPO
@@ -191,6 +197,21 @@ public class IndividualController : ControllerBase
 
         _context.Follows.Add(follow);
         await _context.SaveChangesAsync();
+
+        // Best-effort: tell the NPO they gained a follower.
+        if (_notifications != null)
+        {
+            try
+            {
+                var follower = await _context.Individuals.FirstOrDefaultAsync(i => i.UserId == userId);
+                var followerName = follower != null ? $"{follower.FirstName} {follower.LastName}" : "Someone";
+                await _notifications.CreateAsync(
+                    npo.UserId,
+                    "NewFollower",
+                    $"{followerName} started following your organization.");
+            }
+            catch { /* notifications are non-critical */ }
+        }
 
         return Ok(new { message = "You are now following this NPO." });
     }
@@ -281,9 +302,10 @@ public class IndividualController : ControllerBase
         var gate = await _gate.CanTransactAsync(userId);
         if (!gate.Allowed) return StatusCode(403, gate.Reason);
 
-        var opportunityExists = await _context.VolunteerOpportunities
-            .AnyAsync(v => v.OpportunityId == opportunityId);
-        if (!opportunityExists)
+        var opportunity = await _context.VolunteerOpportunities
+            .Include(v => v.Npo)
+            .FirstOrDefaultAsync(v => v.OpportunityId == opportunityId);
+        if (opportunity == null)
             return NotFound("Volunteer opportunity not found.");
 
         var alreadyApplied = await _context.VolunteerApplications
@@ -310,6 +332,20 @@ public class IndividualController : ControllerBase
 
         _context.VolunteerApplications.Add(application);
         await _context.SaveChangesAsync();
+
+        // Best-effort: tell the NPO a new volunteer applied.
+        if (_notifications != null && opportunity.Npo != null)
+        {
+            try
+            {
+                await _notifications.CreateAsync(
+                    opportunity.Npo.UserId,
+                    "VolunteerApplicationReceived",
+                    $"{dto.FirstName} {dto.LastName} applied to volunteer for \"{opportunity.RoleTitle}\".",
+                    application.ApplicationId);
+            }
+            catch { /* notifications are non-critical */ }
+        }
 
         return Ok(new { message = "Application submitted successfully.", applicationId = application.ApplicationId });
     }
@@ -556,6 +592,19 @@ public class IndividualController : ControllerBase
 
             await _context.SaveChangesAsync();
             await dbTransaction.CommitAsync();
+
+            // Best-effort: tell the NPO they received a donation.
+            if (_notifications != null)
+            {
+                try
+                {
+                    await _notifications.CreateAsync(
+                        npo.UserId,
+                        "DonationReceived",
+                        $"You received a donation of R {dto.Amount:0.##}.");
+                }
+                catch { /* notifications are non-critical */ }
+            }
 
             return Ok(new
             {

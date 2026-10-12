@@ -4,6 +4,8 @@ using Microsoft.EntityFrameworkCore;
 using System.Security.Claims;
 using UbuntuConnectAPI.Data;
 using UbuntuConnectAPI.Services.Cleanup;
+using UbuntuConnectAPI.Services.Email;
+using UbuntuConnectAPI.Services.Notifications;
 
 namespace UbuntuConnectAPI.Controllers;
 
@@ -14,11 +16,21 @@ public class AdminController : ControllerBase
 {
     private readonly AppDbContext _context;
     private readonly IGhostAccountCleanupService _ghostCleanup;
+    // Optional so existing tests that construct the controller directly keep working;
+    // notifications/emails are best-effort and never block the admin decision.
+    private readonly INotificationService? _notifications;
+    private readonly IEmailService? _email;
 
-    public AdminController(AppDbContext context, IGhostAccountCleanupService ghostCleanup)
+    public AdminController(
+        AppDbContext context,
+        IGhostAccountCleanupService ghostCleanup,
+        INotificationService? notifications = null,
+        IEmailService? email = null)
     {
         _context = context;
         _ghostCleanup = ghostCleanup;
+        _notifications = notifications;
+        _email = email;
     }
 
     // ── PLATFORM STATS ─────────────────────────────────────────
@@ -125,7 +137,19 @@ public class AdminController : ControllerBase
                 status = v.Status,
                 submittedDate = v.SubmittedDate,
                 reviewedByUserId = v.ReviewedByUserId,
-                reviewedDate = v.ReviewedDate
+                reviewedDate = v.ReviewedDate,
+                // Full NPO card so the admin can see who they're approving.
+                organizationName = v.Npo.OrganizationName,
+                npoRegNum = v.Npo.NporegNum,
+                focusArea = v.Npo.NpofocusArea,
+                mission = v.Npo.Npomission,
+                email = v.Npo.User.UserEmail,
+                contact = v.Npo.User.UserContact,
+                location = v.Npo.User.Location,
+                isVerified = v.Npo.User.IsVerified,
+                // Submitted supporting documents (relative /uploads URLs).
+                npoCertificate = v.Npocertificate,
+                npoTaxCertificate = v.NpotaxCertificate
             })
             .ToListAsync();
 
@@ -146,19 +170,20 @@ public class AdminController : ControllerBase
         v.ReviewedDate = DateTime.UtcNow;
 
         // mark related NPO's user as verified
-        var npo = await _context.Npos.FindAsync(v.NpoId);
-        if (npo != null)
-        {
-            var user = await _context.Users.FindAsync(npo.UserId);
-            if (user != null) user.IsVerified = true;
-        }
+        var npo = await _context.Npos.Include(n => n.User).FirstOrDefaultAsync(n => n.NpoId == v.NpoId);
+        if (npo?.User != null) npo.User.IsVerified = true;
 
         await _context.SaveChangesAsync();
+
+        // Let the NPO know — in-app notification + email (both best-effort).
+        if (npo?.User != null)
+            await NotifyNpoVerificationAsync(npo.User, npo.OrganizationName, approved: true, reason: null);
+
         return NoContent();
     }
 
     [HttpPut("verifications/{id}/reject")]
-    public async Task<IActionResult> RejectVerification(int id)
+    public async Task<IActionResult> RejectVerification(int id, [FromBody] RejectVerificationRequest? req = null)
     {
         var adminIdClaim = User.FindFirst(ClaimTypes.NameIdentifier)?.Value;
         var adminId = int.Parse(adminIdClaim!);
@@ -170,8 +195,53 @@ public class AdminController : ControllerBase
         v.ReviewedByUserId = adminId;
         v.ReviewedDate = DateTime.UtcNow;
 
+        var npo = await _context.Npos.Include(n => n.User).FirstOrDefaultAsync(n => n.NpoId == v.NpoId);
+
         await _context.SaveChangesAsync();
+
+        if (npo?.User != null)
+            await NotifyNpoVerificationAsync(npo.User, npo.OrganizationName, approved: false, reason: req?.Reason);
+
         return NoContent();
+    }
+
+    // Sends the NPO owner an in-app notification + email about their verification
+    // outcome. Best-effort: failures are swallowed so they never block the admin.
+    private async Task NotifyNpoVerificationAsync(Models.User user, string orgName, bool approved, string? reason)
+    {
+        var trimmedReason = string.IsNullOrWhiteSpace(reason) ? "" : $" Reason: {reason.Trim()}";
+
+        if (_notifications != null)
+        {
+            try
+            {
+                await _notifications.CreateAsync(
+                    user.UserId,
+                    approved ? "VerificationApproved" : "VerificationRejected",
+                    approved
+                        ? "Your NPO has been verified! You can now create fundraisers, post volunteer opportunities, apply to campaigns, donate, and withdraw funds."
+                        : $"Your NPO verification was not approved. Please review your documents and submit again.{trimmedReason}");
+            }
+            catch { /* notifications are non-critical */ }
+        }
+
+        if (_email != null && !string.IsNullOrWhiteSpace(user.UserEmail))
+        {
+            try
+            {
+                await _email.SendAsync(new EmailMessage
+                {
+                    ToEmail = user.UserEmail,
+                    Subject = approved
+                        ? "Your UbuntuConnect NPO is verified"
+                        : "Your UbuntuConnect NPO verification",
+                    Body = approved
+                        ? $"Good news! {orgName}'s verification has been approved. Your organization now has full access to create fundraisers, post volunteer opportunities, apply to partnership campaigns, donate, and withdraw funds.\n\n— UbuntuConnect"
+                        : $"Your verification for {orgName} could not be approved.{trimmedReason}\n\nPlease log in, review your submitted documents, and submit again.\n\n— UbuntuConnect"
+                });
+            }
+            catch { /* email is non-critical */ }
+        }
     }
 
     [HttpGet("transactions")]
@@ -226,4 +296,9 @@ public class AdminController : ControllerBase
             hardDeleted = result.HardDeleted
         });
     }
+}
+
+public class RejectVerificationRequest
+{
+    public string? Reason { get; set; }
 }

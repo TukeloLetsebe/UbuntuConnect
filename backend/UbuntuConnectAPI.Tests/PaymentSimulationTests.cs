@@ -144,7 +144,7 @@ public class PaymentSimulationTests
 
     private static TransactionController TransactionController(AppDbContext ctx, int userId, WalletLimitsOptions limits)
     {
-        var controller = new TransactionController(ctx, Options.Create(limits));
+        var controller = new TransactionController(ctx, new VerificationGate(ctx), Options.Create(limits));
         var identity = new ClaimsIdentity(new[] { new Claim(ClaimTypes.NameIdentifier, userId.ToString()) }, "test");
         controller.ControllerContext = new ControllerContext
         {

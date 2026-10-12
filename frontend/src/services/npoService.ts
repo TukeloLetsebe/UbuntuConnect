@@ -9,6 +9,7 @@ export interface NpoProfile {
   organizationName: string;
   npofocusArea: string | null;
   npomission: string | null;
+  isVerified?: boolean;
 }
 
 export interface PostItem {

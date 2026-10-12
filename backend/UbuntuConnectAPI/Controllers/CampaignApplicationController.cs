@@ -6,6 +6,8 @@ using System.Security.Claims;
 using UbuntuConnectAPI.Data;
 using UbuntuConnectAPI.DTOs.Requests;
 using UbuntuConnectAPI.Models;
+using UbuntuConnectAPI.Services.Verification;
+using UbuntuConnectAPI.Services.Notifications;
 
 namespace UbuntuConnectAPI.Controllers;
 
@@ -14,10 +16,23 @@ namespace UbuntuConnectAPI.Controllers;
 public class CampaignApplicationController : ControllerBase
 {
     private readonly AppDbContext _context;
+    private readonly IVerificationGate _gate;
+    // Optional so direct-construction tests keep working; best-effort only.
+    private readonly INotificationService? _notifications;
 
-    public CampaignApplicationController(AppDbContext context)
+    public CampaignApplicationController(AppDbContext context, IVerificationGate gate, INotificationService? notifications = null)
     {
         _context = context;
+        _gate = gate;
+        _notifications = notifications;
+    }
+
+    // Best-effort notification helper — never throws into the request flow.
+    private async Task NotifyAsync(int userId, string type, string message, int? relatedEntityId = null)
+    {
+        if (_notifications == null) return;
+        try { await _notifications.CreateAsync(userId, type, message, relatedEntityId); }
+        catch { /* notifications are non-critical */ }
     }
 
     // NPO applies to a campaign
@@ -28,10 +43,16 @@ public class CampaignApplicationController : ControllerBase
         var userIdClaim = User.FindFirst(ClaimTypes.NameIdentifier)?.Value;
         var userId = int.Parse(userIdClaim!);
 
+        // Only verified NPOs can apply to business partnership campaigns.
+        var gate = await _gate.CanTransactAsync(userId);
+        if (!gate.Allowed) return StatusCode(403, gate.Reason);
+
         var npo = await _context.Npos.FirstOrDefaultAsync(n => n.UserId == userId);
         if (npo == null) return BadRequest("No NPO profile linked to this account.");
 
-        var campaign = await _context.PartnershipCampaigns.FindAsync(campaignId);
+        var campaign = await _context.PartnershipCampaigns
+            .Include(c => c.Business)
+            .FirstOrDefaultAsync(c => c.CampaignId == campaignId);
         if (campaign == null) return NotFound("Campaign not found.");
 
         // A partnership application must include a reason/motivation.
@@ -53,6 +74,11 @@ public class CampaignApplicationController : ControllerBase
 
         _context.CampaignApplications.Add(app);
         await _context.SaveChangesAsync();
+
+        // Tell the Business a new NPO applied to their campaign.
+        if (campaign.Business != null)
+            await NotifyAsync(campaign.Business.UserId, "CampaignApplicationReceived",
+                $"{npo.OrganizationName} applied to your campaign \"{campaign.Title}\".", app.ApplicationId);
 
         return Ok(new { message = "Application submitted.", applicationId = app.ApplicationId });
     }
@@ -117,6 +143,8 @@ public class CampaignApplicationController : ControllerBase
         {
             app.Status = "Accepted";
             await _context.SaveChangesAsync();
+            await NotifyAsync(app.Npo.UserId, "CampaignApplicationAccepted",
+                $"Your application to \"{app.Campaign.Title}\" was accepted.", app.ApplicationId);
             return Ok(new { message = "Application accepted. No budget was set for this campaign, so no funds were transferred.", amountPaid = 0m });
         }
 
@@ -142,6 +170,8 @@ public class CampaignApplicationController : ControllerBase
             });
             app.Status = "Accepted";
             await _context.SaveChangesAsync();
+            await NotifyAsync(app.Npo.UserId, "CampaignApplicationAccepted",
+                $"Your application to \"{app.Campaign.Title}\" was accepted. The partner's contribution is pending.", app.ApplicationId);
             return BadRequest($"Application accepted, but your wallet balance (R {businessWallet.Balance}) is insufficient to fund the campaign budget (R {budget}). Please top up and the payment can be retried.");
         }
 
@@ -166,6 +196,9 @@ public class CampaignApplicationController : ControllerBase
 
             await _context.SaveChangesAsync();
             await dbTx.CommitAsync();
+
+            await NotifyAsync(app.Npo.UserId, "CampaignApplicationAccepted",
+                $"Your application to \"{app.Campaign.Title}\" was accepted and R {budget:0.##} was paid into your wallet.", app.ApplicationId);
 
             return Ok(new
             {
@@ -192,6 +225,7 @@ public class CampaignApplicationController : ControllerBase
         var app = await _context.CampaignApplications
             .Include(a => a.Campaign)
                 .ThenInclude(c => c.Business)
+            .Include(a => a.Npo)
             .FirstOrDefaultAsync(a => a.ApplicationId == id);
         if (app == null) return NotFound();
 
@@ -199,6 +233,10 @@ public class CampaignApplicationController : ControllerBase
 
         app.Status = "Rejected";
         await _context.SaveChangesAsync();
+
+        await NotifyAsync(app.Npo.UserId, "CampaignApplicationRejected",
+            $"Your application to \"{app.Campaign.Title}\" was not accepted this time.", app.ApplicationId);
+
         return NoContent();
     }
 }

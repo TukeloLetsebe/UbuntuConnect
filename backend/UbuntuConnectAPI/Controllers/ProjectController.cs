@@ -4,6 +4,7 @@ using Microsoft.EntityFrameworkCore;
 using System.Security.Claims;
 using UbuntuConnectAPI.Data;
 using UbuntuConnectAPI.Models;
+using UbuntuConnectAPI.Services.Verification;
 
 namespace UbuntuConnectAPI.Controllers;
 
@@ -12,10 +13,12 @@ namespace UbuntuConnectAPI.Controllers;
 public class ProjectController : ControllerBase
 {
     private readonly AppDbContext _context;
+    private readonly IVerificationGate _gate;
 
-    public ProjectController(AppDbContext context)
+    public ProjectController(AppDbContext context, IVerificationGate gate)
     {
         _context = context;
+        _gate = gate;
     }
 
     // Public — get all active projects
@@ -110,6 +113,10 @@ public class ProjectController : ControllerBase
     {
         var userIdClaim = User.FindFirst(ClaimTypes.NameIdentifier)?.Value;
         var userId = int.Parse(userIdClaim!);
+
+        // Only verified NPOs can create fundraisers (they solicit money).
+        var gate = await _gate.CanTransactAsync(userId);
+        if (!gate.Allowed) return StatusCode(403, gate.Reason);
 
         var npo = await _context.Npos.FirstOrDefaultAsync(n => n.UserId == userId);
         if (npo == null) return BadRequest("No NPO profile linked to this account.");

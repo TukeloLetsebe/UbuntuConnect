@@ -40,6 +40,16 @@ export interface VerificationItem {
   submittedDate: string;
   reviewedByUserId: number | null;
   reviewedDate: string | null;
+  organizationName: string;
+  npoRegNum: string;
+  focusArea: string | null;
+  mission: string | null;
+  email: string;
+  contact: string | null;
+  location: string | null;
+  isVerified: boolean;
+  npoCertificate: string | null;
+  npoTaxCertificate: string | null;
 }
 
 export interface TransactionItem {

@@ -4,6 +4,7 @@ using Microsoft.EntityFrameworkCore;
 using System.Security.Claims;
 using UbuntuConnectAPI.Data;
 using UbuntuConnectAPI.Models;
+using UbuntuConnectAPI.Services.Notifications;
 
 namespace UbuntuConnectAPI.Controllers;
 
@@ -12,10 +13,12 @@ namespace UbuntuConnectAPI.Controllers;
 public class CommentController : ControllerBase
 {
     private readonly AppDbContext _context;
+    private readonly INotificationService? _notifications;
 
-    public CommentController(AppDbContext context)
+    public CommentController(AppDbContext context, INotificationService? notifications = null)
     {
         _context = context;
+        _notifications = notifications;
     }
 
     // Get comments for a specific post
@@ -97,6 +100,20 @@ public class CommentController : ControllerBase
                 : user.Businesses.Any()
                     ? user.Businesses.First().ContactPersonName
                     : user.UserEmail;
+
+        // Best-effort: tell the post author about the new comment (skip self-comments).
+        if (_notifications != null && post.UserId != userId)
+        {
+            try
+            {
+                await _notifications.CreateAsync(
+                    post.UserId,
+                    "PostComment",
+                    $"{authorName} commented on your post \"{post.PostTitle}\".",
+                    post.PostId);
+            }
+            catch { /* notifications are non-critical */ }
+        }
 
         return CreatedAtAction(nameof(GetByPost), new { postId }, new
         {

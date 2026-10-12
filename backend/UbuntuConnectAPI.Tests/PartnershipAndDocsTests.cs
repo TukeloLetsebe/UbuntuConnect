@@ -5,6 +5,7 @@ using UbuntuConnectAPI.Controllers;
 using UbuntuConnectAPI.Data;
 using UbuntuConnectAPI.DTOs.Requests;
 using UbuntuConnectAPI.Models;
+using UbuntuConnectAPI.Services.Verification;
 using Xunit;
 
 namespace UbuntuConnectAPI.Tests;
@@ -74,7 +75,7 @@ public class PartnershipAndDocsTests
         using var ctx = TestDbContextFactory.Create();
         var npo = AddNpo(ctx, out var npoUser);
         var campaign = AddCampaign(ctx);
-        var controller = WithClaims(new CampaignApplicationController(ctx), npoUser.UserId, "NPO");
+        var controller = WithClaims(new CampaignApplicationController(ctx, new VerificationGate(ctx)), npoUser.UserId, "NPO");
 
         var result = await controller.Apply(campaign.CampaignId, new CampaignApplicationDto { Motivation = "   " });
 
@@ -88,7 +89,7 @@ public class PartnershipAndDocsTests
         using var ctx = TestDbContextFactory.Create();
         var npo = AddNpo(ctx, out var npoUser);
         var campaign = AddCampaign(ctx);
-        var controller = WithClaims(new CampaignApplicationController(ctx), npoUser.UserId, "NPO");
+        var controller = WithClaims(new CampaignApplicationController(ctx, new VerificationGate(ctx)), npoUser.UserId, "NPO");
 
         var result = await controller.Apply(campaign.CampaignId, new CampaignApplicationDto { Motivation = "We align on sustainability." });
 

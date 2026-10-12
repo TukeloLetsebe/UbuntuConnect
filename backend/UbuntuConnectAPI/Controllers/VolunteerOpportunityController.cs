@@ -5,6 +5,7 @@ using System.Security.Claims;
 using UbuntuConnectAPI.Data;
 using UbuntuConnectAPI.DTOs.Requests;
 using UbuntuConnectAPI.Models;
+using UbuntuConnectAPI.Services.Verification;
 
 namespace UbuntuConnectAPI.Controllers;
 
@@ -13,10 +14,12 @@ namespace UbuntuConnectAPI.Controllers;
 public class VolunteerOpportunityController : ControllerBase
 {
     private readonly AppDbContext _context;
+    private readonly IVerificationGate _gate;
 
-    public VolunteerOpportunityController(AppDbContext context)
+    public VolunteerOpportunityController(AppDbContext context, IVerificationGate gate)
     {
         _context = context;
+        _gate = gate;
     }
 
     // Public — Individuals browse these before applying (IndividualController depends on this data existing)
@@ -99,6 +102,10 @@ public class VolunteerOpportunityController : ControllerBase
     {
         var userIdClaim = User.FindFirst(ClaimTypes.NameIdentifier)?.Value;
         var userId = int.Parse(userIdClaim!);
+
+        // Only verified NPOs can post volunteer opportunities.
+        var gate = await _gate.CanTransactAsync(userId);
+        if (!gate.Allowed) return StatusCode(403, gate.Reason);
 
         var npo = await _context.Npos.FirstOrDefaultAsync(n => n.UserId == userId);
         if (npo == null) return BadRequest("No NPO profile linked to this account.");

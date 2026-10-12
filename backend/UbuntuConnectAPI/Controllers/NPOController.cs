@@ -181,7 +181,8 @@ public class NPOController : ControllerBase
                 nporegNum = n.NporegNum,
                 organizationName = n.OrganizationName,
                 npofocusArea = n.NpofocusArea,
-                npomission = n.Npomission
+                npomission = n.Npomission,
+                isVerified = n.User.IsVerified
             })
             .FirstOrDefaultAsync();
 
@@ -240,8 +241,8 @@ public class NPOController : ControllerBase
         var userIdClaim = User.FindFirst(ClaimTypes.NameIdentifier)?.Value;
         var userId = int.Parse(userIdClaim!);
 
-        var npoExists = await _context.Npos.AnyAsync(n => n.NpoId == npoId);
-        if (!npoExists) return NotFound("NPO not found.");
+        var targetNpo = await _context.Npos.FirstOrDefaultAsync(n => n.NpoId == npoId);
+        if (targetNpo == null) return NotFound("NPO not found.");
 
         // Prevent self-follow
         var myNpo = await _context.Npos.FirstOrDefaultAsync(n => n.UserId == userId);
@@ -254,6 +255,21 @@ public class NPOController : ControllerBase
 
         _context.Follows.Add(new Models.Follow { UserId = userId, NpoId = npoId, FollowDate = DateTime.UtcNow });
         await _context.SaveChangesAsync();
+
+        // Best-effort: tell the followed NPO they gained a follower.
+        if (_notifications != null)
+        {
+            try
+            {
+                var followerName = myNpo?.OrganizationName ?? "Another organization";
+                await _notifications.CreateAsync(
+                    targetNpo.UserId,
+                    "NewFollower",
+                    $"{followerName} started following your organization.");
+            }
+            catch { /* notifications are non-critical */ }
+        }
+
         return Ok(new { message = "Now following this NPO." });
     }
 
@@ -443,16 +459,25 @@ public class NPOController : ControllerBase
             await _context.SaveChangesAsync();
             await dbTx.CommitAsync();
 
-            // Best-effort notification to the NPO owner when the fundraiser just reached its goal.
-            if (targetReached && _notifications != null)
+            // Best-effort notifications to the NPO owner (never block the donation).
+            if (_notifications != null)
             {
                 try
                 {
+                    // Every donation: tell the NPO they received funds.
                     await _notifications.CreateAsync(
                         project.Npo.UserId,
-                        "FundraiserCompleted",
-                        $"Your fundraiser \"{project.ProjectName}\" reached its goal and has been marked completed.",
+                        "DonationReceived",
+                        $"You received a donation of R {dto.Amount:0.##} towards \"{project.ProjectName}\".",
                         project.ProjectId);
+
+                    // And when that donation tipped it over the goal.
+                    if (targetReached)
+                        await _notifications.CreateAsync(
+                            project.Npo.UserId,
+                            "FundraiserCompleted",
+                            $"Your fundraiser \"{project.ProjectName}\" reached its goal and has been marked completed.",
+                            project.ProjectId);
                 }
                 catch { /* notifications are non-critical */ }
             }
