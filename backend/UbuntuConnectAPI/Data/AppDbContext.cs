@@ -459,6 +459,7 @@ public partial class AppDbContext : DbContext
             entity.ToTable("Verification");
 
             entity.Property(e => e.NpoId).HasColumnName("NPO_Id");
+            entity.Property(e => e.BusinessId).HasColumnName("BusinessId");
             entity.Property(e => e.Npocertificate)
                 .HasMaxLength(500)
                 .HasColumnName("NPOCertificate");
@@ -475,7 +476,13 @@ public partial class AppDbContext : DbContext
 
             entity.HasOne(d => d.Npo).WithMany(p => p.Verifications)
                 .HasForeignKey(d => d.NpoId)
+                .OnDelete(DeleteBehavior.ClientSetNull)
                 .HasConstraintName("FK_Verification_NPO");
+
+            entity.HasOne(d => d.Business).WithMany(p => p.Verifications)
+                .HasForeignKey(d => d.BusinessId)
+                .OnDelete(DeleteBehavior.ClientSetNull)
+                .HasConstraintName("FK_Verification_Business");
 
             entity.HasOne(d => d.ReviewedByUser).WithMany(p => p.Verifications)
                 .HasForeignKey(d => d.ReviewedByUserId)

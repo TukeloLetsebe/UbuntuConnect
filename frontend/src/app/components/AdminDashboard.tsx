@@ -8,6 +8,7 @@ import AdminReportsPanel from "./reports/AdminReportsPanel";
 import { adminService, getErrorMessage, type PlatformStats, type UserItem, type VerificationItem, type TransactionItem, type KycSubmissionItem } from "../../services/adminService";
 import { moderationService, type ReportedPostItem } from "../../services/moderationService";
 import { resolveMediaUrl } from "../../lib/api";
+import { useConfirm } from "./ConfirmDialog";
 import { Button } from "./ui/button";
 import { Card } from "./ui/card";
 import { Badge } from "./ui/badge";
@@ -21,6 +22,7 @@ import {
 
 export default function AdminDashboard() {
   const { logout } = useAuth();
+  const confirm = useConfirm();
   const [activeTab, setActiveTab] = useState("overview");
   const [sidebarOpen, setSidebarOpen] = useState(false);
   const selectTab = (id: string) => { setActiveTab(id); setSidebarOpen(false); };
@@ -118,18 +120,43 @@ export default function AdminDashboard() {
   };
 
   const handleDeactivateUser = async (id: number) => {
-    if (!confirm("Deactivate this user?")) return;
+    const u = users.find(x => x.userId === id);
+    const ok = await confirm({
+      title: `Deactivate ${u?.email ?? "this user"}?`,
+      description: "They will be unable to log in until reactivated. Their data is preserved.",
+      confirmText: "Deactivate user",
+      destructive: true,
+    });
+    if (!ok) return;
     try { await adminService.deactivateUser(id); setUsers(p => p.map(u => u.userId === id ? { ...u, isActive: false } : u)); toast.success("User deactivated."); }
     catch (e) { toast.error(getErrorMessage(e)); }
   };
 
   const handleApproveVerification = async (id: number) => {
-    try { await adminService.approveVerification(id); setVerifications(p => p.map(v => v.verificationId === id ? { ...v, status: "Approved" } : v)); loadStats(); toast.success("Verification approved — NPO is now verified."); }
+    const v = verifications.find(x => x.verificationId === id);
+    const name = v?.organizationName ?? "this applicant";
+    const kind = v?.subjectType === "Business" ? "business" : "NPO";
+    const ok = await confirm({
+      title: `Approve ${name}?`,
+      description: `This marks the ${kind} as verified and unlocks their full access. They will be notified by email and in-app.`,
+      confirmText: "Approve & verify",
+    });
+    if (!ok) return;
+    try { await adminService.approveVerification(id); setVerifications(p => p.map(x => x.verificationId === id ? { ...x, status: "Approved", isVerified: true } : x)); loadStats(); toast.success(`${name} is now verified.`); }
     catch (e) { toast.error(getErrorMessage(e)); }
   };
 
   const handleRejectVerification = async (id: number) => {
-    try { await adminService.rejectVerification(id); setVerifications(p => p.map(v => v.verificationId === id ? { ...v, status: "Rejected" } : v)); loadStats(); toast.success("Verification rejected."); }
+    const v = verifications.find(x => x.verificationId === id);
+    const name = v?.organizationName ?? "this applicant";
+    const ok = await confirm({
+      title: `Reject ${name}'s verification?`,
+      description: `${name} will be notified that their verification was not approved and can submit again. This does not verify them.`,
+      confirmText: "Reject verification",
+      destructive: true,
+    });
+    if (!ok) return;
+    try { await adminService.rejectVerification(id); setVerifications(p => p.map(x => x.verificationId === id ? { ...x, status: "Rejected" } : x)); loadStats(); toast.success(`${name}'s verification rejected.`); }
     catch (e) { toast.error(getErrorMessage(e)); }
   };
 
@@ -139,7 +166,14 @@ export default function AdminDashboard() {
   };
 
   const handleRemoveReportedPost = async (reportId: number) => {
-    if (!confirm("Remove this post? The author will be notified.")) return;
+    const r = reports.find(x => x.reportId === reportId);
+    const ok = await confirm({
+      title: `Remove "${r?.post.postTitle ?? "this post"}"?`,
+      description: `The post will be taken down and ${r?.post.authorName ?? "the author"} will be notified it was removed for violating community guidelines.`,
+      confirmText: "Remove post",
+      destructive: true,
+    });
+    if (!ok) return;
     try { await moderationService.removePost(reportId); setReports(p => p.filter(r => r.reportId !== reportId)); toast.success("Post removed and author notified."); }
     catch (e) { toast.error(getErrorMessage(e)); }
   };
@@ -254,33 +288,33 @@ export default function AdminDashboard() {
                     <div className="flex flex-col lg:flex-row gap-6 justify-between">
                       <div className="flex-1 min-w-0">
                         <div className="flex items-center gap-3 flex-wrap">
-                          <h3 className="font-semibold text-lg">{v.organizationName || `NPO #${v.npoId}`}</h3>
+                          <h3 className="font-semibold text-lg">{v.organizationName}</h3>
+                          <Badge variant="outline">{v.subjectType}</Badge>
                           <Badge className={v.status === "Pending" ? "bg-yellow-100 text-yellow-700" : v.status === "Approved" ? "bg-green-100 text-green-700" : "bg-red-100 text-red-700"}>{v.status}</Badge>
                           {v.isVerified && <Badge className="bg-green-100 text-green-700"><CheckCircle className="w-3 h-3 mr-1" /> Verified</Badge>}
                         </div>
                         <div className="grid sm:grid-cols-2 gap-x-6 gap-y-1 mt-3 text-sm text-neutral-600">
-                          <p><span className="text-neutral-400">Reg No:</span> <span className="font-medium">{v.npoRegNum || "—"}</span></p>
-                          <p><span className="text-neutral-400">Focus:</span> <span className="font-medium">{v.focusArea || "—"}</span></p>
+                          <p><span className="text-neutral-400">Reg No:</span> <span className="font-medium">{v.regNum || "—"}</span></p>
+                          <p><span className="text-neutral-400">{v.subjectType === "Business" ? "Industry" : "Focus"}:</span> <span className="font-medium">{v.focusArea || "—"}</span></p>
                           <p><span className="text-neutral-400">Email:</span> <span className="font-medium break-all">{v.email || "—"}</span></p>
                           <p><span className="text-neutral-400">Phone:</span> <span className="font-medium">{v.contact || "—"}</span></p>
                           <p><span className="text-neutral-400">Location:</span> <span className="font-medium">{v.location || "—"}</span></p>
-                          <p><span className="text-neutral-400">NPO ID:</span> <span className="font-medium">#{v.npoId}</span></p>
                         </div>
-                        {v.mission && <p className="text-sm text-neutral-600 mt-2"><span className="text-neutral-400">Mission:</span> {v.mission}</p>}
+                        {v.mission && <p className="text-sm text-neutral-600 mt-2"><span className="text-neutral-400">{v.subjectType === "Business" ? "CSR goal" : "Mission"}:</span> {v.mission}</p>}
                         <p className="text-xs text-neutral-400 mt-2">Submitted {new Date(v.submittedDate).toLocaleDateString()}{v.reviewedDate ? ` · Reviewed ${new Date(v.reviewedDate).toLocaleDateString()}` : ""}</p>
 
                         {/* Supporting documents */}
                         <div className="flex flex-wrap gap-3 mt-4">
-                          {v.npoCertificate ? (
-                            <a href={resolveMediaUrl(v.npoCertificate)} target="_blank" rel="noreferrer" className="inline-flex items-center gap-2 px-3 py-2 rounded-md border border-neutral-200 text-sm text-purple-700 hover:bg-purple-50">
-                              <FileText className="w-4 h-4" /> NPO Certificate
+                          {v.document1 ? (
+                            <a href={resolveMediaUrl(v.document1)} target="_blank" rel="noreferrer" className="inline-flex items-center gap-2 px-3 py-2 rounded-md border border-neutral-200 text-sm text-purple-700 hover:bg-purple-50">
+                              <FileText className="w-4 h-4" /> {v.subjectType === "Business" ? "CIPC Document" : "NPO Certificate"}
                             </a>
-                          ) : <span className="inline-flex items-center gap-2 px-3 py-2 rounded-md border border-dashed border-neutral-200 text-sm text-neutral-400"><FileText className="w-4 h-4" /> No NPO certificate</span>}
-                          {v.npoTaxCertificate ? (
-                            <a href={resolveMediaUrl(v.npoTaxCertificate)} target="_blank" rel="noreferrer" className="inline-flex items-center gap-2 px-3 py-2 rounded-md border border-neutral-200 text-sm text-purple-700 hover:bg-purple-50">
-                              <FileText className="w-4 h-4" /> Tax Certificate
+                          ) : <span className="inline-flex items-center gap-2 px-3 py-2 rounded-md border border-dashed border-neutral-200 text-sm text-neutral-400"><FileText className="w-4 h-4" /> No {v.subjectType === "Business" ? "CIPC document" : "NPO certificate"}</span>}
+                          {v.document2 ? (
+                            <a href={resolveMediaUrl(v.document2)} target="_blank" rel="noreferrer" className="inline-flex items-center gap-2 px-3 py-2 rounded-md border border-neutral-200 text-sm text-purple-700 hover:bg-purple-50">
+                              <FileText className="w-4 h-4" /> Tax {v.subjectType === "Business" ? "Clearance" : "Certificate"}
                             </a>
-                          ) : <span className="inline-flex items-center gap-2 px-3 py-2 rounded-md border border-dashed border-neutral-200 text-sm text-neutral-400"><FileText className="w-4 h-4" /> No tax certificate</span>}
+                          ) : <span className="inline-flex items-center gap-2 px-3 py-2 rounded-md border border-dashed border-neutral-200 text-sm text-neutral-400"><FileText className="w-4 h-4" /> No tax {v.subjectType === "Business" ? "clearance" : "certificate"}</span>}
                         </div>
                       </div>
                       {v.status === "Pending" && (
@@ -336,7 +370,7 @@ export default function AdminDashboard() {
                         {r.post.content && <p className="text-neutral-600 text-sm mb-2 line-clamp-3">{r.post.content}</p>}
                         {r.post.mediaUrl && <img src={resolveMediaUrl(r.post.mediaUrl)} alt="" className="max-h-40 rounded-md border border-neutral-200 object-cover mb-2" />}
                         <p className="text-sm mt-2"><span className="font-medium text-neutral-700">Reason:</span> <span className="text-neutral-600">{r.reason}</span></p>
-                        <p className="text-xs text-neutral-400 mt-1">Reported by user #{r.reporterUserId} · Post by user #{r.post.authorUserId} · Post status: {r.post.activityStatus}</p>
+                        <p className="text-xs text-neutral-400 mt-1">Reported by {r.reporterName ?? `user #${r.reporterUserId}`} · Post by {r.post.authorName ?? `user #${r.post.authorUserId}`} · Post status: {r.post.activityStatus}</p>
                       </div>
                       <div className="flex flex-col gap-2 shrink-0">
                         <Button size="sm" variant="outline" onClick={() => handleDismissReport(r.reportId)}><CheckCircle className="w-4 h-4 mr-1" /> Dismiss</Button>
@@ -359,7 +393,7 @@ export default function AdminDashboard() {
                         <div className={`w-10 h-10 rounded-full flex items-center justify-center ${t.transactionType === "Donation" ? "bg-green-100" : t.transactionType === "TopUp" ? "bg-blue-100" : "bg-orange-100"}`}>
                           <DollarSign className={`w-5 h-5 ${t.transactionType === "Donation" ? "text-green-600" : t.transactionType === "TopUp" ? "text-blue-600" : "text-orange-600"}`} />
                         </div>
-                        <div><p className="font-medium">R {t.amount.toLocaleString()}</p><p className="text-xs text-neutral-500">{t.transactionType} • {new Date(t.timestamp).toLocaleString()}</p>{t.senderUserId && <p className="text-xs text-neutral-500">From User #{t.senderUserId} → User #{t.receiverUserId}</p>}</div>
+                        <div><p className="font-medium">R {t.amount.toLocaleString()}</p><p className="text-xs text-neutral-500">{t.transactionType} • {new Date(t.timestamp).toLocaleString()}</p>{(t.senderName || t.receiverName) && <p className="text-xs text-neutral-500">{t.senderName ?? "External"} → {t.receiverName ?? "External"}</p>}</div>
                       </div>
                       <Badge className={t.status === "Completed" ? "bg-green-100 text-green-700" : t.status === "Failed" ? "bg-red-100 text-red-700" : "bg-yellow-100 text-yellow-700"}>{t.status}</Badge>
                     </div>

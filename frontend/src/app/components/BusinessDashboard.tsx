@@ -7,6 +7,10 @@ import NotificationBell from "./NotificationBell";
 import EmailVerificationBanner from "./EmailVerificationBanner";
 import ReportPostButton from "./ReportPostButton";
 import CardPaymentFields, { type CardDetails, emptyCard } from "./CardPaymentFields";
+import DocumentUploadField from "./DocumentUploadField";
+import { useConfirm } from "./ConfirmDialog";
+import { getNpoColor } from "../../lib/npoColor";
+import type { BusinessVerificationItem } from "../../services/businessService";
 import ImageUploadField from "./ImageUploadField";
 import ImageCropField from "./ImageCropField";
 import PostDetailModal from "./PostDetailModal";
@@ -26,11 +30,12 @@ import {
   Search, Heart, TrendingUp, LogOut, DollarSign, Users, Plus, X,
   Building2, Target, MessageSquare, Loader2, RefreshCw, Wallet,
   Calendar, FileText, CheckCircle, AlertCircle, Eye, UserCheck, Ban,
-  ArrowUpFromLine, Send, Trash2, Edit, Menu, MapPin
+  ArrowUpFromLine, Send, Trash2, Edit, Menu, MapPin, Settings, Shield, Clock, Upload
 } from "lucide-react";
 
 export default function BusinessDashboard() {
   const { logout, userId } = useAuth();
+  const confirm = useConfirm();
   const navigate = useNavigate();
   const [activeTab, setActiveTab] = useState("overview");
   const [sidebarOpen, setSidebarOpen] = useState(false);
@@ -87,6 +92,24 @@ export default function BusinessDashboard() {
   const [topUpAmount, setTopUpAmount] = useState("");
   const [topUpCard, setTopUpCard] = useState<CardDetails>(emptyCard);
   const [toppingUp, setToppingUp] = useState(false);
+  const [topUpError, setTopUpError] = useState<string | null>(null);
+  const [transactions, setTransactions] = useState<{ transactionId: number; type: string; direction: string; amount: number; status: string; timestamp: string; counterpartyName: string }[]>([]);
+
+  // Verification (CIPC + tax clearance)
+  const [verifications, setVerifications] = useState<BusinessVerificationItem[]>([]);
+  const [verificationLoading, setVerificationLoading] = useState(false);
+  const [showVerificationForm, setShowVerificationForm] = useState(false);
+  const [cipcUrl, setCipcUrl] = useState<string | null>(null);
+  const [taxClearanceUrl, setTaxClearanceUrl] = useState<string | null>(null);
+
+  // Account security
+  const [currentPassword, setCurrentPassword] = useState("");
+  const [newPassword, setNewPassword] = useState("");
+  const [confirmPassword, setConfirmPassword] = useState("");
+  const [passwordChanging, setPasswordChanging] = useState(false);
+  const [passwordError, setPasswordError] = useState<string | null>(null);
+  const [deactivatePassword, setDeactivatePassword] = useState("");
+  const [deactivating, setDeactivating] = useState(false);
   const [showDonateModal, setShowDonateModal] = useState(false);
   const [donateNpoId, setDonateNpoId] = useState<number | null>(null);
   const [donateAmount, setDonateAmount] = useState("");
@@ -147,8 +170,14 @@ export default function BusinessDashboard() {
   const loadWallet = useCallback(async () => {
     if (!userId) return;
     setWalletLoading(true);
-    try { const r = await businessService.getWalletBalance(userId); setWalletBalance(r.data.balance); }
-    catch {} finally { setWalletLoading(false); }
+    try {
+      const [b, t] = await Promise.all([
+        businessService.getWalletBalance(userId),
+        businessService.getTransactions(),
+      ]);
+      setWalletBalance(b.data.balance);
+      setTransactions(t.data.transactions);
+    } catch { /* non-critical */ } finally { setWalletLoading(false); }
   }, [userId]);
 
   const loadNPOs = useCallback(async () => {
@@ -198,6 +227,13 @@ export default function BusinessDashboard() {
     } catch { /* non-critical slider */ }
   }, []);
 
+  const loadVerification = useCallback(async () => {
+    setVerificationLoading(true);
+    try { const r = await businessService.getMyVerificationStatus(); setVerifications(r.data); }
+    catch (e) { toast.error(getErrorMessage(e)); }
+    finally { setVerificationLoading(false); }
+  }, []);
+
   useEffect(() => { loadProfile(); loadWallet(); loadImpact(); }, [loadProfile, loadWallet, loadImpact]);
   useEffect(() => {
     if (activeTab === "overview") loadOverviewSlider();
@@ -205,8 +241,9 @@ export default function BusinessDashboard() {
     if (activeTab === "campaigns") loadCampaigns();
     if (activeTab === "donations") loadDonations();
     if (activeTab === "community") loadCommunity();
+    if (activeTab === "verification") loadVerification();
     if (activeTab === "editprofile") seedEditProfile();
-  }, [activeTab, loadOverviewSlider, loadNPOs, loadCampaigns, loadDonations, loadCommunity, seedEditProfile]);
+  }, [activeTab, loadOverviewSlider, loadNPOs, loadCampaigns, loadDonations, loadCommunity, loadVerification, seedEditProfile]);
 
   // ═══ HANDLERS ═══
   const handleViewDocs = async (npoId: number, name: string) => {
@@ -233,8 +270,15 @@ export default function BusinessDashboard() {
   const handleDonate = async (e: React.FormEvent) => {
     e.preventDefault();
     const amt = parseFloat(donateAmount);
-    if (!amt || amt <= 0 || !donateNpoId) { toast.error("Enter a valid amount."); return; }
-    if (amt > walletBalance) { toast.error("Insufficient balance. Top up first."); return; }
+    if (!amt || amt <= 0 || !donateNpoId) { toast.error("Enter a valid donation amount greater than R 0."); return; }
+    if (amt > walletBalance) { toast.error(`Insufficient balance. Your wallet has R ${walletBalance.toLocaleString()}; top up to donate R ${amt.toLocaleString()}.`); return; }
+    const npoName = npos.find(n => n.npoId === donateNpoId)?.organizationName ?? "this NPO";
+    const ok = await confirm({
+      title: `Donate R ${amt.toLocaleString()} to ${npoName}?`,
+      description: `R ${amt.toLocaleString()} will be transferred from your wallet to ${npoName}. This cannot be undone.`,
+      confirmText: `Donate R ${amt.toLocaleString()}`,
+    });
+    if (!ok) return;
     setDonating(true);
     try {
       const r = await businessService.donate(donateNpoId, amt);
@@ -248,9 +292,19 @@ export default function BusinessDashboard() {
   const handleTopUp = async (e: React.FormEvent) => {
     e.preventDefault();
     const amt = parseFloat(topUpAmount);
-    if (!amt || amt <= 0) { toast.error("Enter a valid amount."); return; }
-    // Simulated card — no validation; any entered number is accepted.
+    if (!amt || amt <= 0) { toast.error("Enter a valid top-up amount greater than R 0."); return; }
+    // Card fields are required; the server validates the card shape (Luhn/expiry/CVV).
+    if (!topUpCard.cardNumber) { setTopUpError("Please enter your card number."); return; }
+    if (!topUpCard.cardExpiry) { setTopUpError("Please enter the card expiry date (MM/YY)."); return; }
+    if (!topUpCard.cardCvv) { setTopUpError("Please enter the card CVV (the 3–4 digit code)."); return; }
+    const ok = await confirm({
+      title: `Top up R ${amt.toLocaleString()}?`,
+      description: `R ${amt.toLocaleString()} will be added to your wallet using the card ending ${topUpCard.cardNumber.replace(/\D/g, "").slice(-4) || "••••"}.`,
+      confirmText: `Top up R ${amt.toLocaleString()}`,
+    });
+    if (!ok) return;
     setToppingUp(true);
+    setTopUpError(null);
     try {
       const r = await businessService.topUp(amt, {
         cardNumber: topUpCard.cardNumber,
@@ -259,9 +313,53 @@ export default function BusinessDashboard() {
       });
       setWalletBalance(r.data.newBalance);
       setShowTopUp(false); setTopUpAmount(""); setTopUpCard(emptyCard);
-      toast.success(`R ${amt.toLocaleString()} added to wallet!`);
-    } catch (e) { toast.error(getErrorMessage(e)); }
+      toast.success(`R ${amt.toLocaleString()} added to wallet. New balance: R ${r.data.newBalance.toLocaleString()}.`);
+    } catch (e) { const m = getErrorMessage(e); setTopUpError(m); toast.error(m); }
     finally { setToppingUp(false); }
+  };
+
+  const handleSubmitVerification = async (e: React.FormEvent) => {
+    e.preventDefault();
+    if (!cipcUrl && !taxClearanceUrl) { toast.error("Please upload at least one document — your CIPC registration document or tax clearance certificate."); return; }
+    try {
+      await businessService.submitVerification({ cipcDocument: cipcUrl || undefined, taxClearance: taxClearanceUrl || undefined });
+      setShowVerificationForm(false); setCipcUrl(null); setTaxClearanceUrl(null);
+      loadVerification();
+      toast.success("Documents submitted for verification. An admin will review them shortly.");
+    } catch (e) { toast.error(getErrorMessage(e)); }
+  };
+
+  const handleChangePassword = async (e: React.FormEvent) => {
+    e.preventDefault();
+    setPasswordError(null);
+    if (newPassword.length < 8) { setPasswordError("New password must be at least 8 characters."); return; }
+    if (newPassword !== confirmPassword) { setPasswordError("New password and confirmation do not match."); return; }
+    setPasswordChanging(true);
+    try {
+      await businessService.changePassword(currentPassword, newPassword);
+      toast.success("Password changed successfully.");
+      setCurrentPassword(""); setNewPassword(""); setConfirmPassword(""); setPasswordError(null);
+    } catch (e) { const m = getErrorMessage(e); setPasswordError(m); }
+    finally { setPasswordChanging(false); }
+  };
+
+  const handleDeactivateAccount = async (e: React.FormEvent) => {
+    e.preventDefault();
+    if (!deactivatePassword) { toast.error("Enter your password to confirm deactivation."); return; }
+    const ok = await confirm({
+      title: "Deactivate your business account?",
+      description: "You will be signed out and won't be able to log in until an admin reactivates the account. Your data is preserved.",
+      confirmText: "Deactivate account",
+      destructive: true,
+    });
+    if (!ok) return;
+    setDeactivating(true);
+    try {
+      await businessService.deactivateAccount(deactivatePassword);
+      toast.success("Your account has been deactivated.");
+      logout();
+    } catch (e) { toast.error(getErrorMessage(e)); }
+    finally { setDeactivating(false); }
   };
 
   const handleCreateCampaign = async (e: React.FormEvent) => {
@@ -322,12 +420,32 @@ export default function BusinessDashboard() {
   };
 
   const handleApproveApp = async (id: number) => {
-    try { await businessService.approveApplication(id); setCampaignApps(p => p.map(a => a.applicationId === id ? { ...a, status: "Accepted" } : a)); toast.success("Approved!"); }
+    const app = campaignApps.find(a => a.applicationId === id);
+    const npoName = app?.organizationName ?? "this NPO";
+    const budget = selectedCampaign?.budgetPerPartner;
+    const ok = await confirm({
+      title: `Approve ${npoName}'s application?`,
+      description: budget && budget > 0
+        ? `Approving pays R ${budget.toLocaleString()} from your wallet to ${npoName}, and accepts them as a campaign partner. This cannot be undone.`
+        : `This accepts ${npoName} as a partner on "${selectedCampaign?.title ?? "this campaign"}". No budget is set, so no funds will move.`,
+      confirmText: budget && budget > 0 ? `Approve & pay R ${budget.toLocaleString()}` : "Approve",
+    });
+    if (!ok) return;
+    try { await businessService.approveApplication(id); setCampaignApps(p => p.map(a => a.applicationId === id ? { ...a, status: "Accepted" } : a)); toast.success(`${npoName} approved.`); }
     catch (e) { toast.error(getErrorMessage(e)); }
   };
 
   const handleRejectApp = async (id: number) => {
-    try { await businessService.rejectApplication(id); setCampaignApps(p => p.map(a => a.applicationId === id ? { ...a, status: "Rejected" } : a)); toast.success("Rejected."); }
+    const app = campaignApps.find(a => a.applicationId === id);
+    const npoName = app?.organizationName ?? "this NPO";
+    const ok = await confirm({
+      title: `Reject ${npoName}'s application?`,
+      description: `${npoName} will be notified that their application to "${selectedCampaign?.title ?? "this campaign"}" was not accepted.`,
+      confirmText: "Reject application",
+      destructive: true,
+    });
+    if (!ok) return;
+    try { await businessService.rejectApplication(id); setCampaignApps(p => p.map(a => a.applicationId === id ? { ...a, status: "Rejected" } : a)); toast.success(`${npoName}'s application rejected.`); }
     catch (e) { toast.error(getErrorMessage(e)); }
   };
 
@@ -407,14 +525,15 @@ export default function BusinessDashboard() {
           <nav className="space-y-2">
             {[
               { id: "overview", icon: TrendingUp, label: "Overview" },
-              { id: "editprofile", icon: Edit, label: "Edit Profile" },
               { id: "discover", icon: Search, label: "Discover NPOs" },
               { id: "following", icon: Heart, label: "Following" },
               { id: "campaigns", icon: Target, label: "Campaigns" },
               { id: "donations", icon: DollarSign, label: "Donations" },
               { id: "wallet", icon: Wallet, label: "Wallet" },
               { id: "community", icon: MessageSquare, label: "Community Feed" },
+              { id: "verification", icon: Shield, label: "Verification" },
               { id: "reports", icon: TrendingUp, label: "Reports" },
+              { id: "editprofile", icon: Settings, label: "Profile Settings" },
             ].map(item => (
               <button key={item.id} onClick={() => selectTab(item.id)} className={`w-full flex items-center gap-3 px-4 py-2 rounded-lg transition-colors ${activeTab === item.id ? "bg-orange-50 text-orange-600" : "text-neutral-600 hover:bg-neutral-50"}`}><item.icon className="w-5 h-5" /> {item.label}</button>
             ))}
@@ -487,13 +606,14 @@ export default function BusinessDashboard() {
               )}
             </div>)}
 
-            {/* EDIT PROFILE */}
+            {/* PROFILE SETTINGS */}
             {activeTab === "editprofile" && (<div className="max-w-2xl">
-              <div className="mb-8"><h1 className="text-2xl font-bold mb-2">Edit Profile</h1><p className="text-neutral-600">Manage how your business appears across the platform.</p></div>
+              <div className="mb-8"><h1 className="text-2xl font-bold mb-2">Profile Settings</h1><p className="text-neutral-600">Manage how your business appears and your account security.</p></div>
               <form onSubmit={handleSaveProfile} className="space-y-6">
                 <Card className="p-6 space-y-5">
                   <ImageCropField label="Banner / Cover Image" value={editBackgroundImage} onChange={setEditBackgroundImage} aspect={16 / 5} rounded="lg" disabled={savingProfile} />
                   <ImageCropField label="Profile Picture / Logo" value={editProfileImage} onChange={setEditProfileImage} aspect={1} rounded="full" disabled={savingProfile} />
+                  <div><Label>Email Address</Label><Input type="email" value={profile?.email || ""} className="mt-1 bg-neutral-100" readOnly /><p className="text-xs text-neutral-500 mt-1">Email cannot be changed.</p></div>
                   <div><Label>Bio</Label><Textarea value={editBio} onChange={e => setEditBio(e.target.value)} rows={4} placeholder="Tell NPOs about your business..." className="mt-1" maxLength={1000} disabled={savingProfile} /></div>
                   <div className="grid grid-cols-2 gap-4">
                     <div><Label>Industry</Label><Input value={editIndustry} onChange={e => setEditIndustry(e.target.value)} className="mt-1" disabled={savingProfile} /></div>
@@ -503,9 +623,37 @@ export default function BusinessDashboard() {
                     <div><Label>Contact Person</Label><Input value={editContactName} onChange={e => setEditContactName(e.target.value)} className="mt-1" disabled={savingProfile} /></div>
                     <div><Label>Contact Title</Label><Input value={editContactTitle} onChange={e => setEditContactTitle(e.target.value)} className="mt-1" disabled={savingProfile} /></div>
                   </div>
+                  <Button type="submit" className="bg-orange-600 hover:bg-orange-700" disabled={savingProfile}>{savingProfile && <Loader2 className="w-4 h-4 mr-2 animate-spin" />}Save Changes</Button>
                 </Card>
-                <Button type="submit" className="bg-orange-600 hover:bg-orange-700" disabled={savingProfile}>{savingProfile && <Loader2 className="w-4 h-4 mr-2 animate-spin" />}Save Changes</Button>
               </form>
+
+              {/* Change password */}
+              <Card className="p-6 mt-6">
+                <h3 className="font-semibold mb-4">Change Password</h3>
+                <form className="space-y-4" onSubmit={handleChangePassword}>
+                  <div><Label>Current Password</Label><Input type="password" value={currentPassword} onChange={e => setCurrentPassword(e.target.value)} className="mt-1" required /></div>
+                  <div><Label>New Password</Label><Input type="password" value={newPassword} onChange={e => setNewPassword(e.target.value)} className="mt-1" required /><p className="text-xs text-neutral-500 mt-1">Must be at least 8 characters.</p></div>
+                  <div><Label>Confirm New Password</Label><Input type="password" value={confirmPassword} onChange={e => setConfirmPassword(e.target.value)} className="mt-1" required /></div>
+                  {passwordError && <p className="text-sm text-red-600">{passwordError}</p>}
+                  <Button type="submit" variant="outline" disabled={passwordChanging}>{passwordChanging && <Loader2 className="w-4 h-4 mr-2 animate-spin" />}Change Password</Button>
+                </form>
+              </Card>
+
+              {/* Deactivate account */}
+              <Card className="p-6 mt-6 border-red-200 bg-red-50">
+                <h3 className="font-semibold mb-4 text-red-900">Deactivate Account</h3>
+                <p className="text-red-800 text-sm mb-4">Deactivating prevents you from logging in. Your data is preserved; contact support to reactivate.</p>
+                <form className="space-y-4" onSubmit={handleDeactivateAccount}>
+                  <div><Label className="text-red-900">Confirm your password</Label><Input type="password" value={deactivatePassword} onChange={e => setDeactivatePassword(e.target.value)} placeholder="Enter your password" className="mt-1" required /></div>
+                  <Button type="submit" variant="outline" className="text-red-600 border-red-600 hover:bg-red-100" disabled={deactivating}>{deactivating && <Loader2 className="w-4 h-4 mr-2 animate-spin" />}Deactivate My Account</Button>
+                </form>
+              </Card>
+            </div>)}
+
+            {/* VERIFICATION */}
+            {activeTab === "verification" && (<div>
+              <div className="flex items-center justify-between mb-8"><div><h1 className="text-2xl font-bold mb-2">Verification</h1><p className="text-neutral-600">Verify your business with your CIPC registration and tax clearance.</p></div><Button className="bg-orange-600 hover:bg-orange-700" onClick={() => setShowVerificationForm(true)}><Upload className="w-4 h-4 mr-2" /> Submit</Button></div>
+              {verificationLoading ? <div className="flex justify-center py-12"><Loader2 className="w-8 h-8 animate-spin" /></div> : verifications.length === 0 ? <Card className="p-12 text-center"><Shield className="w-12 h-12 text-neutral-400 mx-auto mb-3" /><p className="text-neutral-600 mb-4">Not verified yet. Submit your documents to get the verified badge and build trust with NPOs.</p><Button onClick={() => setShowVerificationForm(true)}>Start</Button></Card> : <div className="space-y-4">{verifications.map(v => (<Card key={v.verificationId} className="p-6"><div className="flex justify-between"><div><div className="flex items-center gap-3 mb-1"><h3 className="font-semibold">Request #{v.verificationId}</h3><Badge className={v.status === "Approved" ? "bg-green-100 text-green-700" : v.status === "Rejected" ? "bg-red-100 text-red-700" : "bg-amber-100 text-amber-700"}>{v.status}</Badge></div><p className="text-sm text-neutral-600">Submitted: {new Date(v.submittedDate).toLocaleDateString()}</p></div>{v.status === "Approved" ? <CheckCircle className="w-8 h-8 text-green-600" /> : v.status === "Pending" ? <Clock className="w-8 h-8 text-amber-600" /> : <AlertCircle className="w-8 h-8 text-red-600" />}</div></Card>))}</div>}
             </div>)}
 
             {/* DISCOVER NPOs */}
@@ -553,9 +701,9 @@ export default function BusinessDashboard() {
                 <p className="text-sm text-neutral-600">Showing {filteredNpos.length} organization{filteredNpos.length !== 1 ? "s" : ""}</p>
               </div>
               {nposLoading ? <div className="flex justify-center py-12"><Loader2 className="w-8 h-8 animate-spin text-orange-600" /></div> : filteredNpos.length === 0 ? <Card className="p-12 text-center"><p className="text-neutral-600">No NPOs found.</p></Card> : (
-                <div className="grid md:grid-cols-2 lg:grid-cols-3 gap-6">{filteredNpos.map(npo => (
+                <div className="grid md:grid-cols-2 gap-6">{filteredNpos.map(npo => (
                   <Card key={npo.npoId} className="overflow-hidden hover:shadow-lg transition-shadow cursor-pointer" onClick={() => navigate(`/npo/${npo.npoId}`)}>
-                    <div className="h-40 bg-gradient-to-br from-orange-400 to-orange-600 flex items-center justify-center overflow-hidden">
+                    <div className={`h-40 bg-gradient-to-br ${getNpoColor(npo.organizationName)} flex items-center justify-center overflow-hidden`}>
                       {npo.profileImage
                         ? <img src={resolveMediaUrl(npo.profileImage)} alt={npo.organizationName} className="w-full h-full object-cover" onError={(e) => { (e.currentTarget as HTMLImageElement).style.display = "none"; }} />
                         : <span className="text-5xl font-bold text-white/80">{npo.organizationName.charAt(0).toUpperCase()}</span>}
@@ -585,9 +733,9 @@ export default function BusinessDashboard() {
             {activeTab === "following" && (<div>
               <h1 className="text-2xl font-bold mb-6">Following</h1>
               {followedNpos.length === 0 ? <Card className="p-12 text-center"><p className="text-neutral-600">You're not following any NPOs yet.</p><Button onClick={() => setActiveTab("discover")} className="mt-4">Discover NPOs</Button></Card> : (
-                <div className="grid md:grid-cols-2 lg:grid-cols-3 gap-6">{followedNpos.map(npo => (
+                <div className="grid md:grid-cols-2 gap-6">{followedNpos.map(npo => (
                   <Card key={npo.npoId} className="overflow-hidden hover:shadow-lg transition-shadow cursor-pointer" onClick={() => navigate(`/npo/${npo.npoId}`)}>
-                    <div className="h-40 bg-gradient-to-br from-orange-400 to-orange-600 flex items-center justify-center overflow-hidden">
+                    <div className={`h-40 bg-gradient-to-br ${getNpoColor(npo.organizationName)} flex items-center justify-center overflow-hidden`}>
                       {npo.profileImage
                         ? <img src={resolveMediaUrl(npo.profileImage)} alt={npo.organizationName} className="w-full h-full object-cover" onError={(e) => { (e.currentTarget as HTMLImageElement).style.display = "none"; }} />
                         : <span className="text-5xl font-bold text-white/80">{npo.organizationName.charAt(0).toUpperCase()}</span>}
@@ -633,7 +781,7 @@ export default function BusinessDashboard() {
                 <div className="flex justify-between items-center mb-4"><h2 className="text-xl font-bold">Applications for: {selectedCampaign.title}</h2><Button variant="ghost" size="sm" onClick={() => setSelectedCampaign(null)}><X className="w-4 h-4" /></Button></div>
                 {appsLoading ? <div className="flex justify-center py-8"><Loader2 className="w-6 h-6 animate-spin" /></div> : campaignApps.length === 0 ? <p className="text-neutral-600 text-center py-8">No applications yet.</p> : (
                   <div className="space-y-3">{campaignApps.map(app => (
-                    <Card key={app.applicationId} className="p-4"><div className="flex items-center justify-between"><div><p className="font-medium">NPO #{app.npoId}</p>{app.motivation && <p className="text-sm text-neutral-600 mt-1">{app.motivation}</p>}<p className="text-xs text-neutral-500 mt-1">{new Date(app.applicationDate).toLocaleDateString()}</p></div><div className="flex items-center gap-2">{app.status === "Pending" ? (<><Button size="sm" className="bg-green-600 hover:bg-green-700" onClick={() => handleApproveApp(app.applicationId)}><CheckCircle className="w-4 h-4" /></Button><Button size="sm" variant="outline" className="text-red-600" onClick={() => handleRejectApp(app.applicationId)}><Ban className="w-4 h-4" /></Button></>) : <Badge className={app.status === "Accepted" ? "bg-green-100 text-green-700" : "bg-red-100 text-red-700"}>{app.status}</Badge>}</div></div></Card>
+                    <Card key={app.applicationId} className="p-4"><div className="flex items-center justify-between gap-4"><div className="min-w-0"><div className="flex items-center gap-2"><button onClick={() => navigate(`/npo/${app.npoId}`)} className="font-medium text-orange-600 hover:underline truncate" title="View NPO profile">{app.organizationName || `NPO #${app.npoId}`}</button>{app.isVerified && <CheckCircle className="w-4 h-4 text-green-600 shrink-0" />}{app.focusArea && <Badge variant="outline" className="shrink-0">{app.focusArea}</Badge>}</div>{app.motivation && <p className="text-sm text-neutral-600 mt-1">{app.motivation}</p>}<p className="text-xs text-neutral-500 mt-1">Applied {new Date(app.applicationDate).toLocaleDateString()}</p><Button variant="link" size="sm" className="h-auto p-0 mt-1 text-orange-600" onClick={() => navigate(`/npo/${app.npoId}`)}><Eye className="w-3.5 h-3.5 mr-1" /> View profile</Button></div><div className="flex items-center gap-2 shrink-0">{app.status === "Pending" ? (<><Button size="sm" className="bg-green-600 hover:bg-green-700" onClick={() => handleApproveApp(app.applicationId)}><CheckCircle className="w-4 h-4" /></Button><Button size="sm" variant="outline" className="text-red-600" onClick={() => handleRejectApp(app.applicationId)}><Ban className="w-4 h-4" /></Button></>) : <Badge className={app.status === "Accepted" ? "bg-green-100 text-green-700" : "bg-red-100 text-red-700"}>{app.status}</Badge>}</div></div></Card>
                   ))}</div>
                 )}
               </Card></div>)}
@@ -654,8 +802,15 @@ export default function BusinessDashboard() {
 
             {/* WALLET */}
             {activeTab === "wallet" && (<div>
-              <h1 className="text-2xl font-bold mb-6">Wallet</h1>
-              <Card className="p-8 text-center mb-6"><Wallet className="w-12 h-12 text-orange-600 mx-auto mb-3" /><p className="text-sm text-neutral-600">Current Balance</p><p className="text-4xl font-bold">R {walletBalance.toLocaleString()}</p><Button className="mt-4 bg-orange-600 hover:bg-orange-700" onClick={() => setShowTopUp(true)}><ArrowUpFromLine className="w-4 h-4 mr-2" /> Top Up</Button></Card>
+              <div className="flex items-center justify-between mb-6"><div><h1 className="text-2xl font-bold mb-2">Wallet</h1><p className="text-neutral-600">Top up to donate and fund partnership campaigns</p></div><div className="flex gap-2"><Button variant="outline" size="sm" onClick={loadWallet}><RefreshCw className="w-4 h-4" /></Button><Button className="bg-orange-600 hover:bg-orange-700" onClick={() => { setTopUpError(null); setShowTopUp(true); }}><ArrowUpFromLine className="w-4 h-4 mr-2" /> Top Up</Button></div></div>
+              {walletLoading ? <div className="flex justify-center py-12"><Loader2 className="w-8 h-8 animate-spin" /></div> : (<>
+                <div className="grid md:grid-cols-3 gap-6 mb-8">
+                  <Card className="p-8 bg-gradient-to-br from-orange-500 to-orange-600 text-white"><div className="flex items-center gap-3"><div className="w-12 h-12 rounded-full bg-white/20 flex items-center justify-center"><Wallet className="w-6 h-6" /></div><div><p className="text-white/80 text-sm">Balance</p><h2 className="text-2xl font-bold">R {walletBalance.toLocaleString()}</h2></div></div></Card>
+                  <Card className="p-6"><p className="text-neutral-600 text-sm mb-1">Total Topped Up</p><p className="text-3xl font-bold text-blue-600">R {transactions.filter(t => t.type === "TopUp" && t.status === "Completed").reduce((s, t) => s + t.amount, 0).toLocaleString()}</p></Card>
+                  <Card className="p-6"><p className="text-neutral-600 text-sm mb-1">Total Given</p><p className="text-3xl font-bold text-green-600">R {transactions.filter(t => t.direction === "out" && t.status === "Completed").reduce((s, t) => s + t.amount, 0).toLocaleString()}</p></Card>
+                </div>
+                <Card className="p-6"><h3 className="font-semibold mb-4">Transaction History</h3>{transactions.length === 0 ? <p className="text-neutral-600 text-sm">No transactions yet. Top up your wallet to get started.</p> : <div className="space-y-3">{transactions.map(tx => (<div key={tx.transactionId} className="flex items-center justify-between p-4 border rounded-lg"><div className="flex items-center gap-4"><div className={`w-10 h-10 rounded-full flex items-center justify-center ${tx.type === "TopUp" ? "bg-blue-100" : "bg-green-100"}`}>{tx.type === "TopUp" ? <ArrowUpFromLine className="w-5 h-5 text-blue-600" /> : <Heart className="w-5 h-5 text-green-600" />}</div><div><p className="text-sm font-medium">{tx.type === "TopUp" ? "Wallet top-up" : tx.type === "CampaignContribution" ? "Campaign funding" : "Donation"}</p><p className="text-xs text-neutral-500">{tx.counterpartyName} · {new Date(tx.timestamp).toLocaleDateString()}</p></div></div><div className="text-right"><p className={`font-semibold ${tx.direction === "in" ? "text-blue-600" : "text-green-600"}`}>{tx.direction === "in" ? "+" : "-"}R {tx.amount.toLocaleString()}</p><Badge className={tx.status === "Completed" ? "bg-green-100 text-green-700" : tx.status === "Failed" ? "bg-red-100 text-red-700" : "bg-amber-100 text-amber-700"}>{tx.status}</Badge></div></div>))}</div>}</Card>
+              </>)}
             </div>)}
 
             {/* COMMUNITY */}
@@ -720,9 +875,21 @@ export default function BusinessDashboard() {
       {showTopUp && (<div className="fixed inset-0 bg-black/50 flex items-center justify-center z-50 p-4"><Card className="w-full max-w-sm p-6">
         <div className="flex justify-between items-center mb-4"><h2 className="text-lg font-bold">Top Up Wallet</h2><Button variant="ghost" size="sm" onClick={() => setShowTopUp(false)}><X className="w-4 h-4" /></Button></div>
         <form onSubmit={handleTopUp} className="space-y-4">
-          <div><Label>Amount (R)</Label><Input type="number" step="0.01" min="1" value={topUpAmount} onChange={e => setTopUpAmount(e.target.value)} required /></div>
+          <div><Label>Amount (R)</Label><Input type="number" step="0.01" min="1" value={topUpAmount} onChange={e => setTopUpAmount(e.target.value)} required /><div className="grid grid-cols-4 gap-2 mt-2">{["100", "250", "500", "1000"].map(a => (<Button key={a} type="button" variant="outline" size="sm" onClick={() => setTopUpAmount(a)}>R {a}</Button>))}</div></div>
           <CardPaymentFields value={topUpCard} onChange={setTopUpCard} disabled={toppingUp} />
+          {topUpError && <p className="text-sm text-red-600">{topUpError}</p>}
           <Button type="submit" className="w-full bg-orange-600 hover:bg-orange-700" disabled={toppingUp}>{toppingUp ? <Loader2 className="w-4 h-4 animate-spin" /> : "Top Up"}</Button>
+        </form>
+      </Card></div>)}
+
+      {/* VERIFICATION SUBMIT MODAL */}
+      {showVerificationForm && (<div className="fixed inset-0 bg-black/50 flex items-center justify-center z-50 p-4"><Card className="w-full max-w-lg p-6">
+        <div className="flex justify-between items-center mb-4"><h2 className="text-lg font-bold">Submit Verification</h2><Button variant="ghost" size="sm" onClick={() => setShowVerificationForm(false)}><X className="w-4 h-4" /></Button></div>
+        <p className="text-sm text-neutral-600 mb-4">Upload your CIPC company registration document and/or tax clearance certificate (PDF). An admin will review and verify your business.</p>
+        <form className="space-y-4" onSubmit={handleSubmitVerification}>
+          <DocumentUploadField label="CIPC Registration Document (PDF)" value={cipcUrl} onChange={setCipcUrl} />
+          <DocumentUploadField label="Tax Clearance Certificate (PDF)" value={taxClearanceUrl} onChange={setTaxClearanceUrl} />
+          <div className="flex gap-3"><Button type="submit" className="flex-1 bg-orange-600 hover:bg-orange-700">Submit for Review</Button><Button type="button" variant="outline" onClick={() => setShowVerificationForm(false)}>Cancel</Button></div>
         </form>
       </Card></div>)}
 

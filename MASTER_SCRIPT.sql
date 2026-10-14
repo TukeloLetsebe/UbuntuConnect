@@ -4,7 +4,7 @@
 -- Builds the ENTIRE UbuntuConnect_DB schema in one run:
 -- creates the database (if missing) and every table in
 -- dependency order, then applies all later column/constraint
--- alterations (migrations 002–032 consolidated).
+-- alterations (migrations 002–033 consolidated).
 --
 -- Idempotent: every object is guarded with IF NOT EXISTS, so it
 -- is safe to run repeatedly. It does NOT insert any data — run
@@ -383,9 +383,13 @@ IF NOT EXISTS (SELECT * FROM sysobjects WHERE name = 'Verification' AND xtype = 
 BEGIN
     CREATE TABLE Verification (
         VerificationId    INT IDENTITY(1,1) PRIMARY KEY,
-        NPO_Id            INT           NOT NULL
+        -- A verification belongs to EITHER an NPO or a Business (one is set).
+        NPO_Id            INT           NULL
                           CONSTRAINT FK_Verification_NPO
-                          FOREIGN KEY REFERENCES NPO(NPO_Id) ON DELETE CASCADE,
+                          FOREIGN KEY REFERENCES NPO(NPO_Id),
+        BusinessId        INT           NULL
+                          CONSTRAINT FK_Verification_Business
+                          FOREIGN KEY REFERENCES Business(BusinessId),
         ReviewedByUserId  INT           NULL
                           CONSTRAINT FK_Verification_Admin
                           FOREIGN KEY REFERENCES Users(UserId),
@@ -624,6 +628,35 @@ BEGIN
     PRINT '032 | Profile.BackgroundImage added.';
 END
 ELSE PRINT '032 | Profile.BackgroundImage already exists, skipped.';
+GO
+
+-- 033 | Verification supports Business subjects (not just NPOs).
+--      Make NPO_Id nullable and add a nullable BusinessId; a row references
+--      exactly one of them. Existing NPO rows are unaffected.
+IF COL_LENGTH('Verification', 'NPO_Id') IS NOT NULL
+   AND COLUMNPROPERTY(OBJECT_ID('Verification'), 'NPO_Id', 'AllowsNull') = 0
+BEGIN
+    -- The original NPO FK was created with ON DELETE CASCADE; drop it so we can
+    -- relax the column to NULL and re-add a plain (non-cascading) FK.
+    IF EXISTS (SELECT * FROM sys.foreign_keys WHERE name = 'FK_Verification_NPO')
+        ALTER TABLE Verification DROP CONSTRAINT FK_Verification_NPO;
+
+    ALTER TABLE Verification ALTER COLUMN NPO_Id INT NULL;
+
+    ALTER TABLE Verification ADD CONSTRAINT FK_Verification_NPO
+        FOREIGN KEY (NPO_Id) REFERENCES NPO(NPO_Id);
+    PRINT '033 | Verification.NPO_Id relaxed to NULL (FK re-created non-cascading).';
+END
+ELSE PRINT '033 | Verification.NPO_Id already nullable, skipped.';
+GO
+
+IF COL_LENGTH('Verification', 'BusinessId') IS NULL
+BEGIN
+    ALTER TABLE Verification ADD BusinessId INT NULL
+        CONSTRAINT FK_Verification_Business FOREIGN KEY REFERENCES Business(BusinessId);
+    PRINT '033 | Verification.BusinessId added.';
+END
+ELSE PRINT '033 | Verification.BusinessId already exists, skipped.';
 GO
 
 PRINT '=============================================================';

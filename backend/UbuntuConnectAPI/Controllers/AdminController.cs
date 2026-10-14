@@ -133,21 +133,35 @@ public class AdminController : ControllerBase
             .Select(v => new
             {
                 verificationId = v.VerificationId,
-                npoId = v.NpoId,
                 status = v.Status,
                 submittedDate = v.SubmittedDate,
                 reviewedByUserId = v.ReviewedByUserId,
                 reviewedDate = v.ReviewedDate,
-                // Full NPO card so the admin can see who they're approving.
-                organizationName = v.Npo.OrganizationName,
-                npoRegNum = v.Npo.NporegNum,
-                focusArea = v.Npo.NpofocusArea,
-                mission = v.Npo.Npomission,
-                email = v.Npo.User.UserEmail,
-                contact = v.Npo.User.UserContact,
-                location = v.Npo.User.Location,
-                isVerified = v.Npo.User.IsVerified,
-                // Submitted supporting documents (relative /uploads URLs).
+
+                // Which kind of applicant this is.
+                subjectType = v.BusinessId != null ? "Business" : "NPO",
+                npoId = v.NpoId,
+                businessId = v.BusinessId,
+
+                // Display name + registration shown on the admin card, resolved
+                // from whichever subject the row belongs to.
+                organizationName = v.BusinessId != null
+                    ? (v.Business!.ContactPersonName ?? "Business")
+                    : v.Npo!.OrganizationName,
+                regNum = v.BusinessId != null ? v.Business!.BusinessRegNum : v.Npo!.NporegNum,
+                focusArea = v.BusinessId != null ? v.Business!.Industry : v.Npo!.NpofocusArea,
+                mission = v.BusinessId != null ? v.Business!.CsrGoal : v.Npo!.Npomission,
+
+                // Contact details come from the subject's linked User.
+                email = v.BusinessId != null ? v.Business!.User.UserEmail : v.Npo!.User.UserEmail,
+                contact = v.BusinessId != null ? v.Business!.User.UserContact : v.Npo!.User.UserContact,
+                location = v.BusinessId != null ? v.Business!.User.Location : v.Npo!.User.Location,
+                isVerified = v.BusinessId != null ? v.Business!.User.IsVerified : v.Npo!.User.IsVerified,
+
+                // Supporting documents (NPO: certificate + tax; Business: CIPC + tax clearance).
+                document1 = v.Npocertificate,
+                document2 = v.NpotaxCertificate,
+                // Back-compat aliases for the existing admin UI.
                 npoCertificate = v.Npocertificate,
                 npoTaxCertificate = v.NpotaxCertificate
             })
@@ -159,57 +173,70 @@ public class AdminController : ControllerBase
     [HttpPut("verifications/{id}/approve")]
     public async Task<IActionResult> ApproveVerification(int id)
     {
-        var adminIdClaim = User.FindFirst(ClaimTypes.NameIdentifier)?.Value;
-        var adminId = int.Parse(adminIdClaim!);
+        var adminId = int.Parse(User.FindFirst(ClaimTypes.NameIdentifier)!.Value);
 
         var v = await _context.Verifications.FindAsync(id);
-        if (v == null) return NotFound();
+        if (v == null) return NotFound("Verification request not found.");
+
+        var subject = await ResolveSubjectAsync(v);
+        if (subject.User == null) return NotFound("The applicant for this verification no longer exists.");
 
         v.Status = "Approved";
         v.ReviewedByUserId = adminId;
         v.ReviewedDate = DateTime.UtcNow;
-
-        // mark related NPO's user as verified
-        var npo = await _context.Npos.Include(n => n.User).FirstOrDefaultAsync(n => n.NpoId == v.NpoId);
-        if (npo?.User != null) npo.User.IsVerified = true;
+        subject.User.IsVerified = true;
 
         await _context.SaveChangesAsync();
 
-        // Let the NPO know — in-app notification + email (both best-effort).
-        if (npo?.User != null)
-            await NotifyNpoVerificationAsync(npo.User, npo.OrganizationName, approved: true, reason: null);
-
+        await NotifyVerificationOutcomeAsync(subject.User, subject.DisplayName, subject.IsBusiness, approved: true, reason: null);
         return NoContent();
     }
 
     [HttpPut("verifications/{id}/reject")]
     public async Task<IActionResult> RejectVerification(int id, [FromBody] RejectVerificationRequest? req = null)
     {
-        var adminIdClaim = User.FindFirst(ClaimTypes.NameIdentifier)?.Value;
-        var adminId = int.Parse(adminIdClaim!);
+        var adminId = int.Parse(User.FindFirst(ClaimTypes.NameIdentifier)!.Value);
 
         var v = await _context.Verifications.FindAsync(id);
-        if (v == null) return NotFound();
+        if (v == null) return NotFound("Verification request not found.");
+
+        var subject = await ResolveSubjectAsync(v);
 
         v.Status = "Rejected";
         v.ReviewedByUserId = adminId;
         v.ReviewedDate = DateTime.UtcNow;
 
-        var npo = await _context.Npos.Include(n => n.User).FirstOrDefaultAsync(n => n.NpoId == v.NpoId);
-
         await _context.SaveChangesAsync();
 
-        if (npo?.User != null)
-            await NotifyNpoVerificationAsync(npo.User, npo.OrganizationName, approved: false, reason: req?.Reason);
+        if (subject.User != null)
+            await NotifyVerificationOutcomeAsync(subject.User, subject.DisplayName, subject.IsBusiness, approved: false, reason: req?.Reason);
 
         return NoContent();
     }
 
-    // Sends the NPO owner an in-app notification + email about their verification
+    // Resolves the User who owns a verification (either an NPO or a Business),
+    // plus a human-readable name and which kind it is.
+    private async Task<(Models.User? User, string DisplayName, bool IsBusiness)> ResolveSubjectAsync(Models.Verification v)
+    {
+        if (v.BusinessId != null)
+        {
+            var business = await _context.Businesses.Include(b => b.User).FirstOrDefaultAsync(b => b.BusinessId == v.BusinessId);
+            return (business?.User, business?.ContactPersonName ?? "your business", true);
+        }
+
+        var npo = await _context.Npos.Include(n => n.User).FirstOrDefaultAsync(n => n.NpoId == v.NpoId);
+        return (npo?.User, npo?.OrganizationName ?? "your organization", false);
+    }
+
+    // Sends the applicant an in-app notification + email about their verification
     // outcome. Best-effort: failures are swallowed so they never block the admin.
-    private async Task NotifyNpoVerificationAsync(Models.User user, string orgName, bool approved, string? reason)
+    private async Task NotifyVerificationOutcomeAsync(Models.User user, string displayName, bool isBusiness, bool approved, string? reason)
     {
         var trimmedReason = string.IsNullOrWhiteSpace(reason) ? "" : $" Reason: {reason.Trim()}";
+        var subjectWord = isBusiness ? "business" : "NPO";
+        var unlocks = isBusiness
+            ? "create partnership campaigns, donate to NPOs, and withdraw funds"
+            : "create fundraisers, post volunteer opportunities, apply to campaigns, donate, and withdraw funds";
 
         if (_notifications != null)
         {
@@ -219,8 +246,8 @@ public class AdminController : ControllerBase
                     user.UserId,
                     approved ? "VerificationApproved" : "VerificationRejected",
                     approved
-                        ? "Your NPO has been verified! You can now create fundraisers, post volunteer opportunities, apply to campaigns, donate, and withdraw funds."
-                        : $"Your NPO verification was not approved. Please review your documents and submit again.{trimmedReason}");
+                        ? $"Your {subjectWord} has been verified! You can now {unlocks}."
+                        : $"Your {subjectWord} verification was not approved. Please review your documents and submit again.{trimmedReason}");
             }
             catch { /* notifications are non-critical */ }
         }
@@ -233,11 +260,11 @@ public class AdminController : ControllerBase
                 {
                     ToEmail = user.UserEmail,
                     Subject = approved
-                        ? "Your UbuntuConnect NPO is verified"
-                        : "Your UbuntuConnect NPO verification",
+                        ? $"Your UbuntuConnect {subjectWord} is verified"
+                        : $"Your UbuntuConnect {subjectWord} verification",
                     Body = approved
-                        ? $"Good news! {orgName}'s verification has been approved. Your organization now has full access to create fundraisers, post volunteer opportunities, apply to partnership campaigns, donate, and withdraw funds.\n\n— UbuntuConnect"
-                        : $"Your verification for {orgName} could not be approved.{trimmedReason}\n\nPlease log in, review your submitted documents, and submit again.\n\n— UbuntuConnect"
+                        ? $"Good news! {displayName}'s verification has been approved. You now have full access to {unlocks}.\n\n— UbuntuConnect"
+                        : $"Your verification for {displayName} could not be approved.{trimmedReason}\n\nPlease log in, review your submitted documents, and submit again.\n\n— UbuntuConnect"
                 });
             }
             catch { /* email is non-critical */ }
@@ -251,7 +278,7 @@ public class AdminController : ControllerBase
         if (userId.HasValue)
             q = q.Where(t => t.SenderUserId == userId.Value || t.ReceiverUserId == userId.Value);
 
-        var txs = await q.OrderByDescending(t => t.Timestamp)
+        var rows = await q.OrderByDescending(t => t.Timestamp)
             .Select(t => new
             {
                 transactionId = t.TransactionId,
@@ -264,7 +291,49 @@ public class AdminController : ControllerBase
             })
             .ToListAsync();
 
+        // Resolve display names for the sender/receiver ids in one lookup, so the
+        // admin UI shows "From Thabo Mokoena → Safe Waters Trust", not "User #3".
+        var ids = rows.SelectMany(r => new[] { r.senderUserId, r.receiverUserId })
+                      .Where(id => id.HasValue).Select(id => id!.Value).Distinct().ToList();
+        var names = await ResolveUserNamesAsync(ids);
+
+        var txs = rows.Select(r => new
+        {
+            r.transactionId,
+            r.senderUserId,
+            r.receiverUserId,
+            senderName = r.senderUserId.HasValue && names.TryGetValue(r.senderUserId.Value, out var sn) ? sn : null,
+            receiverName = r.receiverUserId.HasValue && names.TryGetValue(r.receiverUserId.Value, out var rn) ? rn : null,
+            r.amount,
+            r.transactionType,
+            r.status,
+            r.timestamp
+        });
+
         return Ok(txs);
+    }
+
+    // Resolves user ids to display names (Individual full name, NPO org name,
+    // Business contact person, else email). Used to replace raw ids in admin UIs.
+    private async Task<Dictionary<int, string>> ResolveUserNamesAsync(List<int> userIds)
+    {
+        if (userIds.Count == 0) return new();
+
+        var users = await _context.Users
+            .Where(u => userIds.Contains(u.UserId))
+            .Select(u => new
+            {
+                u.UserId,
+                u.UserEmail,
+                individual = u.Individuals.Select(i => i.FirstName + " " + i.LastName).FirstOrDefault(),
+                npo = u.Npos.Select(n => n.OrganizationName).FirstOrDefault(),
+                business = u.Businesses.Select(b => b.ContactPersonName).FirstOrDefault()
+            })
+            .ToListAsync();
+
+        return users.ToDictionary(
+            u => u.UserId,
+            u => u.individual ?? u.npo ?? u.business ?? u.UserEmail);
     }
 
     // ── GHOST ACCOUNT CLEANUP (Task 8) ─────────────────────────

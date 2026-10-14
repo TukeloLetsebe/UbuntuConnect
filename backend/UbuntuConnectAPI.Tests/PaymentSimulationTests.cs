@@ -20,17 +20,27 @@ public class PaymentSimulationTests
     // Well-known Luhn-valid test PAN (Visa test number).
     private const string ValidCard = "4111 1111 1111 1111";
 
-    // The gateway is a pure simulation: it performs NO validation and always
-    // approves, regardless of the (random) numbers entered.
+    // The gateway is a simulation but still validates card SHAPE (no real issuer
+    // check): a Luhn-valid, 13–19 digit, non-expired card with a 3–4 digit CVV
+    // is approved; anything malformed is declined with a specific reason.
+    [Fact]
+    public void Wellformed_card_is_approved()
+    {
+        var r = Sim.Charge(ValidCard, "12/40", "123");
+        Assert.True(r.Approved);
+    }
+
     [Theory]
-    [InlineData("4111 1111 1111 1111", "12/40", "123")] // "valid-looking"
-    [InlineData("1234", "13/40", "1")]                   // junk — still approved
-    [InlineData("", "", "")]                              // empty — still approved
-    [InlineData("9999 8888 7777 6666", "01/20", "99999")] // expired/odd — still approved
-    public void Any_card_input_is_approved(string card, string expiry, string cvv)
+    [InlineData("1", "12/40", "123")]                     // too short / not Luhn
+    [InlineData("1234 5678 9012", "99/99", "1")]          // bad expiry + short CVV
+    [InlineData("", "", "")]                               // empty
+    [InlineData("4111 1111 1111 1111", "01/20", "123")]   // expired
+    [InlineData("4111 1111 1111 1112", "12/40", "123")]   // fails Luhn
+    public void Malformed_card_is_declined_with_reason(string card, string expiry, string cvv)
     {
         var r = Sim.Charge(card, expiry, cvv);
-        Assert.True(r.Approved);
+        Assert.False(r.Approved);
+        Assert.False(string.IsNullOrWhiteSpace(r.DeclineReason));
     }
 
     // ── Individual top-up with card + limits ──────────────────
@@ -96,9 +106,10 @@ public class PaymentSimulationTests
     }
 
     [Fact]
-    public async Task TopUp_with_any_random_card_credits_wallet()
+    public async Task TopUp_with_malformed_card_is_rejected()
     {
-        // Simulation accepts any card input — a random/junk card still tops up.
+        // A junk card ("1234 5678 9012", bad expiry, 1-digit CVV) must be declined
+        // and the wallet must NOT be credited.
         var (ctx, user) = SetupVerifiedIndividual();
         using (ctx)
         {
@@ -110,8 +121,8 @@ public class PaymentSimulationTests
                 CardExpiry = "99/99",
                 CardCvv = "1"
             });
-            Assert.IsType<OkObjectResult>(result);
-            Assert.Equal(500, ctx.Wallets.Single(w => w.UserId == user.UserId).Balance);
+            Assert.IsType<BadRequestObjectResult>(result);
+            Assert.Equal(0, ctx.Wallets.Single(w => w.UserId == user.UserId).Balance);
         }
     }
 

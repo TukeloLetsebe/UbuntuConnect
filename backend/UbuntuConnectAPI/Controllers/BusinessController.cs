@@ -96,6 +96,44 @@ public class BusinessController : ControllerBase
         return NoContent();
     }
 
+    // ── CHANGE PASSWORD ────────────────────────────────────────
+    [Authorize(Roles = "Business")]
+    [HttpPut("change-password")]
+    public async Task<IActionResult> ChangePassword([FromBody] ChangePasswordDto dto)
+    {
+        var userId = int.Parse(User.FindFirst(ClaimTypes.NameIdentifier)!.Value);
+
+        var user = await _context.Users.FirstOrDefaultAsync(u => u.UserId == userId);
+        if (user == null) return NotFound("User not found.");
+
+        if (!BCrypt.Net.BCrypt.Verify(dto.CurrentPassword, user.PasswordHash))
+            return BadRequest("Current password is incorrect.");
+        if (dto.NewPassword.Length < 8)
+            return BadRequest("New password must be at least 8 characters long.");
+
+        user.PasswordHash = BCrypt.Net.BCrypt.HashPassword(dto.NewPassword);
+        await _context.SaveChangesAsync();
+        return Ok(new { message = "Password changed successfully." });
+    }
+
+    // ── DEACTIVATE MY ACCOUNT ──────────────────────────────────
+    [Authorize(Roles = "Business")]
+    [HttpPut("deactivate")]
+    public async Task<IActionResult> DeactivateAccount([FromBody] DeactivateAccountDto dto)
+    {
+        var userId = int.Parse(User.FindFirst(ClaimTypes.NameIdentifier)!.Value);
+
+        var user = await _context.Users.FirstOrDefaultAsync(u => u.UserId == userId);
+        if (user == null) return NotFound("User not found.");
+
+        if (!BCrypt.Net.BCrypt.Verify(dto.Password, user.PasswordHash))
+            return BadRequest("Incorrect password. Account not deactivated.");
+
+        user.IsActive = false;
+        await _context.SaveChangesAsync();
+        return Ok(new { message = "Your account has been deactivated." });
+    }
+
     // ── DISCOVER NPOs ──────────────────────────────────────────
     [HttpGet("discover-npos")]
     public async Task<IActionResult> DiscoverNpos()
@@ -246,9 +284,9 @@ public class BusinessController : ControllerBase
         if (dto.Amount > _limits.MaxTopUp)
             return BadRequest($"Maximum top-up is R {_limits.MaxTopUp:0.##}.");
 
-        // Simulated card charge (validated when card details are supplied).
-        if (_payments != null &&
-            (!string.IsNullOrWhiteSpace(dto.CardNumber) || !string.IsNullOrWhiteSpace(dto.CardExpiry) || !string.IsNullOrWhiteSpace(dto.CardCvv)))
+        // Simulated card charge. A well-formed card is always required
+        // (Luhn + non-expired expiry + CVV); no real issuer check.
+        if (_payments != null)
         {
             var charge = _payments.Charge(dto.CardNumber, dto.CardExpiry, dto.CardCvv);
             if (!charge.Approved)
@@ -308,6 +346,79 @@ public class BusinessController : ControllerBase
         var totalDonated = donations.Where(d => d.status == "Completed").Sum(d => d.amount);
 
         return Ok(new { totalDonated, count = donations.Count, donations });
+    }
+
+    // ── FULL TRANSACTION HISTORY ───────────────────────────────
+    // Every money movement for this business (top-ups in, donations out,
+    // campaign contributions out) with a resolved counterparty NAME + summary.
+    [Authorize(Roles = "Business")]
+    [HttpGet("transactions")]
+    public async Task<IActionResult> GetMyTransactions()
+    {
+        var userId = int.Parse(User.FindFirst(ClaimTypes.NameIdentifier)!.Value);
+
+        var rows = await _context.Transactions
+            .Where(t => t.SenderUserId == userId || t.ReceiverUserId == userId)
+            .OrderByDescending(t => t.Timestamp)
+            .Select(t => new
+            {
+                t.TransactionId,
+                t.SenderUserId,
+                t.ReceiverUserId,
+                t.Amount,
+                t.TransactionType,
+                t.Status,
+                t.Timestamp
+            })
+            .ToListAsync();
+
+        var otherIds = rows
+            .Select(r => r.SenderUserId == userId ? r.ReceiverUserId : r.SenderUserId)
+            .Where(id => id.HasValue).Select(id => id!.Value).Distinct().ToList();
+
+        var names = otherIds.Count == 0 ? new Dictionary<int, string>() :
+            (await _context.Users.Where(u => otherIds.Contains(u.UserId))
+                .Select(u => new
+                {
+                    u.UserId,
+                    u.UserEmail,
+                    individual = u.Individuals.Select(i => i.FirstName + " " + i.LastName).FirstOrDefault(),
+                    npo = u.Npos.Select(n => n.OrganizationName).FirstOrDefault(),
+                    business = u.Businesses.Select(b => b.ContactPersonName).FirstOrDefault()
+                }).ToListAsync())
+            .ToDictionary(u => u.UserId, u => u.individual ?? u.npo ?? u.business ?? u.UserEmail);
+
+        var transactions = rows.Select(r =>
+        {
+            var isIncoming = r.ReceiverUserId == userId;
+            var otherId = isIncoming ? r.SenderUserId : r.ReceiverUserId;
+            string counterparty = r.TransactionType switch
+            {
+                "TopUp" => "Wallet top-up (card)",
+                "Withdrawal" => "Bank withdrawal",
+                _ => otherId.HasValue && names.TryGetValue(otherId.Value, out var n) ? n : "UbuntuConnect"
+            };
+            return new
+            {
+                transactionId = r.TransactionId,
+                type = r.TransactionType,
+                direction = isIncoming ? "in" : "out",
+                amount = r.Amount,
+                status = r.Status,
+                timestamp = r.Timestamp,
+                counterpartyName = counterparty
+            };
+        }).ToList();
+
+        bool Completed(string s) => s == "Completed";
+        var totalToppedUp = rows.Where(r => r.TransactionType == "TopUp" && Completed(r.Status)).Sum(r => r.Amount);
+        var totalDonated = rows.Where(r => (r.TransactionType == "Donation" || r.TransactionType == "CampaignContribution") && r.SenderUserId == userId && Completed(r.Status)).Sum(r => r.Amount);
+
+        return Ok(new
+        {
+            summary = new { totalToppedUp, totalDonated, count = transactions.Count },
+            transactions
+        });
     }
 
     // ── MY CAMPAIGNS ───────────────────────────────────────────

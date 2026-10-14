@@ -10,10 +10,12 @@ import CardPaymentFields, { type CardDetails, emptyCard } from "./CardPaymentFie
 import PostDetailModal from "./PostDetailModal";
 import ReportPostButton from "./ReportPostButton";
 import LocationPicker, { composeLocation } from "./registration/LocationPicker";
+import { useConfirm } from "./ConfirmDialog";
+import { getNpoColor } from "../../lib/npoColor";
 import { parseLocation, parseProvince, SA_PROVINCES, PROVINCE_OTHER, VOLUNTEER_SKILLS } from "../../lib/registrationOptions";
 import { isValidPhone, validationMessages } from "../../lib/validators";
 import { resolveMediaUrl } from "../../lib/api";
-import { individualService, getErrorMessage, type IndividualProfile, type NPOSummary, type NPODetail, type VolunteerOpportunity, type MyVolunteeringItem, type MyDonationsResponse, type MyImpact, type CommunityPost, type FollowedNPO } from "../../services/individualService";
+import { individualService, getErrorMessage, type IndividualProfile, type NPOSummary, type NPODetail, type VolunteerOpportunity, type MyVolunteeringItem, type MyDonationsResponse, type MyImpact, type CommunityPost, type FollowedNPO, type MyTransactionsResponse } from "../../services/individualService";
 import { kycService, type KycStatus } from "../../services/kycService";
 import {
   Dialog,
@@ -80,6 +82,7 @@ function matchSeedSkills(required: string): string[] {
 
 export default function IndividualDashboard() {
   const { logout, email, userId, isEmailVerified } = useAuth();
+  const confirm = useConfirm();
   const navigate = useNavigate();
   const [searchParams, setSearchParams] = useSearchParams();
   const [activeTab, setActiveTab] = useState("discover");
@@ -88,21 +91,6 @@ export default function IndividualDashboard() {
   const [sidebarOpen, setSidebarOpen] = useState(false);
   const selectTab = (id: string) => { setActiveTab(id); setSidebarOpen(false); };
 
-  // Helper: deterministic gradient color based on NPO name
-  const getNpoColor = (name: string): string => {
-    const colors = [
-      "from-orange-400 to-orange-600",
-      "from-blue-400 to-blue-600",
-      "from-green-400 to-green-600",
-      "from-purple-400 to-purple-600",
-      "from-pink-400 to-pink-600",
-      "from-teal-400 to-teal-600",
-      "from-amber-400 to-amber-600",
-      "from-indigo-400 to-indigo-600",
-    ];
-    const index = name.charCodeAt(0) % colors.length;
-    return colors[index];
-  };
   const [followedNpoIds, setFollowedNpoIds] = useState<Set<number>>(new Set());
   // Followed NPOs state (loaded from API on mount)
   const [followedNpos, setFollowedNpos] = useState<FollowedNPO[]>([]);
@@ -120,6 +108,8 @@ export default function IndividualDashboard() {
   // Wallet state
   const [walletBalance, setWalletBalance] = useState<number>(0);
   const [walletLoading, setWalletLoading] = useState(false);
+  const [txData, setTxData] = useState<MyTransactionsResponse | null>(null);
+  const [txLoading, setTxLoading] = useState(false);
 
   // Donate state
   const [donateAmount, setDonateAmount] = useState<string>("");
@@ -256,12 +246,24 @@ export default function IndividualDashboard() {
     }
   }, [userId, loadWalletBalance]);
 
-  // Refresh wallet balance when wallet tab is activated
+  // Load full transaction history (top-ups, donations, withdrawals) + totals.
+  const loadTransactions = useCallback(async () => {
+    setTxLoading(true);
+    try {
+      const r = await individualService.getTransactions();
+      setTxData(r.data);
+    } catch { /* non-critical */ } finally {
+      setTxLoading(false);
+    }
+  }, []);
+
+  // Refresh wallet balance + transactions when wallet tab is activated
   useEffect(() => {
     if (activeTab === "wallet") {
       loadWalletBalance();
+      loadTransactions();
     }
-  }, [activeTab, loadWalletBalance]);
+  }, [activeTab, loadWalletBalance, loadTransactions]);
 
   // Load my followed NPOs
   const loadMyFollows = useCallback(async () => {
@@ -879,6 +881,17 @@ export default function IndividualDashboard() {
 
     if (!selectedNPO) return;
 
+    const npoName =
+      npos.find((n) => n.npoId === selectedNPO)?.organizationName ??
+      followedNpos.find((n) => n.npoId === selectedNPO)?.organizationName ??
+      "this NPO";
+    const ok = await confirm({
+      title: `Donate R ${amount.toLocaleString()} to ${npoName}?`,
+      description: `R ${amount.toLocaleString()} will be transferred from your wallet to ${npoName}. This cannot be undone.`,
+      confirmText: `Donate R ${amount.toLocaleString()}`,
+    });
+    if (!ok) return;
+
     setDonating(true);
     try {
       const response = await individualService.donate(selectedNPO, amount);
@@ -910,12 +923,18 @@ export default function IndividualDashboard() {
       return;
     }
 
-    // Simulated card — we don't validate correctness, but all three fields must
-    // be filled in (fake numbers are fine) before the top-up goes through.
-    if (!topUpCard.cardNumber || !topUpCard.cardExpiry || !topUpCard.cardCvv) {
-      setTopUpError("Please enter your card details to top up.");
-      return;
-    }
+    // Card fields are required. Point to the specific missing field so the user
+    // knows exactly what to fix (the server also validates the card shape).
+    if (!topUpCard.cardNumber) { setTopUpError("Please enter your card number."); return; }
+    if (!topUpCard.cardExpiry) { setTopUpError("Please enter the card expiry date (MM/YY)."); return; }
+    if (!topUpCard.cardCvv) { setTopUpError("Please enter the card CVV (the 3–4 digit code)."); return; }
+
+    const ok = await confirm({
+      title: `Top up R ${amount.toLocaleString()}?`,
+      description: `R ${amount.toLocaleString()} will be added to your wallet balance using the card ending ${topUpCard.cardNumber.replace(/\D/g, "").slice(-4) || "••••"}.`,
+      confirmText: `Top up R ${amount.toLocaleString()}`,
+    });
+    if (!ok) return;
 
     setToppingUp(true);
     try {
@@ -1742,14 +1761,16 @@ export default function IndividualDashboard() {
                   <p className="text-neutral-600">Manage your wallet balance</p>
                 </div>
 
-                {/* Balance Card */}
-                <Card className="p-8 bg-gradient-to-br from-orange-500 to-orange-600 text-white mb-8">
-                  <p className="text-white/80 mb-2">Available Balance</p>
-                  <h2 className="text-4xl font-bold text-white mb-2">
-                    {walletLoading ? "Loading..." : `R ${walletBalance.toLocaleString()}`}
-                  </h2>
-                  <p className="text-white/70 text-sm">Your wallet funds for donations</p>
-                </Card>
+                {/* Overview: balance + lifetime totals */}
+                <div className="grid md:grid-cols-4 gap-6 mb-8">
+                  <Card className="p-8 bg-gradient-to-br from-orange-500 to-orange-600 text-white md:col-span-1">
+                    <p className="text-white/80 mb-2 text-sm">Available Balance</p>
+                    <h2 className="text-3xl font-bold text-white">{walletLoading ? "…" : `R ${walletBalance.toLocaleString()}`}</h2>
+                  </Card>
+                  <Card className="p-6"><p className="text-neutral-600 text-sm mb-1">Total Topped Up</p><p className="text-2xl font-bold text-blue-600">R {(txData?.summary.totalToppedUp ?? 0).toLocaleString()}</p></Card>
+                  <Card className="p-6"><p className="text-neutral-600 text-sm mb-1">Total Donated</p><p className="text-2xl font-bold text-green-600">R {(txData?.summary.totalDonated ?? 0).toLocaleString()}</p></Card>
+                  <Card className="p-6"><p className="text-neutral-600 text-sm mb-1">Total Withdrawn</p><p className="text-2xl font-bold text-orange-600">R {(txData?.summary.totalWithdrawn ?? 0).toLocaleString()}</p></Card>
+                </div>
 
                 {/* Top Up Section */}
                 <Card className="p-6">
@@ -1784,6 +1805,39 @@ export default function IndividualDashboard() {
                       Top Up
                     </Button>
                   </form>
+                </Card>
+
+                {/* Transaction History */}
+                <Card className="p-6 mt-8">
+                  <div className="flex items-center justify-between mb-4">
+                    <h3>Transaction History</h3>
+                    <Button variant="outline" size="sm" onClick={loadTransactions}><RefreshCw className="w-4 h-4" /></Button>
+                  </div>
+                  {txLoading ? (
+                    <div className="flex justify-center py-8"><Loader2 className="w-6 h-6 animate-spin text-orange-600" /></div>
+                  ) : !txData || txData.transactions.length === 0 ? (
+                    <p className="text-neutral-600 text-sm py-4 text-center">No transactions yet. Top up your wallet to get started.</p>
+                  ) : (
+                    <div className="space-y-3">
+                      {txData.transactions.map((tx) => (
+                        <div key={tx.transactionId} className="flex items-center justify-between p-4 border rounded-lg">
+                          <div className="flex items-center gap-4">
+                            <div className={`w-10 h-10 rounded-full flex items-center justify-center ${tx.type === "TopUp" ? "bg-blue-100" : tx.type === "Withdrawal" ? "bg-orange-100" : tx.direction === "in" ? "bg-green-100" : "bg-green-100"}`}>
+                              {tx.type === "TopUp" ? <Wallet className="w-5 h-5 text-blue-600" /> : tx.type === "Withdrawal" ? <Banknote className="w-5 h-5 text-orange-600" /> : <HandCoins className="w-5 h-5 text-green-600" />}
+                            </div>
+                            <div>
+                              <p className="text-sm font-medium">{tx.type === "TopUp" ? "Wallet top-up" : tx.type === "Withdrawal" ? "Withdrawal" : tx.type === "CampaignContribution" ? "Campaign funding" : "Donation"}</p>
+                              <p className="text-xs text-neutral-500">{tx.counterpartyName} · {new Date(tx.timestamp).toLocaleDateString("en-ZA", { year: "numeric", month: "short", day: "numeric" })}</p>
+                            </div>
+                          </div>
+                          <div className="text-right">
+                            <p className={`font-semibold ${tx.direction === "in" ? "text-green-600" : "text-neutral-900"}`}>{tx.direction === "in" ? "+" : "−"}R {tx.amount.toLocaleString()}</p>
+                            <Badge className={tx.status === "Completed" ? "bg-green-100 text-green-700" : tx.status === "Failed" ? "bg-red-100 text-red-700" : "bg-amber-100 text-amber-700"}>{tx.status}</Badge>
+                          </div>
+                        </div>
+                      ))}
+                    </div>
+                  )}
                 </Card>
               </div>
             )}

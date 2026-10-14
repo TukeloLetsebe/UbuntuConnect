@@ -56,6 +56,9 @@ export interface Campaign {
 export interface CampaignApplication {
   applicationId: number;
   npoId: number;
+  organizationName: string;
+  focusArea: string | null;
+  isVerified: boolean;
   motivation: string | null;
   status: string;
   applicationDate: string;
@@ -227,7 +230,47 @@ export const businessService = {
   // View an NPO's verification documents (to vet a partner)
   getNpoDocuments: (npoId: number) =>
     api.get<NpoDocuments>(`/api/verification/npo/${npoId}`),
+
+  // Wallet transaction history (top-ups in, donations/campaign funds out).
+  getTransactions: () => api.get<BusinessTransactionsResponse>("/api/business/transactions"),
+
+  // Own verification (CIPC + tax clearance).
+  submitVerification: (data: { cipcDocument?: string; taxClearance?: string }) =>
+    api.post("/api/verification/business/submit", data),
+  getMyVerificationStatus: () =>
+    api.get<BusinessVerificationItem[]>("/api/verification/business/my-status"),
+
+  // Account security.
+  changePassword: (currentPassword: string, newPassword: string) =>
+    api.put("/api/business/change-password", { currentPassword, newPassword }),
+  deactivateAccount: (password: string) =>
+    api.put("/api/business/deactivate", { password }),
 };
+
+export interface BusinessTransactionItem {
+  transactionId: number;
+  type: string;
+  direction: string;
+  amount: number;
+  status: string;
+  timestamp: string;
+  counterpartyName: string;
+}
+
+export interface BusinessTransactionsResponse {
+  summary: { totalToppedUp: number; totalDonated: number; count: number };
+  transactions: BusinessTransactionItem[];
+}
+
+export interface BusinessVerificationItem {
+  verificationId: number;
+  businessId: number;
+  cipcDocument: string | null;
+  taxClearance: string | null;
+  status: string;
+  submittedDate: string;
+  reviewedDate: string | null;
+}
 
 export interface NpoDocuments {
   npoId: number;

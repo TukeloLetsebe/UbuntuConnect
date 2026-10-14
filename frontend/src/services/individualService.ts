@@ -85,6 +85,27 @@ export interface MyDonationsResponse {
   }>;
 }
 
+export interface TransactionItem {
+  transactionId: number;
+  type: string;
+  direction: "in" | "out";
+  amount: number;
+  status: string;
+  timestamp: string;
+  counterpartyName: string;
+}
+
+export interface MyTransactionsResponse {
+  summary: {
+    totalToppedUp: number;
+    totalDonated: number;
+    totalWithdrawn: number;
+    totalReceived: number;
+    count: number;
+  };
+  transactions: TransactionItem[];
+}
+
 export interface MyImpact {
   totalDonated: number;
   totalHoursVolunteered: number;
@@ -187,6 +208,7 @@ export const individualService = {
   donate: (npoId: number, amount: number) =>
     api.post(`/api/individual/donate/${npoId}`, { amount }),
   getMyDonations: () => api.get<MyDonationsResponse>("/api/individual/my-donations"),
+  getTransactions: () => api.get<MyTransactionsResponse>("/api/individual/transactions"),
 
   // Impact & Feed
   getMyImpact: () => api.get<MyImpact>("/api/individual/my-impact"),

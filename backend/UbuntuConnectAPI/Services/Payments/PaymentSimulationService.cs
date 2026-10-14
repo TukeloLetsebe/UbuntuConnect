@@ -3,17 +3,39 @@ using System.Globalization;
 namespace UbuntuConnectAPI.Services.Payments;
 
 /// <summary>
-/// Mock card gateway. This is a pure simulation for demos — it performs NO card
-/// validation and always approves, regardless of the (random) numbers entered.
-/// No funds are actually charged; the caller credits the wallet on approval.
-/// The Luhn/expiry helpers below are retained for reference/tests but are no
-/// longer used to gate a charge.
+/// Mock card gateway for demos. It never contacts a real issuer and never moves
+/// real money, but it DOES validate that the entered card is well-formed so junk
+/// like "1" is rejected: Luhn-valid 13–19 digit number, a non-expired MM/YY
+/// expiry, and a 3–4 digit CVV. Any structurally valid card is approved.
+/// Each failure returns a specific, user-facing decline reason.
 /// </summary>
 public class PaymentSimulationService : IPaymentSimulationService
 {
     public PaymentSimulationResult Charge(string? cardNumber, string? expiry, string? cvv)
     {
-        // Simulation only — accept any input and always approve.
+        // ── Card number: digits only, 13–19 long, Luhn-valid ──
+        var digits = new string((cardNumber ?? "").Where(char.IsDigit).ToArray());
+        if (digits.Length == 0)
+            return PaymentSimulationResult.Decline("Please enter a card number.");
+        if (digits.Length < 13 || digits.Length > 19)
+            return PaymentSimulationResult.Decline("Card number must be between 13 and 19 digits.");
+        if (!PassesLuhn(digits))
+            return PaymentSimulationResult.Decline("That card number is invalid. Please check the digits and try again.");
+
+        // ── Expiry: parseable MM/YY (or MM/YYYY) and not in the past ──
+        if (string.IsNullOrWhiteSpace(expiry))
+            return PaymentSimulationResult.Decline("Please enter the card's expiry date (MM/YY).");
+        if (!TryParseExpiry(expiry, out var endExclusiveUtc))
+            return PaymentSimulationResult.Decline("The expiry date is not valid. Use MM/YY, e.g. 09/28.");
+        if (endExclusiveUtc <= DateTime.UtcNow)
+            return PaymentSimulationResult.Decline("This card has expired. Please use a card with a future expiry date.");
+
+        // ── CVV: 3–4 digits ──
+        var cvvDigits = new string((cvv ?? "").Where(char.IsDigit).ToArray());
+        if (cvvDigits.Length is < 3 or > 4)
+            return PaymentSimulationResult.Decline("The CVV must be the 3 or 4 digit code on your card.");
+
+        // Well-formed — approve (no real charge).
         return PaymentSimulationResult.Approve();
     }
 

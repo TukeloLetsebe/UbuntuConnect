@@ -23,5 +23,7 @@ public partial class Business
 
     public virtual ICollection<PartnershipCampaign> PartnershipCampaigns { get; set; } = new List<PartnershipCampaign>();
 
+    public virtual ICollection<Verification> Verifications { get; set; } = new List<Verification>();
+
     public virtual User User { get; set; } = null!;
 }

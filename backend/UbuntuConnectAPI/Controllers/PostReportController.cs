@@ -74,6 +74,12 @@ public class PostReportController : ControllerBase
                 r.ReportId,
                 r.PostId,
                 r.ReporterUserId,
+                // Reporter's display name so admins see who reported, not "user #12".
+                reporterName = _context.Users.Where(u => u.UserId == r.ReporterUserId)
+                    .Select(u => u.Individuals.Select(i => i.FirstName + " " + i.LastName).FirstOrDefault()
+                        ?? u.Npos.Select(n => n.OrganizationName).FirstOrDefault()
+                        ?? u.Businesses.Select(b => b.ContactPersonName).FirstOrDefault()
+                        ?? u.UserEmail).FirstOrDefault(),
                 r.Reason,
                 r.Status,
                 r.CreatedAt,
@@ -85,7 +91,13 @@ public class PostReportController : ControllerBase
                     r.Post.Content,
                     r.Post.MediaUrl,
                     r.Post.ActivityStatus,
-                    authorUserId = r.Post.UserId
+                    authorUserId = r.Post.UserId,
+                    // Author's display name for the same reason.
+                    authorName = _context.Users.Where(u => u.UserId == r.Post.UserId)
+                        .Select(u => u.Individuals.Select(i => i.FirstName + " " + i.LastName).FirstOrDefault()
+                            ?? u.Npos.Select(n => n.OrganizationName).FirstOrDefault()
+                            ?? u.Businesses.Select(b => b.ContactPersonName).FirstOrDefault()
+                            ?? u.UserEmail).FirstOrDefault()
                 }
             })
             .ToListAsync();

@@ -4,6 +4,8 @@ import { motion } from "motion/react";
 import { toast } from "sonner";
 import { useAuth } from "../../context/AuthContext";
 import NotificationBell from "./NotificationBell";
+import { useConfirm } from "./ConfirmDialog";
+import { getNpoColor } from "../../lib/npoColor";
 import EmailVerificationBanner from "./EmailVerificationBanner";
 import ImageUploadField from "./ImageUploadField";
 import DocumentUploadField from "./DocumentUploadField";
@@ -44,6 +46,7 @@ function fundraiserDeadlineLabel(endDate: string | null | undefined): { text: st
 
 export default function NPODashboard() {
   const { logout, userId } = useAuth();
+  const confirm = useConfirm();
   const navigate = useNavigate();
   const [activeTab, setActiveTab] = useState("overview");
   const [sidebarOpen, setSidebarOpen] = useState(false);
@@ -80,6 +83,8 @@ export default function NPODashboard() {
   // Volunteers
   const [applications, setApplications] = useState<VolunteerApplicationItem[]>([]);
   const [applicationsLoading, setApplicationsLoading] = useState(false);
+  const [volSearch, setVolSearch] = useState("");
+  const [volRoleFilter, setVolRoleFilter] = useState("All");
   const [opportunities, setOpportunities] = useState<VolunteerOpportunityItem[]>([]);
   const [opportunitiesLoading, setOpportunitiesLoading] = useState(false);
   const [showCreateOpportunity, setShowCreateOpportunity] = useState(false);
@@ -363,13 +368,24 @@ export default function NPODashboard() {
 
   const handleSubmitVerification = async (e: React.FormEvent) => { e.preventDefault(); if (!npoCertUrl && !npoTaxCertUrl) { toast.error("Please upload at least one document (PDF)."); return; } try { await npoService.submitVerification({ npoCertificate: npoCertUrl || undefined, npoTaxCertificate: npoTaxCertUrl || undefined }); setShowVerificationForm(false); setNpoCertUrl(null); setNpoTaxCertUrl(null); loadVerification(); toast.success("Documents submitted for verification!"); } catch (e) { toast.error(getErrorMessage(e)); } };
 
-  const handleWithdraw = async (e: React.FormEvent) => { e.preventDefault(); const amt = parseFloat(withdrawAmount); if (!amt || amt <= 0) { toast.error("Enter valid amount."); return; } if (amt > walletBalance) { toast.error("Insufficient balance."); return; } setWithdrawing(true); try { await npoService.withdraw(amt); setWalletBalance(p => p - amt); setTransactions(p => [{ transactionId: Date.now(), senderUserId: userId, receiverUserId: null, amount: amt, transactionType: "Withdrawal", status: "Completed", timestamp: new Date().toISOString() }, ...p]); setShowWithdrawModal(false); setWithdrawAmount(""); toast.success(`R ${amt.toLocaleString()} withdrawn!`); } catch (e) { toast.error(getErrorMessage(e)); } finally { setWithdrawing(false); } };
+  const handleWithdraw = async (e: React.FormEvent) => { e.preventDefault(); const amt = parseFloat(withdrawAmount); if (!amt || amt <= 0) { toast.error("Enter a valid withdrawal amount greater than R 0."); return; } if (amt > walletBalance) { toast.error(`Insufficient balance. Your wallet has R ${walletBalance.toLocaleString()}, so you can't withdraw R ${amt.toLocaleString()}.`); return; } const ok = await confirm({ title: `Withdraw R ${amt.toLocaleString()}?`, description: `R ${amt.toLocaleString()} will be withdrawn from your wallet (current balance R ${walletBalance.toLocaleString()}). This cannot be undone.`, confirmText: `Withdraw R ${amt.toLocaleString()}` }); if (!ok) return; setWithdrawing(true); try { await npoService.withdraw(amt); setWalletBalance(p => p - amt); setTransactions(p => [{ transactionId: Date.now(), senderUserId: userId, receiverUserId: null, amount: amt, transactionType: "Withdrawal", status: "Completed", timestamp: new Date().toISOString() }, ...p]); setShowWithdrawModal(false); setWithdrawAmount(""); toast.success(`R ${amt.toLocaleString()} withdrawn!`); } catch (e) { toast.error(getErrorMessage(e)); } finally { setWithdrawing(false); } };
 
   const handleFollowNpo = async (npoId: number) => { if (followedNpoIds.has(npoId)) { setFollowedNpoIds(p => { const n = new Set(p); n.delete(npoId); return n; }); try { await npoService.unfollowNpo(npoId); } catch (e) { setFollowedNpoIds(p => new Set(p).add(npoId)); toast.error(getErrorMessage(e)); } } else { setFollowedNpoIds(p => new Set(p).add(npoId)); try { await npoService.followNpo(npoId); toast.success("Following!"); } catch (e) { setFollowedNpoIds(p => { const n = new Set(p); n.delete(npoId); return n; }); toast.error(getErrorMessage(e)); } } };
 
-  const pendingApps = applications.filter(a => a.status === "Pending");
-  const acceptedApps = applications.filter(a => a.status === "Accepted");
-  const completedApps = applications.filter(a => a.status === "Completed");
+  // Volunteer-application search + role filter (applied to every status list).
+  const applicationMatches = (a: VolunteerApplicationItem) => {
+    const q = volSearch.trim().toLowerCase();
+    const matchesSearch = !q
+      || `${a.firstName} ${a.lastName}`.toLowerCase().includes(q)
+      || (a.skills || "").toLowerCase().includes(q)
+      || (a.roleTitle || "").toLowerCase().includes(q);
+    const matchesRole = volRoleFilter === "All" || a.roleTitle === volRoleFilter;
+    return matchesSearch && matchesRole;
+  };
+  const volRoleOptions = Array.from(new Set(applications.map(a => a.roleTitle).filter((r): r is string => !!r)));
+  const pendingApps = applications.filter(a => a.status === "Pending" && applicationMatches(a));
+  const acceptedApps = applications.filter(a => a.status === "Accepted" && applicationMatches(a));
+  const completedApps = applications.filter(a => a.status === "Completed" && applicationMatches(a));
   // Verified NPOs unlock the trust-sensitive actions (fundraisers, volunteer
   // opportunities, campaign applications, withdrawals, donating).
   const isNpoVerified = npoProfile?.isVerified === true;
@@ -531,9 +547,9 @@ export default function NPODashboard() {
                 <p className="text-sm text-neutral-600">Showing {filteredNpos.length} organization{filteredNpos.length !== 1 ? "s" : ""}</p>
               </div>
               {discoverLoading ? <div className="flex justify-center py-12"><Loader2 className="w-8 h-8 animate-spin text-orange-600" /></div> : filteredNpos.length === 0 ? <Card className="p-12 text-center"><p className="text-neutral-600">No NPOs found.</p></Card> : (
-                <div className="grid md:grid-cols-2 lg:grid-cols-3 gap-6">{filteredNpos.map(npo => (
+                <div className="grid md:grid-cols-2 gap-6">{filteredNpos.map(npo => (
                   <Card key={npo.npoId} className="overflow-hidden hover:shadow-lg transition-shadow cursor-pointer" onClick={() => navigate(`/npo/${npo.npoId}`)}>
-                    <div className="h-40 bg-gradient-to-br from-orange-400 to-orange-600 flex items-center justify-center overflow-hidden">
+                    <div className={`h-40 bg-gradient-to-br ${getNpoColor(npo.organizationName)} flex items-center justify-center overflow-hidden`}>
                       {npo.profileImage
                         ? <img src={resolveMediaUrl(npo.profileImage)} alt={npo.organizationName} className="w-full h-full object-cover" onError={(e) => { (e.currentTarget as HTMLImageElement).style.display = "none"; }} />
                         : <span className="text-5xl font-bold text-white/80">{npo.organizationName.charAt(0).toUpperCase()}</span>}
@@ -650,6 +666,14 @@ export default function NPODashboard() {
             {/* VOLUNTEERS */}
             {activeTab === "volunteers" && (<div>
               <div className="flex items-center justify-between mb-8"><div><h1 className="text-2xl font-bold mb-2">Volunteers</h1></div><div className="flex gap-2"><Button variant="outline" size="sm" onClick={() => { loadApplications(); loadOpportunities(); }}><RefreshCw className="w-4 h-4" /></Button><Button className="bg-orange-600 hover:bg-orange-700" disabled={!isNpoVerified} title={!isNpoVerified ? verifyGateMessage : undefined} onClick={() => openCreateOpportunity()}><Plus className="w-4 h-4 mr-2" /> Create Opportunity</Button></div></div>
+              <div className="flex flex-wrap gap-3 mb-6">
+                <div className="flex-1 min-w-[220px] relative"><Search className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-neutral-400" /><Input placeholder="Search applicants by name or skill..." className="pl-9" value={volSearch} onChange={e => setVolSearch(e.target.value)} /></div>
+                <select className="px-3 py-2 border border-neutral-300 rounded-md" value={volRoleFilter} onChange={e => setVolRoleFilter(e.target.value)}>
+                  <option value="All">All roles</option>
+                  {volRoleOptions.map(r => <option key={r} value={r}>{r}</option>)}
+                </select>
+                {(volSearch || volRoleFilter !== "All") && <Button variant="outline" onClick={() => { setVolSearch(""); setVolRoleFilter("All"); }}>Clear</Button>}
+              </div>
               <Tabs defaultValue="opportunities"><TabsList className="mb-6"><TabsTrigger value="opportunities">Opportunities ({opportunities.length})</TabsTrigger><TabsTrigger value="pending">Pending ({pendingApps.length})</TabsTrigger><TabsTrigger value="accepted">Accepted ({acceptedApps.length})</TabsTrigger><TabsTrigger value="completed">Completed ({completedApps.length})</TabsTrigger></TabsList>
                 <TabsContent value="opportunities">{opportunitiesLoading ? <div className="flex justify-center py-8"><Loader2 className="w-6 h-6 animate-spin" /></div> : opportunities.length === 0 ? <Card className="p-12 text-center"><p className="text-neutral-600 mb-4">No opportunities. Create one for supporters to apply.</p><Button onClick={() => openCreateOpportunity()}>Create Opportunity</Button></Card> : <div className="grid md:grid-cols-2 gap-6">{opportunities.map(o => (<Card key={o.opportunityId} className="p-6"><div className="flex justify-between mb-2"><div><h3 className="font-semibold">{o.roleTitle}</h3>{o.category && <Badge variant="outline">{o.category}</Badge>}</div><Badge className="bg-green-100 text-green-700">{o.numOfPositions} pos.</Badge></div>{o.description && <p className="text-sm text-neutral-600 mb-3 line-clamp-2">{o.description}</p>}<div className="flex gap-2"><Button variant="outline" size="sm" className="flex-1" onClick={() => openEditOpportunity(o)}><Edit className="w-4 h-4 mr-1" /> Edit</Button><Button variant="outline" size="sm" className="text-red-600 flex-1" onClick={() => handleDeleteOpportunity(o.opportunityId)}><Trash2 className="w-4 h-4 mr-1" /> Delete</Button></div></Card>))}</div>}</TabsContent>
                 <TabsContent value="pending">{pendingApps.length === 0 ? <Card className="p-8 text-center"><p className="text-neutral-600">No pending applications.</p></Card> : <div className="space-y-4">{pendingApps.map(a => (<Card key={a.applicationId} className="p-6"><div className="flex justify-between"><div><h3 className="font-semibold">{a.firstName} {a.lastName}</h3>{a.roleTitle && <Badge variant="outline" className="mt-1">{a.roleTitle}</Badge>}<p className="text-sm text-neutral-600 mt-1">{a.email}{a.phoneNum ? ` · ${a.phoneNum}` : ""}</p>{a.skills && <p className="text-xs text-neutral-500 mt-1">Skills: {a.skills}</p>}{a.availability && <p className="text-xs text-neutral-500 mt-0.5">Availability: {a.availability}</p>}{a.whyVolunteer && <p className="text-sm text-neutral-600 mt-2 italic">“{a.whyVolunteer}”</p>}<p className="text-xs text-neutral-400 mt-1">Applied {new Date(a.applicationDate).toLocaleDateString()}</p></div><div className="flex gap-2"><Button size="sm" variant="outline" onClick={() => handleViewIdentity(a)}><Shield className="w-4 h-4 mr-1" /> ID</Button><Button size="sm" className="bg-green-600 hover:bg-green-700" onClick={() => handleAcceptApplication(a.applicationId)}><Check className="w-4 h-4" /></Button><Button size="sm" variant="outline" className="text-red-600" onClick={() => handleRejectApplication(a.applicationId)}><X className="w-4 h-4" /></Button></div></div></Card>))}</div>}</TabsContent>

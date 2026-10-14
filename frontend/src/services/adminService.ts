@@ -35,19 +35,26 @@ export interface UserDetail {
 
 export interface VerificationItem {
   verificationId: number;
-  npoId: number;
+  // Which kind of applicant: "NPO" or "Business".
+  subjectType: "NPO" | "Business";
+  npoId: number | null;
+  businessId: number | null;
   status: string;
   submittedDate: string;
   reviewedByUserId: number | null;
   reviewedDate: string | null;
   organizationName: string;
-  npoRegNum: string;
+  regNum: string;
   focusArea: string | null;
   mission: string | null;
   email: string;
   contact: string | null;
   location: string | null;
   isVerified: boolean;
+  // Documents (NPO: certificate + tax; Business: CIPC + tax clearance).
+  document1: string | null;
+  document2: string | null;
+  // Back-compat aliases still returned by the API.
   npoCertificate: string | null;
   npoTaxCertificate: string | null;
 }
@@ -56,6 +63,8 @@ export interface TransactionItem {
   transactionId: number;
   senderUserId: number | null;
   receiverUserId: number | null;
+  senderName: string | null;
+  receiverName: string | null;
   amount: number;
   transactionType: string;
   status: string;

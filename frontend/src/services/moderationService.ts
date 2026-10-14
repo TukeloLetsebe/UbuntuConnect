@@ -4,6 +4,7 @@ export interface ReportedPostItem {
   reportId: number;
   postId: number;
   reporterUserId: number;
+  reporterName: string | null;
   reason: string;
   status: string;
   createdAt: string;
@@ -15,6 +16,7 @@ export interface ReportedPostItem {
     mediaUrl: string | null;
     activityStatus: string;
     authorUserId: number;
+    authorName: string | null;
   };
 }
 

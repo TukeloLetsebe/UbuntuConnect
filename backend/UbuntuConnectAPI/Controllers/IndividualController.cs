@@ -437,6 +437,83 @@ public class IndividualController : ControllerBase
         });
     }
 
+    // FULL TRANSACTION HISTORY — every money movement involving this user
+    // (top-ups in, donations out, withdrawals out, campaign funds in) with a
+    // resolved counterparty NAME + direction, plus summary totals.
+    [Authorize]
+    [HttpGet("transactions")]
+    public async Task<IActionResult> GetMyTransactions()
+    {
+        var userId = int.Parse(User.FindFirst(ClaimTypes.NameIdentifier)!.Value);
+
+        var rows = await _context.Transactions
+            .Where(t => t.SenderUserId == userId || t.ReceiverUserId == userId)
+            .OrderByDescending(t => t.Timestamp)
+            .Select(t => new
+            {
+                t.TransactionId,
+                t.SenderUserId,
+                t.ReceiverUserId,
+                t.Amount,
+                t.TransactionType,
+                t.Status,
+                t.Timestamp
+            })
+            .ToListAsync();
+
+        // Resolve names for every counterparty id in one lookup.
+        var otherIds = rows
+            .Select(r => r.SenderUserId == userId ? r.ReceiverUserId : r.SenderUserId)
+            .Where(id => id.HasValue).Select(id => id!.Value).Distinct().ToList();
+
+        var names = otherIds.Count == 0 ? new Dictionary<int, string>() :
+            (await _context.Users.Where(u => otherIds.Contains(u.UserId))
+                .Select(u => new
+                {
+                    u.UserId,
+                    u.UserEmail,
+                    individual = u.Individuals.Select(i => i.FirstName + " " + i.LastName).FirstOrDefault(),
+                    npo = u.Npos.Select(n => n.OrganizationName).FirstOrDefault(),
+                    business = u.Businesses.Select(b => b.ContactPersonName).FirstOrDefault()
+                }).ToListAsync())
+            .ToDictionary(u => u.UserId, u => u.individual ?? u.npo ?? u.business ?? u.UserEmail);
+
+        var transactions = rows.Select(r =>
+        {
+            // "In" means money arrived in this user's wallet.
+            var isIncoming = r.ReceiverUserId == userId;
+            var otherId = isIncoming ? r.SenderUserId : r.ReceiverUserId;
+            string counterparty = r.TransactionType switch
+            {
+                "TopUp" => "Wallet top-up (card)",
+                "Withdrawal" => "Bank withdrawal",
+                _ => otherId.HasValue && names.TryGetValue(otherId.Value, out var n) ? n : "UbuntuConnect"
+            };
+            return new
+            {
+                transactionId = r.TransactionId,
+                type = r.TransactionType,
+                direction = isIncoming ? "in" : "out",
+                amount = r.Amount,
+                status = r.Status,
+                timestamp = r.Timestamp,
+                counterpartyName = counterparty
+            };
+        }).ToList();
+
+        bool Completed(string s) => s == "Completed";
+        var totalToppedUp = rows.Where(r => r.TransactionType == "TopUp" && Completed(r.Status)).Sum(r => r.Amount);
+        var totalDonated = rows.Where(r => r.TransactionType == "Donation" && r.SenderUserId == userId && Completed(r.Status)).Sum(r => r.Amount);
+        var totalWithdrawn = rows.Where(r => r.TransactionType == "Withdrawal" && Completed(r.Status)).Sum(r => r.Amount);
+        var totalReceived = rows.Where(r => r.ReceiverUserId == userId && r.TransactionType != "TopUp" && Completed(r.Status)).Sum(r => r.Amount);
+
+        return Ok(new
+        {
+            summary = new { totalToppedUp, totalDonated, totalWithdrawn, totalReceived, count = transactions.Count },
+            transactions
+        });
+    }
+
     //MY VOLUNTEERING
     [Authorize]
     [HttpGet("my-volunteering")]
@@ -754,9 +831,9 @@ public class IndividualController : ControllerBase
         if (dto.Amount > _limits.MaxTopUp)
             return BadRequest($"Maximum top-up is R {_limits.MaxTopUp:0.##}.");
 
-        // Simulated card charge. If card details were supplied, validate them
-        // (Luhn + expiry + CVV); a valid card is always approved.
-        if (_payments != null && HasCardDetails(dto))
+        // Simulated card charge. A card is always required and must be
+        // well-formed (Luhn + non-expired expiry + CVV); no real issuer check.
+        if (_payments != null)
         {
             var charge = _payments.Charge(dto.CardNumber, dto.CardExpiry, dto.CardCvv);
             if (!charge.Approved)
@@ -799,9 +876,4 @@ public class IndividualController : ControllerBase
             return StatusCode(500, "Top-up failed due to a server error.");
         }
     }
-
-    private static bool HasCardDetails(TopUpRequest dto) =>
-        !string.IsNullOrWhiteSpace(dto.CardNumber)
-        || !string.IsNullOrWhiteSpace(dto.CardExpiry)
-        || !string.IsNullOrWhiteSpace(dto.CardCvv);
 }

@@ -65,6 +65,79 @@ public class VerificationController : ControllerBase
         });
     }
 
+    // Business submits a verification request with its CIPC registration
+    // document and tax clearance certificate (stored in the same two columns).
+    [Authorize(Roles = "Business")]
+    [HttpPost("business/submit")]
+    public async Task<IActionResult> SubmitBusiness([FromBody] SubmitBusinessVerificationRequest req)
+    {
+        var userId = int.Parse(User.FindFirst(ClaimTypes.NameIdentifier)!.Value);
+
+        var business = await _context.Businesses.FirstOrDefaultAsync(b => b.UserId == userId);
+        if (business == null) return BadRequest("No business profile is linked to this account.");
+
+        var existingPending = await _context.Verifications
+            .AnyAsync(v => v.BusinessId == business.BusinessId && v.Status == "Pending");
+        if (existingPending)
+            return BadRequest("You already have a pending verification request. Please wait for admin review.");
+
+        if (string.IsNullOrWhiteSpace(req.CipcDocument) && string.IsNullOrWhiteSpace(req.TaxClearance))
+            return BadRequest("Please upload at least one document — your CIPC registration document or tax clearance certificate.");
+
+        var verification = new Verification
+        {
+            BusinessId = business.BusinessId,
+            Npocertificate = req.CipcDocument,       // reused column: CIPC document
+            NpotaxCertificate = req.TaxClearance,    // reused column: tax clearance
+            Status = "Pending",
+            SubmittedDate = DateTime.UtcNow,
+            ReviewedByUserId = null,
+            ReviewedDate = null
+        };
+
+        _context.Verifications.Add(verification);
+        await _context.SaveChangesAsync();
+
+        return Ok(new
+        {
+            verificationId = verification.VerificationId,
+            businessId = verification.BusinessId,
+            cipcDocument = verification.Npocertificate,
+            taxClearance = verification.NpotaxCertificate,
+            status = verification.Status,
+            submittedDate = verification.SubmittedDate,
+            reviewedDate = verification.ReviewedDate
+        });
+    }
+
+    // Business views its own verification history/status.
+    [Authorize(Roles = "Business")]
+    [HttpGet("business/my-status")]
+    public async Task<IActionResult> GetMyBusinessVerification()
+    {
+        var userId = int.Parse(User.FindFirst(ClaimTypes.NameIdentifier)!.Value);
+
+        var business = await _context.Businesses.FirstOrDefaultAsync(b => b.UserId == userId);
+        if (business == null) return BadRequest("No business profile is linked to this account.");
+
+        var verifications = await _context.Verifications
+            .Where(v => v.BusinessId == business.BusinessId)
+            .OrderByDescending(v => v.SubmittedDate)
+            .Select(v => new
+            {
+                verificationId = v.VerificationId,
+                businessId = v.BusinessId,
+                cipcDocument = v.Npocertificate,
+                taxClearance = v.NpotaxCertificate,
+                status = v.Status,
+                submittedDate = v.SubmittedDate,
+                reviewedDate = v.ReviewedDate
+            })
+            .ToListAsync();
+
+        return Ok(verifications);
+    }
+
     // NPO views their own verification status
     [Authorize(Roles = "NPO")]
     [HttpGet("my-status")]
@@ -138,4 +211,12 @@ public class SubmitVerificationRequest
 {
     public string? NpoCertificate { get; set; }
     public string? NpoTaxCertificate { get; set; }
+}
+
+public class SubmitBusinessVerificationRequest
+{
+    /// <summary>CIPC company registration document URL.</summary>
+    public string? CipcDocument { get; set; }
+    /// <summary>Tax clearance certificate URL.</summary>
+    public string? TaxClearance { get; set; }
 }

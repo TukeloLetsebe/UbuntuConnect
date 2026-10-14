@@ -104,6 +104,11 @@ public class CampaignApplicationController : ControllerBase
             {
                 applicationId = a.ApplicationId,
                 npoId = a.NpoId,
+                // The applying NPO's name + verified flag so the business sees who
+                // applied (and can click through to the NPO's public profile).
+                organizationName = a.Npo.OrganizationName,
+                focusArea = a.Npo.NpofocusArea,
+                isVerified = a.Npo.User.IsVerified,
                 motivation = a.Motivation,
                 status = a.Status,
                 applicationDate = a.ApplicationDate
