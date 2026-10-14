@@ -16,7 +16,7 @@ namespace UbuntuConnectAPI.Controllers;
 [ApiController]
 [Route("api/admin/kyc")]
 [Authorize(Roles = "Admin")]
-public class AdminKycController : ControllerBase
+public class AdminKycController : BaseApiController
 {
     private readonly AppDbContext _context;
     private readonly INotificationService _notifications;
@@ -29,7 +29,7 @@ public class AdminKycController : ControllerBase
         _email = email;
     }
 
-    private int AdminId => int.Parse(User.FindFirst(ClaimTypes.NameIdentifier)!.Value);
+    private int AdminId => CallerId;
 
     // List individual KYC submissions (default: Pending).
     [HttpGet]

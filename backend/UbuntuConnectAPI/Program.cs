@@ -14,6 +14,7 @@ using UbuntuConnectAPI.Services.Fundraisers;
 using UbuntuConnectAPI.Services.Payments;
 using UbuntuConnectAPI.Services.Verification;
 using UbuntuConnectAPI.Services.FaceVerification;
+using UbuntuConnectAPI.Services.Users;
 using Microsoft.Extensions.FileProviders;
 using Microsoft.OpenApi.Models;
 
@@ -54,6 +55,9 @@ builder.Services.AddScoped<INotificationService, NotificationService>();
 // Anti-fraud/AML: blocks donate/topup/volunteer-apply unless the user is
 // email-verified AND identity-verified.
 builder.Services.AddScoped<IVerificationGate, VerificationGate>();
+
+// Resolves user ids to display names (used by admin + transaction views).
+builder.Services.AddScoped<IUserNameResolver, UserNameResolver>();
 
 // ── Face verification (Task 13 seam + Task 15 engine) ──────
 // When "FaceVerification:Enabled" is true, use the local FaceONNX engine
@@ -152,6 +156,25 @@ builder.Services.AddSwaggerGen(options =>
 
 
 var app = builder.Build();
+
+// Map an invalid/missing-auth claim (thrown by BaseApiController.CallerId) to a
+// clean 401 instead of letting it surface as an unhandled 500.
+app.Use(async (context, next) =>
+{
+    try
+    {
+        await next();
+    }
+    catch (UnauthorizedAccessException ex)
+    {
+        if (!context.Response.HasStarted)
+        {
+            context.Response.StatusCode = StatusCodes.Status401Unauthorized;
+            context.Response.ContentType = "text/plain";
+            await context.Response.WriteAsync(ex.Message);
+        }
+    }
+});
 
 // Configure the HTTP request pipeline.
 if (app.Environment.IsDevelopment())

@@ -8,7 +8,7 @@ namespace UbuntuConnectAPI.Controllers;
 
 [ApiController]
 [Route("api/wallet")]
-public class WalletController : ControllerBase
+public class WalletController : BaseApiController
 {
     private readonly AppDbContext _context;
 
@@ -21,8 +21,7 @@ public class WalletController : ControllerBase
     [HttpGet("user/{userId}/balance")]
     public async Task<IActionResult> GetBalanceByUser(int userId)
     {
-        var callerIdClaim = User.FindFirst(ClaimTypes.NameIdentifier)?.Value;
-        var callerId = int.Parse(callerIdClaim!);
+        var callerId = CallerId;
 
         // Only view your own balance
         if (callerId != userId) return Forbid();

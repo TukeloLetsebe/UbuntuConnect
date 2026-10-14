@@ -9,7 +9,7 @@ namespace UbuntuConnectAPI.Controllers;
 [ApiController]
 [Route("api/notification")]
 [Authorize]
-public class NotificationController : ControllerBase
+public class NotificationController : BaseApiController
 {
     private readonly AppDbContext _context;
 
@@ -18,7 +18,6 @@ public class NotificationController : ControllerBase
         _context = context;
     }
 
-    private int CallerId => int.Parse(User.FindFirst(ClaimTypes.NameIdentifier)!.Value);
 
     /// <summary>Returns the caller's notifications, newest first.</summary>
     [HttpGet]

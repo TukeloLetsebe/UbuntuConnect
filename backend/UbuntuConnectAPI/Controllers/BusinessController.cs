@@ -6,26 +6,31 @@ using UbuntuConnectAPI.Data;
 using UbuntuConnectAPI.DTOs.Requests;
 using UbuntuConnectAPI.Models;
 using UbuntuConnectAPI.Services.Payments;
+using UbuntuConnectAPI.Services.Users;
 using Microsoft.Extensions.Options;
 
 namespace UbuntuConnectAPI.Controllers;
 
 [ApiController]
 [Route("api/business")]
-public class BusinessController : ControllerBase
+public class BusinessController : BaseApiController
 {
     private readonly AppDbContext _context;
     private readonly IPaymentSimulationService? _payments;
     private readonly WalletLimitsOptions _limits;
+    // Optional so direct-construction (tests) keeps working; falls back when null.
+    private readonly IUserNameResolver? _names;
 
     public BusinessController(
         AppDbContext context,
         IPaymentSimulationService? payments = null,
-        IOptions<WalletLimitsOptions>? limits = null)
+        IOptions<WalletLimitsOptions>? limits = null,
+        IUserNameResolver? names = null)
     {
         _context = context;
         _payments = payments;
         _limits = limits?.Value ?? new WalletLimitsOptions();
+        _names = names;
     }
 
     // ── GET MY PROFILE ─────────────────────────────────────────
@@ -33,8 +38,7 @@ public class BusinessController : ControllerBase
     [HttpGet("me")]
     public async Task<IActionResult> GetMyProfile()
     {
-        var userIdClaim = User.FindFirst(ClaimTypes.NameIdentifier)?.Value;
-        var userId = int.Parse(userIdClaim!);
+        var userId = CallerId;
 
         var profile = await _context.Businesses
             .Include(b => b.User)
@@ -70,8 +74,7 @@ public class BusinessController : ControllerBase
     [HttpPut("me")]
     public async Task<IActionResult> UpdateMyProfile([FromBody] UpdateBusinessRequest req)
     {
-        var userIdClaim = User.FindFirst(ClaimTypes.NameIdentifier)?.Value;
-        var userId = int.Parse(userIdClaim!);
+        var userId = CallerId;
 
         var business = await _context.Businesses.FirstOrDefaultAsync(b => b.UserId == userId);
         if (business == null) return NotFound("Business profile not found.");
@@ -101,7 +104,7 @@ public class BusinessController : ControllerBase
     [HttpPut("change-password")]
     public async Task<IActionResult> ChangePassword([FromBody] ChangePasswordDto dto)
     {
-        var userId = int.Parse(User.FindFirst(ClaimTypes.NameIdentifier)!.Value);
+        var userId = CallerId;
 
         var user = await _context.Users.FirstOrDefaultAsync(u => u.UserId == userId);
         if (user == null) return NotFound("User not found.");
@@ -121,7 +124,7 @@ public class BusinessController : ControllerBase
     [HttpPut("deactivate")]
     public async Task<IActionResult> DeactivateAccount([FromBody] DeactivateAccountDto dto)
     {
-        var userId = int.Parse(User.FindFirst(ClaimTypes.NameIdentifier)!.Value);
+        var userId = CallerId;
 
         var user = await _context.Users.FirstOrDefaultAsync(u => u.UserId == userId);
         if (user == null) return NotFound("User not found.");
@@ -161,8 +164,7 @@ public class BusinessController : ControllerBase
     [HttpPost("follow/{npoId}")]
     public async Task<IActionResult> FollowNpo(int npoId)
     {
-        var userIdClaim = User.FindFirst(ClaimTypes.NameIdentifier)?.Value;
-        var userId = int.Parse(userIdClaim!);
+        var userId = CallerId;
 
         var npoExists = await _context.Npos.AnyAsync(n => n.NpoId == npoId);
         if (!npoExists) return NotFound("NPO not found.");
@@ -181,8 +183,7 @@ public class BusinessController : ControllerBase
     [HttpDelete("unfollow/{npoId}")]
     public async Task<IActionResult> UnfollowNpo(int npoId)
     {
-        var userIdClaim = User.FindFirst(ClaimTypes.NameIdentifier)?.Value;
-        var userId = int.Parse(userIdClaim!);
+        var userId = CallerId;
 
         var follow = await _context.Follows.FirstOrDefaultAsync(f => f.UserId == userId && f.NpoId == npoId);
         if (follow == null) return BadRequest("You are not following this NPO.");
@@ -197,8 +198,7 @@ public class BusinessController : ControllerBase
     [HttpGet("my-follows")]
     public async Task<IActionResult> GetMyFollows()
     {
-        var userIdClaim = User.FindFirst(ClaimTypes.NameIdentifier)?.Value;
-        var userId = int.Parse(userIdClaim!);
+        var userId = CallerId;
 
         var follows = await _context.Follows
             .Where(f => f.UserId == userId)
@@ -224,8 +224,7 @@ public class BusinessController : ControllerBase
     [HttpPost("donate/{npoId}")]
     public async Task<IActionResult> Donate(int npoId, [FromBody] DonateDto dto)
     {
-        var userIdClaim = User.FindFirst(ClaimTypes.NameIdentifier)?.Value;
-        var userId = int.Parse(userIdClaim!);
+        var userId = CallerId;
 
         if (dto.Amount <= 0) return BadRequest("Amount must be greater than zero.");
 
@@ -273,8 +272,7 @@ public class BusinessController : ControllerBase
     [HttpPost("topup")]
     public async Task<IActionResult> TopUp([FromBody] TopUpRequest dto)
     {
-        var userIdClaim = User.FindFirst(ClaimTypes.NameIdentifier)?.Value;
-        var userId = int.Parse(userIdClaim!);
+        var userId = CallerId;
 
         if (dto.Amount <= 0) return BadRequest("Amount must be greater than zero.");
 
@@ -327,8 +325,7 @@ public class BusinessController : ControllerBase
     [HttpGet("my-donations")]
     public async Task<IActionResult> GetMyDonations()
     {
-        var userIdClaim = User.FindFirst(ClaimTypes.NameIdentifier)?.Value;
-        var userId = int.Parse(userIdClaim!);
+        var userId = CallerId;
 
         var donations = await _context.Transactions
             .Where(t => t.SenderUserId == userId && t.TransactionType == "Donation")
@@ -355,7 +352,7 @@ public class BusinessController : ControllerBase
     [HttpGet("transactions")]
     public async Task<IActionResult> GetMyTransactions()
     {
-        var userId = int.Parse(User.FindFirst(ClaimTypes.NameIdentifier)!.Value);
+        var userId = CallerId;
 
         var rows = await _context.Transactions
             .Where(t => t.SenderUserId == userId || t.ReceiverUserId == userId)
@@ -376,17 +373,8 @@ public class BusinessController : ControllerBase
             .Select(r => r.SenderUserId == userId ? r.ReceiverUserId : r.SenderUserId)
             .Where(id => id.HasValue).Select(id => id!.Value).Distinct().ToList();
 
-        var names = otherIds.Count == 0 ? new Dictionary<int, string>() :
-            (await _context.Users.Where(u => otherIds.Contains(u.UserId))
-                .Select(u => new
-                {
-                    u.UserId,
-                    u.UserEmail,
-                    individual = u.Individuals.Select(i => i.FirstName + " " + i.LastName).FirstOrDefault(),
-                    npo = u.Npos.Select(n => n.OrganizationName).FirstOrDefault(),
-                    business = u.Businesses.Select(b => b.ContactPersonName).FirstOrDefault()
-                }).ToListAsync())
-            .ToDictionary(u => u.UserId, u => u.individual ?? u.npo ?? u.business ?? u.UserEmail);
+        var resolver = _names ?? new UserNameResolver(_context);
+        var names = await resolver.ResolveAsync(otherIds);
 
         var transactions = rows.Select(r =>
         {
@@ -426,8 +414,7 @@ public class BusinessController : ControllerBase
     [HttpGet("my-campaigns")]
     public async Task<IActionResult> GetMyCampaigns()
     {
-        var userIdClaim = User.FindFirst(ClaimTypes.NameIdentifier)?.Value;
-        var userId = int.Parse(userIdClaim!);
+        var userId = CallerId;
 
         var business = await _context.Businesses.FirstOrDefaultAsync(b => b.UserId == userId);
         if (business == null) return BadRequest("No Business profile linked.");
@@ -485,8 +472,7 @@ public class BusinessController : ControllerBase
     [HttpGet("my-impact")]
     public async Task<IActionResult> GetMyImpact()
     {
-        var userIdClaim = User.FindFirst(ClaimTypes.NameIdentifier)?.Value;
-        var userId = int.Parse(userIdClaim!);
+        var userId = CallerId;
 
         var totalDonated = await _context.Transactions
             .Where(t => t.SenderUserId == userId && t.TransactionType == "Donation" && t.Status == "Completed")

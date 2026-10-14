@@ -9,7 +9,7 @@ namespace UbuntuConnectAPI.Controllers;
 
 [ApiController]
 [Route("api/verification")]
-public class VerificationController : ControllerBase
+public class VerificationController : BaseApiController
 {
     private readonly AppDbContext _context;
 
@@ -23,8 +23,7 @@ public class VerificationController : ControllerBase
     [HttpPost("submit")]
     public async Task<IActionResult> Submit([FromBody] SubmitVerificationRequest req)
     {
-        var userIdClaim = User.FindFirst(ClaimTypes.NameIdentifier)?.Value;
-        var userId = int.Parse(userIdClaim!);
+        var userId = CallerId;
 
         var npo = await _context.Npos.FirstOrDefaultAsync(n => n.UserId == userId);
         if (npo == null) return BadRequest("No NPO profile linked to this account.");
@@ -71,7 +70,7 @@ public class VerificationController : ControllerBase
     [HttpPost("business/submit")]
     public async Task<IActionResult> SubmitBusiness([FromBody] SubmitBusinessVerificationRequest req)
     {
-        var userId = int.Parse(User.FindFirst(ClaimTypes.NameIdentifier)!.Value);
+        var userId = CallerId;
 
         var business = await _context.Businesses.FirstOrDefaultAsync(b => b.UserId == userId);
         if (business == null) return BadRequest("No business profile is linked to this account.");
@@ -115,7 +114,7 @@ public class VerificationController : ControllerBase
     [HttpGet("business/my-status")]
     public async Task<IActionResult> GetMyBusinessVerification()
     {
-        var userId = int.Parse(User.FindFirst(ClaimTypes.NameIdentifier)!.Value);
+        var userId = CallerId;
 
         var business = await _context.Businesses.FirstOrDefaultAsync(b => b.UserId == userId);
         if (business == null) return BadRequest("No business profile is linked to this account.");
@@ -143,8 +142,7 @@ public class VerificationController : ControllerBase
     [HttpGet("my-status")]
     public async Task<IActionResult> GetMyVerification()
     {
-        var userIdClaim = User.FindFirst(ClaimTypes.NameIdentifier)?.Value;
-        var userId = int.Parse(userIdClaim!);
+        var userId = CallerId;
 
         var npo = await _context.Npos.FirstOrDefaultAsync(n => n.UserId == userId);
         if (npo == null) return BadRequest("No NPO profile linked to this account.");

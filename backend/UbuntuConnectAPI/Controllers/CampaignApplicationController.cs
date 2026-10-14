@@ -13,7 +13,7 @@ namespace UbuntuConnectAPI.Controllers;
 
 [ApiController]
 [Route("api/campaignapplications")]
-public class CampaignApplicationController : ControllerBase
+public class CampaignApplicationController : BaseApiController
 {
     private readonly AppDbContext _context;
     private readonly IVerificationGate _gate;
@@ -40,8 +40,7 @@ public class CampaignApplicationController : ControllerBase
     [HttpPost("apply/{campaignId}")]
     public async Task<IActionResult> Apply(int campaignId, [FromBody] CampaignApplicationDto dto)
     {
-        var userIdClaim = User.FindFirst(ClaimTypes.NameIdentifier)?.Value;
-        var userId = int.Parse(userIdClaim!);
+        var userId = CallerId;
 
         // Only verified NPOs can apply to business partnership campaigns.
         var gate = await _gate.CanTransactAsync(userId);
@@ -88,8 +87,7 @@ public class CampaignApplicationController : ControllerBase
     [HttpGet("campaign/{campaignId}")]
     public async Task<IActionResult> GetByCampaign(int campaignId)
     {
-        var userIdClaim = User.FindFirst(ClaimTypes.NameIdentifier)?.Value;
-        var userId = int.Parse(userIdClaim!);
+        var userId = CallerId;
 
         var campaign = await _context.PartnershipCampaigns
             .Include(c => c.Business)
@@ -126,8 +124,7 @@ public class CampaignApplicationController : ControllerBase
     [HttpPut("{id}/approve")]
     public async Task<IActionResult> Approve(int id)
     {
-        var userIdClaim = User.FindFirst(ClaimTypes.NameIdentifier)?.Value;
-        var userId = int.Parse(userIdClaim!);
+        var userId = CallerId;
 
         var app = await _context.CampaignApplications
             .Include(a => a.Campaign)
@@ -224,8 +221,7 @@ public class CampaignApplicationController : ControllerBase
     [HttpPut("{id}/reject")]
     public async Task<IActionResult> Reject(int id)
     {
-        var userIdClaim = User.FindFirst(ClaimTypes.NameIdentifier)?.Value;
-        var userId = int.Parse(userIdClaim!);
+        var userId = CallerId;
 
         var app = await _context.CampaignApplications
             .Include(a => a.Campaign)

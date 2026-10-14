@@ -11,7 +11,7 @@ namespace UbuntuConnectAPI.Controllers;
 
 [ApiController]
 [Route("api/npo")]
-public class NPOController : ControllerBase
+public class NPOController : BaseApiController
 {
     private readonly AppDbContext _context;
     private readonly IVerificationGate _gate;
@@ -195,8 +195,7 @@ public class NPOController : ControllerBase
     [HttpPut("{id}")]
     public async Task<IActionResult> Update(int id, [FromBody] UpdateNPORequest req)
     {
-        var userIdClaim = User.FindFirst(System.Security.Claims.ClaimTypes.NameIdentifier)?.Value;
-        var userId = int.Parse(userIdClaim!);
+        var userId = CallerId;
 
         var npo = await _context.Npos.FirstOrDefaultAsync(n => n.NpoId == id);
         if (npo == null) return NotFound();
@@ -238,8 +237,7 @@ public class NPOController : ControllerBase
     [HttpPost("follow/{npoId}")]
     public async Task<IActionResult> FollowNpo(int npoId)
     {
-        var userIdClaim = User.FindFirst(ClaimTypes.NameIdentifier)?.Value;
-        var userId = int.Parse(userIdClaim!);
+        var userId = CallerId;
 
         var targetNpo = await _context.Npos.FirstOrDefaultAsync(n => n.NpoId == npoId);
         if (targetNpo == null) return NotFound("NPO not found.");
@@ -278,8 +276,7 @@ public class NPOController : ControllerBase
     [HttpDelete("unfollow/{npoId}")]
     public async Task<IActionResult> UnfollowNpo(int npoId)
     {
-        var userIdClaim = User.FindFirst(ClaimTypes.NameIdentifier)?.Value;
-        var userId = int.Parse(userIdClaim!);
+        var userId = CallerId;
 
         var follow = await _context.Follows.FirstOrDefaultAsync(f => f.UserId == userId && f.NpoId == npoId);
         if (follow == null) return BadRequest("You are not following this NPO.");
@@ -294,8 +291,7 @@ public class NPOController : ControllerBase
     [HttpGet("my-follows")]
     public async Task<IActionResult> GetMyFollows()
     {
-        var userIdClaim = User.FindFirst(ClaimTypes.NameIdentifier)?.Value;
-        var userId = int.Parse(userIdClaim!);
+        var userId = CallerId;
 
         var follows = await _context.Follows
             .Where(f => f.UserId == userId)
@@ -317,8 +313,7 @@ public class NPOController : ControllerBase
     [HttpGet("my-followers")]
     public async Task<IActionResult> GetMyFollowers()
     {
-        var userIdClaim = User.FindFirst(ClaimTypes.NameIdentifier)?.Value;
-        var userId = int.Parse(userIdClaim!);
+        var userId = CallerId;
 
         var npo = await _context.Npos.FirstOrDefaultAsync(n => n.UserId == userId);
         if (npo == null) return BadRequest("No NPO profile linked.");
@@ -348,8 +343,7 @@ public class NPOController : ControllerBase
     [HttpGet("my-donors")]
     public async Task<IActionResult> GetMyDonors()
     {
-        var userIdClaim = User.FindFirst(ClaimTypes.NameIdentifier)?.Value;
-        var userId = int.Parse(userIdClaim!);
+        var userId = CallerId;
 
         // Include both direct/fundraiser donations AND campaign contributions —
         // all incoming completed funds count toward this NPO's supporters.
@@ -402,8 +396,7 @@ public class NPOController : ControllerBase
     [HttpPost("project/{projectId}/donate")]
     public async Task<IActionResult> DonateToProject(int projectId, [FromBody] TopUpRequest dto)
     {
-        var userIdClaim = User.FindFirst(ClaimTypes.NameIdentifier)?.Value;
-        var userId = int.Parse(userIdClaim!);
+        var userId = CallerId;
 
         // Verification gate — anti-fraud/AML: only fully verified users may donate.
         var gate = await _gate.CanTransactAsync(userId);

@@ -10,7 +10,7 @@ namespace UbuntuConnectAPI.Controllers;
 [ApiController]
 [Route("api/reports")]
 [Authorize]
-public class ReportController : ControllerBase
+public class ReportController : BaseApiController
 {
     private readonly AppDbContext _context;
 
@@ -132,8 +132,7 @@ public class ReportController : ControllerBase
     [HttpGet("my-donations/csv")]
     public async Task<IActionResult> MyDonationsCsv([FromQuery] DateTime? start, [FromQuery] DateTime? end)
     {
-        var callerIdClaim = User.FindFirst(System.Security.Claims.ClaimTypes.NameIdentifier)?.Value;
-        var callerId = int.Parse(callerIdClaim!);
+        var callerId = CallerId;
 
         var q = _context.Transactions
             .Where(t => t.SenderUserId == callerId && t.TransactionType == "Donation");
@@ -185,7 +184,7 @@ public class ReportController : ControllerBase
     [HttpGet("npo-summary")]
     public async Task<IActionResult> NpoSummary()
     {
-        var userId = int.Parse(User.FindFirst(System.Security.Claims.ClaimTypes.NameIdentifier)!.Value);
+        var userId = CallerId;
         var npo = await _context.Npos.FirstOrDefaultAsync(n => n.UserId == userId);
         if (npo == null) return BadRequest("No NPO profile linked to this account.");
 
@@ -240,7 +239,7 @@ public class ReportController : ControllerBase
     [HttpGet("business-summary")]
     public async Task<IActionResult> BusinessSummary()
     {
-        var userId = int.Parse(User.FindFirst(System.Security.Claims.ClaimTypes.NameIdentifier)!.Value);
+        var userId = CallerId;
         var business = await _context.Businesses.FirstOrDefaultAsync(b => b.UserId == userId);
         if (business == null) return BadRequest("No Business profile linked to this account.");
 

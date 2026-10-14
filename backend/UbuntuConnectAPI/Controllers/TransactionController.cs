@@ -13,7 +13,7 @@ namespace UbuntuConnectAPI.Controllers;
 
 [ApiController]
 [Route("api/transaction")]
-public class TransactionController : ControllerBase
+public class TransactionController : BaseApiController
 {
     private readonly AppDbContext _context;
     private readonly WalletLimitsOptions _limits;
@@ -42,8 +42,7 @@ public class TransactionController : ControllerBase
     [HttpGet("user/{userId}")]
     public async Task<IActionResult> GetByUser(int userId)
     {
-        var callerIdClaim = User.FindFirst(ClaimTypes.NameIdentifier)?.Value;
-        var callerId = int.Parse(callerIdClaim!);
+        var callerId = CallerId;
 
         if (callerId != userId) return Forbid();
 
@@ -69,8 +68,7 @@ public class TransactionController : ControllerBase
     [HttpGet("{id}")]
     public async Task<IActionResult> GetById(int id)
     {
-        var callerIdClaim = User.FindFirst(ClaimTypes.NameIdentifier)?.Value;
-        var callerId = int.Parse(callerIdClaim!);
+        var callerId = CallerId;
 
         var tx = await _context.Transactions.FindAsync(id);
         if (tx == null) return NotFound();
@@ -95,8 +93,7 @@ public class TransactionController : ControllerBase
     [HttpPost("withdraw")]
     public async Task<IActionResult> Withdraw([FromBody] WithdrawFundsRequest req)
     {
-        var userIdClaim = User.FindFirst(ClaimTypes.NameIdentifier)?.Value;
-        var userId = int.Parse(userIdClaim!);
+        var userId = CallerId;
 
         // Withdrawing money out requires a verified identity.
         var gate = await _gate.CanTransactAsync(userId);

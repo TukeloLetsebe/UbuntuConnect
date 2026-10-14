@@ -10,7 +10,7 @@ namespace UbuntuConnectAPI.Controllers;
 
 [ApiController]
 [Route("api/post")]
-public class PostController : ControllerBase
+public class PostController : BaseApiController
 {
     private readonly AppDbContext _context;
 
@@ -108,8 +108,7 @@ public class PostController : ControllerBase
     [HttpPost]
     public async Task<IActionResult> Create([FromBody] CreatePostRequest req)
     {
-        var userIdClaim = User.FindFirst(ClaimTypes.NameIdentifier)?.Value;
-        var userId = int.Parse(userIdClaim!);
+        var userId = CallerId;
 
         var user = await _context.Users.FindAsync(userId);
         if (user == null) return NotFound("User not found.");
@@ -150,8 +149,7 @@ public class PostController : ControllerBase
     [HttpPut("{id}")]
     public async Task<IActionResult> Update(int id, [FromBody] UpdatePostRequest req)
     {
-        var userIdClaim = User.FindFirst(ClaimTypes.NameIdentifier)?.Value;
-        var userId = int.Parse(userIdClaim!);
+        var userId = CallerId;
 
         var post = await _context.Posts.FindAsync(id);
         if (post == null) return NotFound();
@@ -176,8 +174,7 @@ public class PostController : ControllerBase
     [HttpDelete("{id}")]
     public async Task<IActionResult> Delete(int id)
     {
-        var userIdClaim = User.FindFirst(ClaimTypes.NameIdentifier)?.Value;
-        var userId = int.Parse(userIdClaim!);
+        var userId = CallerId;
 
         var post = await _context.Posts.FindAsync(id);
         if (post == null) return NotFound();
@@ -194,8 +191,7 @@ public class PostController : ControllerBase
     [HttpPost("{id}/like")]
     public async Task<IActionResult> LikePost(int id)
     {
-        var userIdClaim = User.FindFirst(ClaimTypes.NameIdentifier)?.Value;
-        var userId = int.Parse(userIdClaim!);
+        var userId = CallerId;
 
         var post = await _context.Posts.FindAsync(id);
         if (post == null) return NotFound("Post not found.");
@@ -225,8 +221,7 @@ public class PostController : ControllerBase
     [HttpDelete("{id}/unlike")]
     public async Task<IActionResult> UnlikePost(int id)
     {
-        var userIdClaim = User.FindFirst(ClaimTypes.NameIdentifier)?.Value;
-        var userId = int.Parse(userIdClaim!);
+        var userId = CallerId;
 
         var post = await _context.Posts.FindAsync(id);
         if (post == null) return NotFound("Post not found.");
@@ -249,8 +244,7 @@ public class PostController : ControllerBase
     [HttpGet("my-likes")]
     public async Task<IActionResult> GetMyLikes()
     {
-        var userIdClaim = User.FindFirst(ClaimTypes.NameIdentifier)?.Value;
-        var userId = int.Parse(userIdClaim!);
+        var userId = CallerId;
 
         var likedPostIds = await _context.PostLikes
             .Where(pl => pl.UserId == userId)

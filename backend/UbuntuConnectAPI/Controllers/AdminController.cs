@@ -6,16 +6,18 @@ using UbuntuConnectAPI.Data;
 using UbuntuConnectAPI.Services.Cleanup;
 using UbuntuConnectAPI.Services.Email;
 using UbuntuConnectAPI.Services.Notifications;
+using UbuntuConnectAPI.Services.Users;
 
 namespace UbuntuConnectAPI.Controllers;
 
 [ApiController]
 [Route("api/admin")]
 [Authorize(Roles = "Admin")]
-public class AdminController : ControllerBase
+public class AdminController : BaseApiController
 {
     private readonly AppDbContext _context;
     private readonly IGhostAccountCleanupService _ghostCleanup;
+    private readonly IUserNameResolver _names;
     // Optional so existing tests that construct the controller directly keep working;
     // notifications/emails are best-effort and never block the admin decision.
     private readonly INotificationService? _notifications;
@@ -24,11 +26,13 @@ public class AdminController : ControllerBase
     public AdminController(
         AppDbContext context,
         IGhostAccountCleanupService ghostCleanup,
+        IUserNameResolver names,
         INotificationService? notifications = null,
         IEmailService? email = null)
     {
         _context = context;
         _ghostCleanup = ghostCleanup;
+        _names = names;
         _notifications = notifications;
         _email = email;
     }
@@ -173,7 +177,7 @@ public class AdminController : ControllerBase
     [HttpPut("verifications/{id}/approve")]
     public async Task<IActionResult> ApproveVerification(int id)
     {
-        var adminId = int.Parse(User.FindFirst(ClaimTypes.NameIdentifier)!.Value);
+        var adminId = CallerId;
 
         var v = await _context.Verifications.FindAsync(id);
         if (v == null) return NotFound("Verification request not found.");
@@ -195,7 +199,7 @@ public class AdminController : ControllerBase
     [HttpPut("verifications/{id}/reject")]
     public async Task<IActionResult> RejectVerification(int id, [FromBody] RejectVerificationRequest? req = null)
     {
-        var adminId = int.Parse(User.FindFirst(ClaimTypes.NameIdentifier)!.Value);
+        var adminId = CallerId;
 
         var v = await _context.Verifications.FindAsync(id);
         if (v == null) return NotFound("Verification request not found.");
@@ -295,7 +299,7 @@ public class AdminController : ControllerBase
         // admin UI shows "From Thabo Mokoena → Safe Waters Trust", not "User #3".
         var ids = rows.SelectMany(r => new[] { r.senderUserId, r.receiverUserId })
                       .Where(id => id.HasValue).Select(id => id!.Value).Distinct().ToList();
-        var names = await ResolveUserNamesAsync(ids);
+        var names = await _names.ResolveAsync(ids);
 
         var txs = rows.Select(r => new
         {
@@ -311,29 +315,6 @@ public class AdminController : ControllerBase
         });
 
         return Ok(txs);
-    }
-
-    // Resolves user ids to display names (Individual full name, NPO org name,
-    // Business contact person, else email). Used to replace raw ids in admin UIs.
-    private async Task<Dictionary<int, string>> ResolveUserNamesAsync(List<int> userIds)
-    {
-        if (userIds.Count == 0) return new();
-
-        var users = await _context.Users
-            .Where(u => userIds.Contains(u.UserId))
-            .Select(u => new
-            {
-                u.UserId,
-                u.UserEmail,
-                individual = u.Individuals.Select(i => i.FirstName + " " + i.LastName).FirstOrDefault(),
-                npo = u.Npos.Select(n => n.OrganizationName).FirstOrDefault(),
-                business = u.Businesses.Select(b => b.ContactPersonName).FirstOrDefault()
-            })
-            .ToListAsync();
-
-        return users.ToDictionary(
-            u => u.UserId,
-            u => u.individual ?? u.npo ?? u.business ?? u.UserEmail);
     }
 
     // ── GHOST ACCOUNT CLEANUP (Task 8) ─────────────────────────

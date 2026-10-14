@@ -12,7 +12,7 @@ namespace UbuntuConnectAPI.Controllers;
 
 [ApiController]
 [Route("api/VolunteerApplication")]
-public class VolunteerApplicationController : ControllerBase
+public class VolunteerApplicationController : BaseApiController
 {
     private readonly AppDbContext _context;
     private readonly INotificationService? _notifications;
@@ -33,8 +33,7 @@ public class VolunteerApplicationController : ControllerBase
     [HttpGet]
     public async Task<IActionResult> GetAll()
     {
-        var userIdClaim = User.FindFirst(ClaimTypes.NameIdentifier)?.Value;
-        var userId = int.Parse(userIdClaim!);
+        var userId = CallerId;
 
         // Find the caller's NPO
         var npo = await _context.Npos.FirstOrDefaultAsync(n => n.UserId == userId);
@@ -74,8 +73,7 @@ public class VolunteerApplicationController : ControllerBase
     [HttpGet("{id}/identity")]
     public async Task<IActionResult> GetApplicantIdentity(int id)
     {
-        var userIdClaim = User.FindFirst(ClaimTypes.NameIdentifier)?.Value;
-        var userId = int.Parse(userIdClaim!);
+        var userId = CallerId;
 
         var app = await _context.VolunteerApplications
             .Include(a => a.Opportunity)
@@ -114,8 +112,7 @@ public class VolunteerApplicationController : ControllerBase
     [HttpGet("opportunity/{opportunityId}")]
     public async Task<IActionResult> GetByOpportunity(int opportunityId)
     {
-        var userIdClaim = User.FindFirst(ClaimTypes.NameIdentifier)?.Value;
-        var userId = int.Parse(userIdClaim!);
+        var userId = CallerId;
 
         var opportunity = await _context.VolunteerOpportunities
             .Include(o => o.Npo)
@@ -151,8 +148,7 @@ public class VolunteerApplicationController : ControllerBase
     [HttpGet("user/{userId}")]
     public async Task<IActionResult> GetByUser(int userId)
     {
-        var callerIdClaim = User.FindFirst(ClaimTypes.NameIdentifier)?.Value;
-        var callerId = int.Parse(callerIdClaim!);
+        var callerId = CallerId;
 
         if (callerId != userId) return Forbid();
 
@@ -173,8 +169,7 @@ public class VolunteerApplicationController : ControllerBase
     [HttpPut("{id}/accept")]
     public async Task<IActionResult> Accept(int id)
     {
-        var userIdClaim = User.FindFirst(ClaimTypes.NameIdentifier)?.Value;
-        var userId = int.Parse(userIdClaim!);
+        var userId = CallerId;
 
         var app = await _context.VolunteerApplications
             .Include(a => a.Opportunity)
@@ -195,8 +190,7 @@ public class VolunteerApplicationController : ControllerBase
     [HttpPut("{id}/reject")]
     public async Task<IActionResult> Reject(int id)
     {
-        var userIdClaim = User.FindFirst(ClaimTypes.NameIdentifier)?.Value;
-        var userId = int.Parse(userIdClaim!);
+        var userId = CallerId;
 
         var app = await _context.VolunteerApplications
             .Include(a => a.Opportunity)
@@ -217,8 +211,7 @@ public class VolunteerApplicationController : ControllerBase
     [HttpPut("{id}/pending")]
     public async Task<IActionResult> Pending(int id)
     {
-        var userIdClaim = User.FindFirst(ClaimTypes.NameIdentifier)?.Value;
-        var userId = int.Parse(userIdClaim!);
+        var userId = CallerId;
 
         var app = await _context.VolunteerApplications
             .Include(a => a.Opportunity)
@@ -240,8 +233,7 @@ public class VolunteerApplicationController : ControllerBase
     [HttpPut("{id}/complete")]
     public async Task<IActionResult> Complete(int id)
     {
-        var userIdClaim = User.FindFirst(ClaimTypes.NameIdentifier)?.Value;
-        var userId = int.Parse(userIdClaim!);
+        var userId = CallerId;
 
         var app = await _context.VolunteerApplications
             .Include(a => a.Opportunity)
@@ -332,8 +324,7 @@ public class VolunteerApplicationController : ControllerBase
     [HttpDelete("{id}")]
     public async Task<IActionResult> Delete(int id)
     {
-        var userIdClaim = User.FindFirst(ClaimTypes.NameIdentifier)?.Value;
-        var userId = int.Parse(userIdClaim!);
+        var userId = CallerId;
 
         var app = await _context.VolunteerApplications
             .Include(a => a.Opportunity)
@@ -368,8 +359,7 @@ public class VolunteerApplicationController : ControllerBase
     [HttpPost("{id}/log-hours")]
     public async Task<IActionResult> LogHours(int id, [FromBody] LogHoursRequest req)
     {
-        var userIdClaim = User.FindFirst(ClaimTypes.NameIdentifier)?.Value;
-        var userId = int.Parse(userIdClaim!);
+        var userId = CallerId;
 
         var app = await _context.VolunteerApplications
             .Include(a => a.Opportunity)

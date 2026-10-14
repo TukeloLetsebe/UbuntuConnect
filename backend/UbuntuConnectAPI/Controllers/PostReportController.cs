@@ -11,7 +11,7 @@ namespace UbuntuConnectAPI.Controllers;
 
 [ApiController]
 [Route("api/postreport")]
-public class PostReportController : ControllerBase
+public class PostReportController : BaseApiController
 {
     private readonly AppDbContext _context;
     private readonly INotificationService _notifications;
@@ -22,7 +22,6 @@ public class PostReportController : ControllerBase
         _notifications = notifications;
     }
 
-    private int CallerId => int.Parse(User.FindFirst(ClaimTypes.NameIdentifier)!.Value);
 
     // ── USER: report a post ────────────────────────────────────
     [Authorize]

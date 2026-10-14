@@ -8,7 +8,7 @@ namespace UbuntuConnectAPI.Controllers;
 
 [ApiController]
 [Route("api/feed")]
-public class FeedController : ControllerBase
+public class FeedController : BaseApiController
 {
     private readonly AppDbContext _context;
 
@@ -22,8 +22,7 @@ public class FeedController : ControllerBase
     [HttpGet("community-updates")]
     public async Task<IActionResult> CommunityUpdates()
     {
-        var userIdClaim = User.FindFirst(ClaimTypes.NameIdentifier)?.Value;
-        var userId = int.Parse(userIdClaim!);
+        var userId = CallerId;
 
         var followedNpoIds = await _context.Follows
             .Where(f => f.UserId == userId)

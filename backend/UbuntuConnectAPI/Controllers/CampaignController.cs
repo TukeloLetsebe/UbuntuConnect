@@ -10,7 +10,7 @@ namespace UbuntuConnectAPI.Controllers;
 
 [ApiController]
 [Route("api/campaigns")]
-public class CampaignController : ControllerBase
+public class CampaignController : BaseApiController
 {
     private readonly AppDbContext _context;
 
@@ -68,8 +68,7 @@ public class CampaignController : ControllerBase
     [HttpPost]
     public async Task<IActionResult> Create([FromBody] CreateCampaignRequest req)
     {
-        var userIdClaim = User.FindFirst(ClaimTypes.NameIdentifier)?.Value;
-        var userId = int.Parse(userIdClaim!);
+        var userId = CallerId;
 
         var business = await _context.Businesses.FirstOrDefaultAsync(b => b.UserId == userId);
         if (business == null) return BadRequest("No Business profile linked to this account.");
@@ -102,8 +101,7 @@ public class CampaignController : ControllerBase
     [HttpPut("{id}")]
     public async Task<IActionResult> Update(int id, [FromBody] UpdateCampaignRequest req)
     {
-        var userIdClaim = User.FindFirst(ClaimTypes.NameIdentifier)?.Value;
-        var userId = int.Parse(userIdClaim!);
+        var userId = CallerId;
 
         var campaign = await _context.PartnershipCampaigns
             .Include(c => c.Business)
@@ -131,8 +129,7 @@ public class CampaignController : ControllerBase
     [HttpDelete("{id}")]
     public async Task<IActionResult> Delete(int id)
     {
-        var userIdClaim = User.FindFirst(ClaimTypes.NameIdentifier)?.Value;
-        var userId = int.Parse(userIdClaim!);
+        var userId = CallerId;
 
         var campaign = await _context.PartnershipCampaigns
             .Include(c => c.Business)

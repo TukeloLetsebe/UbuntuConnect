@@ -9,6 +9,7 @@ using UbuntuConnectAPI.Services.Verification;
 using UbuntuConnectAPI.Services.FaceVerification;
 using UbuntuConnectAPI.Services.Payments;
 using UbuntuConnectAPI.Services.Notifications;
+using UbuntuConnectAPI.Services.Users;
 using UbuntuConnectAPI.Validation;
 using Microsoft.Extensions.Options;
 
@@ -17,7 +18,7 @@ namespace UbuntuConnectAPI.Controllers;
 
 [ApiController]
 [Route("api/individual")]
-public class IndividualController : ControllerBase
+public class IndividualController : BaseApiController
 {
     private readonly AppDbContext _context;
     private readonly IVerificationGate _gate;
@@ -27,6 +28,8 @@ public class IndividualController : ControllerBase
     // Optional so existing tests constructing this controller keep working;
     // notifications are best-effort and never block a donation.
     private readonly INotificationService? _notifications;
+    // Optional for the same reason; falls back to a direct resolver when null.
+    private readonly IUserNameResolver? _names;
 
     // Auto-approve threshold for the self-service face-scan route.
     private const double FaceMatchThreshold = 0.62;
@@ -37,7 +40,8 @@ public class IndividualController : ControllerBase
         IFaceVerificationService faceService,
         IPaymentSimulationService? payments = null,
         IOptions<WalletLimitsOptions>? limits = null,
-        INotificationService? notifications = null)
+        INotificationService? notifications = null,
+        IUserNameResolver? names = null)
     {
         _context = context;
         _gate = gate;
@@ -45,6 +49,7 @@ public class IndividualController : ControllerBase
         _payments = payments;
         _limits = limits?.Value ?? new WalletLimitsOptions();
         _notifications = notifications;
+        _names = names;
     }
 
     // ── SUBMIT IDENTITY VERIFICATION (KYC) ─────────────────────
@@ -56,7 +61,7 @@ public class IndividualController : ControllerBase
     [HttpPost("verify-identity")]
     public async Task<IActionResult> SubmitKyc([FromBody] SubmitKycRequest dto)
     {
-        var userId = int.Parse(User.FindFirst(ClaimTypes.NameIdentifier)!.Value);
+        var userId = CallerId;
 
         var individual = await _context.Individuals.FirstOrDefaultAsync(i => i.UserId == userId);
         if (individual == null) return NotFound("Individual profile not found.");
@@ -129,7 +134,7 @@ public class IndividualController : ControllerBase
     [HttpGet("verify-identity/status")]
     public async Task<IActionResult> GetKycStatus()
     {
-        var userId = int.Parse(User.FindFirst(ClaimTypes.NameIdentifier)!.Value);
+        var userId = CallerId;
         var individual = await _context.Individuals.FirstOrDefaultAsync(i => i.UserId == userId);
         if (individual == null) return NotFound("Individual profile not found.");
 
@@ -172,8 +177,7 @@ public class IndividualController : ControllerBase
     public async Task<IActionResult> FollowNpo(int npoId)
     {
         //Get the logged in user ID from the token generated
-        var userIdClaim = User.FindFirst(ClaimTypes.NameIdentifier)?.Value;
-        var userId = int.Parse(userIdClaim!);
+        var userId = CallerId;
 
         //Check the NPO actually exists
         var npo = await _context.Npos.FirstOrDefaultAsync(n => n.NpoId == npoId);
@@ -221,8 +225,7 @@ public class IndividualController : ControllerBase
     [HttpDelete("unfollow/{npoId}")]
     public async Task<IActionResult> UnfollowNpo(int npoId)
     {
-        var userIdClaim = User.FindFirst(ClaimTypes.NameIdentifier)?.Value;
-        var userId = int.Parse(userIdClaim!);
+        var userId = CallerId;
 
         var follow = await _context.Follows
             .FirstOrDefaultAsync(f => f.UserId == userId && f.NpoId == npoId);
@@ -241,8 +244,7 @@ public class IndividualController : ControllerBase
     [HttpGet("my-follows")]
     public async Task<IActionResult> GetMyFollows()
     {
-        var userIdClaim = User.FindFirst(ClaimTypes.NameIdentifier)?.Value;
-        var userId = int.Parse(userIdClaim!);
+        var userId = CallerId;
 
         var followedNpos = await _context.Follows
             .Where(f => f.UserId == userId)
@@ -295,8 +297,7 @@ public class IndividualController : ControllerBase
     [HttpPost("volunteer/apply/{opportunityId}")]
     public async Task<IActionResult> ApplyToVolunteer(int opportunityId, [FromBody] VolunteerApplicationDto dto)
     {
-        var userIdClaim = User.FindFirst(ClaimTypes.NameIdentifier)?.Value;
-        var userId = int.Parse(userIdClaim!);
+        var userId = CallerId;
 
         // Verification gate — unverified users may browse but not apply.
         var gate = await _gate.CanTransactAsync(userId);
@@ -354,8 +355,7 @@ public class IndividualController : ControllerBase
     [HttpGet("me")]
     public async Task<IActionResult> GetMyProfile()
     {
-        var userIdClaim = User.FindFirst(ClaimTypes.NameIdentifier)?.Value;
-        var userId = int.Parse(userIdClaim!);
+        var userId = CallerId;
 
         var profile = await _context.Individuals
             .Include(i => i.User)
@@ -381,8 +381,7 @@ public class IndividualController : ControllerBase
     [HttpPut("me")]
     public async Task<IActionResult> UpdateMyProfile([FromBody] UpdateProfileDto dto)
     {
-        var userIdClaim = User.FindFirst(ClaimTypes.NameIdentifier)?.Value;
-        var userId = int.Parse(userIdClaim!);
+        var userId = CallerId;
 
         var individual = await _context.Individuals.FirstOrDefaultAsync(i => i.UserId == userId);
         if (individual == null)
@@ -409,8 +408,7 @@ public class IndividualController : ControllerBase
     [HttpGet("my-donations")]
     public async Task<IActionResult> GetMyDonations()
     {
-        var userIdClaim = User.FindFirst(ClaimTypes.NameIdentifier)?.Value;
-        var userId = int.Parse(userIdClaim!);
+        var userId = CallerId;
 
         var donations = await _context.Transactions
             .Where(t => t.SenderUserId == userId && t.TransactionType == "Donation")
@@ -444,7 +442,7 @@ public class IndividualController : ControllerBase
     [HttpGet("transactions")]
     public async Task<IActionResult> GetMyTransactions()
     {
-        var userId = int.Parse(User.FindFirst(ClaimTypes.NameIdentifier)!.Value);
+        var userId = CallerId;
 
         var rows = await _context.Transactions
             .Where(t => t.SenderUserId == userId || t.ReceiverUserId == userId)
@@ -466,17 +464,9 @@ public class IndividualController : ControllerBase
             .Select(r => r.SenderUserId == userId ? r.ReceiverUserId : r.SenderUserId)
             .Where(id => id.HasValue).Select(id => id!.Value).Distinct().ToList();
 
-        var names = otherIds.Count == 0 ? new Dictionary<int, string>() :
-            (await _context.Users.Where(u => otherIds.Contains(u.UserId))
-                .Select(u => new
-                {
-                    u.UserId,
-                    u.UserEmail,
-                    individual = u.Individuals.Select(i => i.FirstName + " " + i.LastName).FirstOrDefault(),
-                    npo = u.Npos.Select(n => n.OrganizationName).FirstOrDefault(),
-                    business = u.Businesses.Select(b => b.ContactPersonName).FirstOrDefault()
-                }).ToListAsync())
-            .ToDictionary(u => u.UserId, u => u.individual ?? u.npo ?? u.business ?? u.UserEmail);
+        // Shared resolver (falls back to a direct instance when not injected, e.g. in tests).
+        var resolver = _names ?? new UserNameResolver(_context);
+        var names = await resolver.ResolveAsync(otherIds);
 
         var transactions = rows.Select(r =>
         {
@@ -519,8 +509,7 @@ public class IndividualController : ControllerBase
     [HttpGet("my-volunteering")]
     public async Task<IActionResult> GetMyVolunteering()
     {
-        var userIdClaim = User.FindFirst(ClaimTypes.NameIdentifier)?.Value;
-        var userId = int.Parse(userIdClaim!);
+        var userId = CallerId;
 
         var applications = await _context.VolunteerApplications
             .Include(a => a.Opportunity)
@@ -547,8 +536,7 @@ public class IndividualController : ControllerBase
     [HttpGet("my-impact")]
     public async Task<IActionResult> GetMyImpact()
     {
-        var userIdClaim = User.FindFirst(ClaimTypes.NameIdentifier)?.Value;
-        var userId = int.Parse(userIdClaim!);
+        var userId = CallerId;
 
         var totalDonated = await _context.Transactions
             .Where(t => t.SenderUserId == userId && t.TransactionType == "Donation" && t.Status == "Completed")
@@ -610,8 +598,7 @@ public class IndividualController : ControllerBase
     [HttpPost("donate/{npoId}")]
     public async Task<IActionResult> Donate(int npoId, [FromBody] DonateDto dto)
     {
-        var userIdClaim = User.FindFirst(ClaimTypes.NameIdentifier)?.Value;
-        var userId = int.Parse(userIdClaim!);
+        var userId = CallerId;
 
         // Verification gate — anti-fraud/AML: only fully verified users may donate.
         var gate = await _gate.CanTransactAsync(userId);
@@ -701,8 +688,7 @@ public class IndividualController : ControllerBase
     [HttpGet("volunteer/application/{applicationId}")]
     public async Task<IActionResult> GetVolunteerApplication(int applicationId)
     {
-        var userIdClaim = User.FindFirst(ClaimTypes.NameIdentifier)?.Value;
-        var userId = int.Parse(userIdClaim!);
+        var userId = CallerId;
 
         var application = await _context.VolunteerApplications
             .Include(a => a.Opportunity)
@@ -742,8 +728,7 @@ public class IndividualController : ControllerBase
     [HttpDelete("volunteer/application/{applicationId}")]
     public async Task<IActionResult> CancelVolunteerApplication(int applicationId)
     {
-        var userIdClaim = User.FindFirst(ClaimTypes.NameIdentifier)?.Value;
-        var userId = int.Parse(userIdClaim!);
+        var userId = CallerId;
 
         var application = await _context.VolunteerApplications
             .FirstOrDefaultAsync(a => a.ApplicationId == applicationId);
@@ -766,8 +751,7 @@ public class IndividualController : ControllerBase
     [HttpPut("change-password")]
     public async Task<IActionResult> ChangePassword([FromBody] ChangePasswordDto dto)
     {
-        var userIdClaim = User.FindFirst(ClaimTypes.NameIdentifier)?.Value;
-        var userId = int.Parse(userIdClaim!);
+        var userId = CallerId;
 
         var user = await _context.Users.FirstOrDefaultAsync(u => u.UserId == userId);
         if (user == null)
@@ -790,8 +774,7 @@ public class IndividualController : ControllerBase
     [HttpPut("deactivate")]
     public async Task<IActionResult> DeactivateAccount([FromBody] DeactivateAccountDto dto)
     {
-        var userIdClaim = User.FindFirst(ClaimTypes.NameIdentifier)?.Value;
-        var userId = int.Parse(userIdClaim!);
+        var userId = CallerId;
 
         var user = await _context.Users.FirstOrDefaultAsync(u => u.UserId == userId);
         if (user == null)
@@ -815,8 +798,7 @@ public class IndividualController : ControllerBase
     [HttpPost("topup")]
     public async Task<IActionResult> TopUp([FromBody] TopUpRequest dto)
     {
-        var userIdClaim = User.FindFirst(ClaimTypes.NameIdentifier)?.Value;
-        var userId = int.Parse(userIdClaim!);
+        var userId = CallerId;
 
         // Verification gate — anti-fraud/AML: only fully verified users may top up.
         var gate = await _gate.CanTransactAsync(userId);

@@ -11,7 +11,7 @@ namespace UbuntuConnectAPI.Controllers;
 
 [ApiController]
 [Route("api/VolunteerOpportunity")]
-public class VolunteerOpportunityController : ControllerBase
+public class VolunteerOpportunityController : BaseApiController
 {
     private readonly AppDbContext _context;
     private readonly IVerificationGate _gate;
@@ -100,8 +100,7 @@ public class VolunteerOpportunityController : ControllerBase
     [HttpPost]
     public async Task<IActionResult> Create([FromBody] CreateVolunteerOpportunityRequest req)
     {
-        var userIdClaim = User.FindFirst(ClaimTypes.NameIdentifier)?.Value;
-        var userId = int.Parse(userIdClaim!);
+        var userId = CallerId;
 
         // Only verified NPOs can post volunteer opportunities.
         var gate = await _gate.CanTransactAsync(userId);
@@ -147,8 +146,7 @@ public class VolunteerOpportunityController : ControllerBase
     [HttpPut("{id}")]
     public async Task<IActionResult> Update(int id, [FromBody] UpdateVolunteerOpportunityRequest req)
     {
-        var userIdClaim = User.FindFirst(ClaimTypes.NameIdentifier)?.Value;
-        var userId = int.Parse(userIdClaim!);
+        var userId = CallerId;
 
         var opp = await _context.VolunteerOpportunities
             .Include(o => o.Npo)
@@ -176,8 +174,7 @@ public class VolunteerOpportunityController : ControllerBase
     [HttpDelete("{id}")]
     public async Task<IActionResult> Delete(int id)
     {
-        var userIdClaim = User.FindFirst(ClaimTypes.NameIdentifier)?.Value;
-        var userId = int.Parse(userIdClaim!);
+        var userId = CallerId;
 
         var opp = await _context.VolunteerOpportunities
             .Include(o => o.Npo)

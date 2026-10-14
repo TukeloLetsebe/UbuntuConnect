@@ -10,7 +10,7 @@ namespace UbuntuConnectAPI.Controllers;
 
 [ApiController]
 [Route("api/comment")]
-public class CommentController : ControllerBase
+public class CommentController : BaseApiController
 {
     private readonly AppDbContext _context;
     private readonly INotificationService? _notifications;
@@ -56,8 +56,7 @@ public class CommentController : ControllerBase
     [HttpPost("post/{postId}")]
     public async Task<IActionResult> Create(int postId, [FromBody] CreateCommentRequest req)
     {
-        var userIdClaim = User.FindFirst(ClaimTypes.NameIdentifier)?.Value;
-        var userId = int.Parse(userIdClaim!);
+        var userId = CallerId;
 
         // Commenting requires a verified (email-confirmed) account. This keeps
         // throwaway/unconfirmed accounts from posting comments. Enforced here on
@@ -131,8 +130,7 @@ public class CommentController : ControllerBase
     [HttpDelete("{id}")]
     public async Task<IActionResult> Delete(int id)
     {
-        var userIdClaim = User.FindFirst(ClaimTypes.NameIdentifier)?.Value;
-        var userId = int.Parse(userIdClaim!);
+        var userId = CallerId;
 
         var comment = await _context.Comments
             .Include(c => c.Post)
