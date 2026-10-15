@@ -956,9 +956,9 @@ export default function IndividualDashboard() {
       followedNpos.find((n) => n.npoId === selectedNPO)?.organizationName ??
       "this NPO";
     const ok = await confirm({
-      title: `Donate R ${amount.toLocaleString()} to ${npoName}?`,
-      description: `R ${amount.toLocaleString()} will be transferred from your wallet to ${npoName}. This cannot be undone.`,
-      confirmText: `Donate R ${amount.toLocaleString()}`,
+      title: `Donate ${formatZar(amount)} to ${npoName}?`,
+      description: `${formatZar(amount)} will be transferred from your wallet to ${npoName}. This cannot be undone.`,
+      confirmText: `Donate ${formatZar(amount)}`,
     });
     if (!ok) return;
 
@@ -967,7 +967,7 @@ export default function IndividualDashboard() {
       const response = await individualService.donate(selectedNPO, amount);
       const newBalance = response.data.newBalance;
       setWalletBalance(newBalance);
-      toast.success(`Donation successful! New balance: R ${newBalance.toLocaleString()}`);
+      toast.success(`Donation successful! New balance: ${formatZar(newBalance)}`);
       setShowDonateModal(false);
       setDonateAmount("");
       setDonateError(null);
@@ -1000,9 +1000,9 @@ export default function IndividualDashboard() {
     if (!topUpCard.cardCvv) { setTopUpError("Please enter the card CVV (the 3–4 digit code)."); return; }
 
     const ok = await confirm({
-      title: `Top up R ${amount.toLocaleString()}?`,
-      description: `R ${amount.toLocaleString()} will be added to your wallet balance using the card ending ${topUpCard.cardNumber.replace(/\D/g, "").slice(-4) || "••••"}.`,
-      confirmText: `Top up R ${amount.toLocaleString()}`,
+      title: `Top up ${formatZar(amount)}?`,
+      description: `${formatZar(amount)} will be added to your wallet balance using the card ending ${topUpCard.cardNumber.replace(/\D/g, "").slice(-4) || "••••"}.`,
+      confirmText: `Top up ${formatZar(amount)}`,
     });
     if (!ok) return;
 
@@ -1015,7 +1015,7 @@ export default function IndividualDashboard() {
       });
       const newBalance = response.data.newBalance;
       setWalletBalance(newBalance);
-      toast.success(`Wallet topped up! New balance: R ${newBalance.toLocaleString()}`);
+      toast.success(`Wallet topped up! New balance: ${formatZar(newBalance)}`);
       setTopUpAmount("");
       setTopUpCard(emptyCard);
       setTopUpError(null);
@@ -1913,7 +1913,7 @@ export default function IndividualDashboard() {
                             <div className="flex items-center justify-between">
                               <div className="flex-1">
                                 <p className="font-medium text-neutral-900 mb-1">
-                                  R {donation.amount.toLocaleString()}
+                                  {formatZar(donation.amount)}
                                 </p>
                                 <p className="text-sm text-neutral-600">
                                   {new Date(donation.timestamp).toLocaleDateString("en-ZA", {

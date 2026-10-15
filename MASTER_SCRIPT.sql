@@ -182,6 +182,20 @@ END
 ELSE PRINT '008 | Transactions already exists, skipped.';
 GO
 
+-- 008b | Backfill Transactions.Reason on pre-existing databases.
+-- When the Transactions table already existed, the CREATE above is skipped,
+-- so this guard adds the Reason column to older databases. See migration 034.
+IF NOT EXISTS (
+    SELECT * FROM sys.columns
+    WHERE object_id = OBJECT_ID('Transactions') AND name = 'Reason'
+)
+BEGIN
+    ALTER TABLE Transactions ADD Reason NVARCHAR(255) NULL;
+    PRINT '008b | Transactions.Reason column added to existing table.';
+END
+ELSE PRINT '008b | Transactions.Reason already exists, skipped.';
+GO
+
 -- =============================================================
 -- 009 | POST
 -- =============================================================
@@ -302,12 +316,32 @@ BEGIN
         FaceImage       NVARCHAR(500)  NULL,
         Status          NVARCHAR(20)   NOT NULL DEFAULT 'Pending'
                         CONSTRAINT CHK_VolApp_Status
-                        CHECK (Status IN ('Pending', 'Accepted', 'Rejected', 'Cancelled')),
+                        CHECK (Status IN ('Pending', 'Accepted', 'Rejected', 'Cancelled', 'Completed')),
         ApplicationDate DATETIME       NOT NULL DEFAULT GETDATE()
     );
     PRINT '013 | VolunteerApplication table created.';
 END
 ELSE PRINT '013 | VolunteerApplication already exists, skipped.';
+GO
+
+-- 013b | Backfill 'Completed' into CHK_VolApp_Status on pre-existing databases.
+-- When VolunteerApplication already existed, the CREATE above is skipped, so this
+-- guard rebuilds the CHECK to allow 'Completed' (NPO marks an Accepted volunteer
+-- as finished). Without this, "mark completed" fails with a CHECK violation.
+-- Idempotent — only rebuilds when 'Completed' is not already allowed. See migration 032.
+IF EXISTS (
+    SELECT 1 FROM sys.check_constraints
+    WHERE name = 'CHK_VolApp_Status'
+      AND OBJECT_NAME(parent_object_id) = 'VolunteerApplication'
+      AND definition NOT LIKE '%Completed%'
+)
+BEGIN
+    ALTER TABLE VolunteerApplication DROP CONSTRAINT CHK_VolApp_Status;
+    ALTER TABLE VolunteerApplication ADD CONSTRAINT CHK_VolApp_Status
+        CHECK (Status IN ('Pending', 'Accepted', 'Rejected', 'Cancelled', 'Completed'));
+    PRINT '013b | VolunteerApplication.Status CHECK updated to include Completed.';
+END
+ELSE PRINT '013b | VolunteerApplication.Status already allows Completed, skipped.';
 GO
 
 -- =============================================================

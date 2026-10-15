@@ -265,3 +265,4 @@ export interface NpoDocuments {
   submittedDate?: string;
   reviewedDate?: string | null;
 }
+

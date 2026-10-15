@@ -4,6 +4,7 @@ import { motion } from "motion/react";
 import { toast } from "sonner";
 import { useAuth } from "../../context/AuthContext";
 import api, { resolveMediaUrl } from "../../lib/api";
+import { formatZar } from "../../lib/money";
 import { useConfirm } from "./ConfirmDialog";
 import { Button } from "./ui/button";
 import { Card } from "./ui/card";
@@ -129,9 +130,9 @@ export default function Fundraisers() {
     if (amt > walletBalance) { toast.error("Insufficient balance. Please top up your wallet first."); return; }
 
     const ok = await confirm({
-      title: `Donate R ${amt.toLocaleString()} to ${selectedProject.projectName}?`,
-      description: `R ${amt.toLocaleString()} will be transferred from your wallet to "${selectedProject.projectName}" by ${selectedProject.npoName}. This cannot be undone.`,
-      confirmText: `Donate R ${amt.toLocaleString()}`,
+      title: `Donate ${formatZar(amt)} to ${selectedProject.projectName}?`,
+      description: `${formatZar(amt)} will be transferred from your wallet to "${selectedProject.projectName}" by ${selectedProject.npoName}. This cannot be undone.`,
+      confirmText: `Donate ${formatZar(amt)}`,
     });
     if (!ok) return;
 
@@ -155,7 +156,7 @@ export default function Fundraisers() {
       setShowDonateModal(false);
       setSelectedProject(null);
       setDonateAmount("");
-      toast.success(`Thank you! You donated R ${amt.toLocaleString()} to "${selectedProject.projectName}".`);
+      toast.success(`Thank you! You donated ${formatZar(amt)} to "${selectedProject.projectName}".`);
     } catch (e) {
       // getErrorMessage surfaces the backend's specific message (insufficient balance,
       // own fundraiser, inactive fundraiser, wallet not set up, etc.)
@@ -180,7 +181,7 @@ export default function Fundraisers() {
         <div className="container mx-auto max-w-7xl flex items-center justify-between">
           <Link to={dashboardPath} className="text-xl text-neutral-900 font-bold">UbuntuConnect</Link>
           <div className="flex items-center gap-4">
-            <span className="text-sm text-neutral-600 hidden sm:inline">Balance: R {walletBalance.toLocaleString()}</span>
+            <span className="text-sm text-neutral-600 hidden sm:inline">Balance: {formatZar(walletBalance)}</span>
             <Button variant="outline" size="sm" onClick={logout}><LogOut className="w-4 h-4 mr-2" /> Logout</Button>
           </div>
         </div>
@@ -230,8 +231,8 @@ export default function Fundraisers() {
                     {/* Progress */}
                     <div className="mb-4">
                       <div className="flex justify-between text-sm mb-1">
-                        <span className="text-neutral-600">R {fund.raisedAmount.toLocaleString()} raised</span>
-                        <span className="font-medium">R {fund.targetAmount.toLocaleString()}</span>
+                        <span className="text-neutral-600">{formatZar(fund.raisedAmount)} raised</span>
+                        <span className="font-medium">{formatZar(fund.targetAmount)}</span>
                       </div>
                       <Progress value={fund.targetAmount > 0 ? Math.min(100, (fund.raisedAmount / fund.targetAmount) * 100) : 0} className="h-2" />
                       <p className="text-xs text-neutral-500 mt-1">
@@ -295,8 +296,8 @@ export default function Fundraisers() {
 
               <div className="mb-6">
                 <div className="flex justify-between text-sm mb-1">
-                  <span className="text-green-600 font-medium">R {detailProject.raisedAmount.toLocaleString()} raised</span>
-                  <span className="text-neutral-600">Goal: R {detailProject.targetAmount.toLocaleString()}</span>
+                  <span className="text-green-600 font-medium">{formatZar(detailProject.raisedAmount)} raised</span>
+                  <span className="text-neutral-600">Goal: {formatZar(detailProject.targetAmount)}</span>
                 </div>
                 <Progress value={detailProject.targetAmount > 0 ? Math.min(100, (detailProject.raisedAmount / detailProject.targetAmount) * 100) : 0} className="h-3" />
                 <p className="text-xs text-neutral-500 mt-1">
@@ -348,11 +349,11 @@ export default function Fundraisers() {
               <p className="font-semibold">{selectedProject.projectName}</p>
               <p className="text-sm text-neutral-600">by {selectedProject.npoName}</p>
               <div className="mt-2 text-sm">
-                <span className="text-green-600 font-medium">R {selectedProject.raisedAmount.toLocaleString()}</span>
-                <span className="text-neutral-500"> / R {selectedProject.targetAmount.toLocaleString()}</span>
+                <span className="text-green-600 font-medium">{formatZar(selectedProject.raisedAmount)}</span>
+                <span className="text-neutral-500"> / {formatZar(selectedProject.targetAmount)}</span>
               </div>
             </div>
-            <p className="text-sm text-neutral-600 mb-4">Your balance: <span className="font-medium">R {walletBalance.toLocaleString()}</span></p>
+            <p className="text-sm text-neutral-600 mb-4">Your balance: <span className="font-medium">{formatZar(walletBalance)}</span></p>
             <form onSubmit={handleDonate} className="space-y-4">
               <div>
                 <Label>Donation Amount (R)</Label>

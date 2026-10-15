@@ -134,6 +134,7 @@ export default function BusinessDashboard() {
   const [donateNpoId, setDonateNpoId] = useState<number | null>(null);
   const [donateAmount, setDonateAmount] = useState("");
   const [donating, setDonating] = useState(false);
+  const [donateError, setDonateError] = useState<string | null>(null);
 
   // Impact
   const [impact, setImpact] = useState<BusinessImpact | null>(null);
@@ -289,24 +290,30 @@ export default function BusinessDashboard() {
 
   const handleDonate = async (e: React.FormEvent) => {
     e.preventDefault();
+    setDonateError(null);
     const amt = parseFloat(donateAmount);
-    if (!amt || amt <= 0 || !donateNpoId) { toast.error("Enter a valid donation amount greater than R 0."); return; }
-    if (amt > walletBalance) { toast.error(`Insufficient balance. Your wallet has R ${walletBalance.toLocaleString()}; top up to donate R ${amt.toLocaleString()}.`); return; }
+    if (!donateAmount || isNaN(amt) || amt <= 0) { setDonateError("Amount must be greater than 0"); return; }
+    if (!donateNpoId) return;
+    if (amt > walletBalance) { setDonateError(`Insufficient balance. Your wallet has ${formatZar(walletBalance)}; top up to donate ${formatZar(amt)}.`); return; }
     const npoName = npos.find(n => n.npoId === donateNpoId)?.organizationName ?? "this NPO";
     const ok = await confirm({
-      title: `Donate R ${amt.toLocaleString()} to ${npoName}?`,
-      description: `R ${amt.toLocaleString()} will be transferred from your wallet to ${npoName}. This cannot be undone.`,
-      confirmText: `Donate R ${amt.toLocaleString()}`,
+      title: `Donate ${formatZar(amt)} to ${npoName}?`,
+      description: `${formatZar(amt)} will be transferred from your wallet to ${npoName}. This cannot be undone.`,
+      confirmText: `Donate ${formatZar(amt)}`,
     });
     if (!ok) return;
     setDonating(true);
     try {
       const r = await businessService.donate(donateNpoId, amt);
-      setWalletBalance(r.data.newBalance);
-      setShowDonateModal(false); setDonateAmount("");
-      toast.success(`Donated R ${amt.toLocaleString()} successfully!`);
-    } catch (e) { toast.error(getErrorMessage(e)); }
-    finally { setDonating(false); }
+      const newBalance = r.data.newBalance;
+      setWalletBalance(newBalance);
+      toast.success(`Donation successful! New balance: ${formatZar(newBalance)}`);
+      setShowDonateModal(false);
+      setDonateAmount("");
+      setDonateError(null);
+    } catch (err) {
+      setDonateError(getErrorMessage(err));
+    } finally { setDonating(false); }
   };
 
   const handleTopUp = async (e: React.FormEvent) => {
@@ -318,9 +325,9 @@ export default function BusinessDashboard() {
     if (!topUpCard.cardExpiry) { setTopUpError("Please enter the card expiry date (MM/YY)."); return; }
     if (!topUpCard.cardCvv) { setTopUpError("Please enter the card CVV (the 3–4 digit code)."); return; }
     const ok = await confirm({
-      title: `Top up R ${amt.toLocaleString()}?`,
-      description: `R ${amt.toLocaleString()} will be added to your wallet using the card ending ${topUpCard.cardNumber.replace(/\D/g, "").slice(-4) || "••••"}.`,
-      confirmText: `Top up R ${amt.toLocaleString()}`,
+      title: `Top up ${formatZar(amt)}?`,
+      description: `${formatZar(amt)} will be added to your wallet using the card ending ${topUpCard.cardNumber.replace(/\D/g, "").slice(-4) || "••••"}.`,
+      confirmText: `Top up ${formatZar(amt)}`,
     });
     if (!ok) return;
     setToppingUp(true);
@@ -333,7 +340,7 @@ export default function BusinessDashboard() {
       });
       setWalletBalance(r.data.newBalance);
       setShowTopUp(false); setTopUpAmount(""); setTopUpCard(emptyCard);
-      toast.success(`R ${amt.toLocaleString()} added to wallet. New balance: R ${r.data.newBalance.toLocaleString()}.`);
+      toast.success(`${formatZar(amt)} added to wallet. New balance: ${formatZar(r.data.newBalance)}.`);
     } catch (e) { const m = getErrorMessage(e); setTopUpError(m); toast.error(m); }
     finally { setToppingUp(false); }
   };
@@ -448,9 +455,9 @@ export default function BusinessDashboard() {
     const ok = await confirm({
       title: `Approve ${npoName}'s application?`,
       description: budget && budget > 0
-        ? `Approving pays R ${budget.toLocaleString()} from your wallet to ${npoName}, and accepts them as a campaign partner. This cannot be undone.`
+        ? `Approving pays ${formatZar(budget)} from your wallet to ${npoName}, and accepts them as a campaign partner. This cannot be undone.`
         : `This accepts ${npoName} as a partner on "${selectedCampaign?.title ?? "this campaign"}". No budget is set, so no funds will move.`,
-      confirmText: budget && budget > 0 ? `Approve & pay R ${budget.toLocaleString()}` : "Approve",
+      confirmText: budget && budget > 0 ? `Approve & pay ${formatZar(budget)}` : "Approve",
     });
     if (!ok) return;
     try { await businessService.approveApplication(id); setCampaignApps(p => p.map(a => a.applicationId === id ? { ...a, status: "Accepted" } : a)); toast.success(`${npoName} approved.`); }
@@ -597,7 +604,7 @@ export default function BusinessDashboard() {
                             <Badge variant="outline" className="mb-2">Your campaign</Badge>
                             <h3 className="font-semibold truncate">{c.title}</h3>
                             {c.category && <p className="text-xs text-neutral-500 mt-1">{c.category}</p>}
-                            {c.budgetPerPartner != null && <p className="text-sm text-orange-600 mt-2">R {c.budgetPerPartner.toLocaleString()} per partner</p>}
+                            {c.budgetPerPartner != null && <p className="text-sm text-orange-600 mt-2">{formatZar(c.budgetPerPartner)} per partner</p>}
                             {c.description && <p className="text-sm text-neutral-600 mt-2 line-clamp-2">{c.description}</p>}
                           </Card>
                         </CarouselItem>
@@ -851,7 +858,7 @@ export default function BusinessDashboard() {
                       {npo.mission && <p className="text-sm text-neutral-600 mb-4 line-clamp-2">{npo.mission}</p>}
                       <div className="flex gap-2">
                         <Button variant={followedNpoIds.has(npo.npoId) ? "default" : "outline"} className={`flex-1 ${followedNpoIds.has(npo.npoId) ? "bg-orange-600 hover:bg-orange-700" : ""}`} onClick={(e) => { e.stopPropagation(); handleFollow(npo.npoId); }}><Heart className={`w-4 h-4 mr-1 ${followedNpoIds.has(npo.npoId) ? "fill-current" : ""}`} /> {followedNpoIds.has(npo.npoId) ? "Following" : "Follow"}</Button>
-                        <Button className="flex-1 bg-orange-600 hover:bg-orange-700" onClick={(e) => { e.stopPropagation(); setDonateNpoId(npo.npoId); setDonateAmount(""); setShowDonateModal(true); }}>Donate</Button>
+                        <Button className="flex-1 bg-orange-600 hover:bg-orange-700" onClick={(e) => { e.stopPropagation(); setDonateNpoId(npo.npoId); setDonateAmount(""); setDonateError(null); setShowDonateModal(true); }}>Donate</Button>
                       </div>
                       <p className="text-center text-sm text-orange-600 mt-3">View full profile →</p>
                     </div>
@@ -883,7 +890,7 @@ export default function BusinessDashboard() {
                       {npo.mission && <p className="text-sm text-neutral-600 mb-4 line-clamp-2">{npo.mission}</p>}
                       <div className="flex gap-2">
                         <Button variant="default" className="flex-1 bg-orange-600 hover:bg-orange-700" onClick={(e) => { e.stopPropagation(); handleFollow(npo.npoId); }}><Heart className="w-4 h-4 mr-1 fill-current" /> Following</Button>
-                        <Button className="flex-1 bg-orange-600 hover:bg-orange-700" onClick={(e) => { e.stopPropagation(); setDonateNpoId(npo.npoId); setDonateAmount(""); setShowDonateModal(true); }}>Donate</Button>
+                        <Button className="flex-1 bg-orange-600 hover:bg-orange-700" onClick={(e) => { e.stopPropagation(); setDonateNpoId(npo.npoId); setDonateAmount(""); setDonateError(null); setShowDonateModal(true); }}>Donate</Button>
                       </div>
                       <p className="text-center text-sm text-orange-600 mt-3">View full profile →</p>
                     </div>
@@ -923,9 +930,9 @@ export default function BusinessDashboard() {
               <div className="flex items-center justify-between mb-6"><h1 className="text-2xl font-bold">My Donations</h1><div className="flex gap-2"><Button variant="outline" size="sm" onClick={async () => { try { const r = await businessService.generateReport(); const blob = new Blob([r.data], { type: "text/csv" }); const url = URL.createObjectURL(blob); const a = document.createElement("a"); a.href = url; a.download = `donations_report_${new Date().toISOString().slice(0,10)}.csv`; a.click(); URL.revokeObjectURL(url); toast.success("Report downloaded!"); } catch (e) { toast.error(getErrorMessage(e)); } }}><FileText className="w-4 h-4 mr-1" /> Generate Report</Button><Button variant="outline" size="sm" onClick={loadDonations}><RefreshCw className="w-4 h-4" /></Button></div></div>
               {donationsLoading ? <div className="flex justify-center py-12"><Loader2 className="w-8 h-8 animate-spin text-orange-600" /></div> : !donations || donations.count === 0 ? <Card className="p-12 text-center"><DollarSign className="w-12 h-12 text-neutral-400 mx-auto mb-3" /><p className="text-neutral-600">No donations yet.</p></Card> : (
                 <div>
-                  <Card className="p-6 mb-6"><div className="text-center"><p className="text-sm text-neutral-600">Total Donated</p><p className="text-3xl font-bold text-green-600">R {donations.totalDonated.toLocaleString()}</p><p className="text-sm text-neutral-500">{donations.count} donation{donations.count > 1 ? "s" : ""}</p></div></Card>
+                  <Card className="p-6 mb-6"><div className="text-center"><p className="text-sm text-neutral-600">Total Donated</p><p className="text-3xl font-bold text-green-600">{formatZar(donations.totalDonated)}</p><p className="text-sm text-neutral-500">{donations.count} donation{donations.count > 1 ? "s" : ""}</p></div></Card>
                   <div className="space-y-3">{donations.donations.map(d => (
-                    <Card key={d.transactionId} className="p-4"><div className="flex items-center justify-between"><div><p className="font-medium">R {d.amount.toLocaleString()}</p><p className="text-xs text-neutral-500">{new Date(d.timestamp).toLocaleString()}</p></div><Badge className={d.status === "Completed" ? "bg-green-100 text-green-700" : "bg-yellow-100 text-yellow-700"}>{d.status}</Badge></div></Card>
+                    <Card key={d.transactionId} className="p-4"><div className="flex items-center justify-between"><div><p className="font-medium">{formatZar(d.amount)}</p><p className="text-xs text-neutral-500">{new Date(d.timestamp).toLocaleString()}</p></div><Badge className={d.status === "Completed" ? "bg-green-100 text-green-700" : "bg-yellow-100 text-yellow-700"}>{d.status}</Badge></div></Card>
                   ))}</div>
                 </div>
               )}
@@ -993,14 +1000,89 @@ export default function BusinessDashboard() {
       </Card></div>)}
 
       {/* DONATE MODAL */}
-      {showDonateModal && (<div className="fixed inset-0 bg-black/50 flex items-center justify-center z-50 p-4"><Card className="w-full max-w-sm p-6">
-        <div className="flex justify-between items-center mb-4"><h2 className="text-lg font-bold">Donate to NPO</h2><Button variant="ghost" size="sm" onClick={() => setShowDonateModal(false)}><X className="w-4 h-4" /></Button></div>
-        <p className="text-sm text-neutral-600 mb-4">Balance: {formatZar(walletBalance)}</p>
-        <form onSubmit={handleDonate} className="space-y-4">
-          <div><Label>Amount (R)</Label><Input type="number" step="0.01" min="1" value={donateAmount} onChange={e => setDonateAmount(e.target.value)} required /></div>
-          <Button type="submit" className="w-full bg-orange-600 hover:bg-orange-700" disabled={donating}>{donating ? <Loader2 className="w-4 h-4 animate-spin" /> : "Donate"}</Button>
-        </form>
-      </Card></div>)}
+      {showDonateModal && donateNpoId && (() => {
+        const amtNum = parseFloat(donateAmount);
+        const donateNpoName = npos.find(n => n.npoId === donateNpoId)?.organizationName ?? "this NPO";
+        return (
+        <div className="fixed inset-0 bg-black/50 backdrop-blur-sm flex items-center justify-center z-50 p-4" onClick={() => !donating && setShowDonateModal(false)}>
+          <motion.div
+            initial={reduceMotion ? false : { opacity: 0, scale: 0.96, y: 10 }}
+            animate={{ opacity: 1, scale: 1, y: 0 }}
+            transition={{ duration: reduceMotion ? 0 : 0.18 }}
+            className="w-full max-w-md"
+            onClick={(e) => e.stopPropagation()}
+          >
+          <Card className="overflow-hidden p-0">
+            <div className="relative bg-gradient-to-br from-orange-500 to-orange-600 text-white p-6">
+              <button onClick={() => setShowDonateModal(false)} disabled={donating} className="absolute top-4 right-4 text-white/80 hover:text-white transition-colors"><X className="w-5 h-5" /></button>
+              <div className="flex items-center gap-3">
+                <div className="w-11 h-11 rounded-full bg-white/20 flex items-center justify-center shrink-0"><Heart className="w-5 h-5" /></div>
+                <div className="min-w-0">
+                  <h2 className="text-lg font-bold leading-tight">Make a Donation</h2>
+                  <p className="text-white/80 text-sm truncate">To {donateNpoName}</p>
+                </div>
+              </div>
+            </div>
+
+            <div className="p-6">
+              {/* Wallet Balance Display */}
+              <div className="mb-6 p-3 bg-neutral-50 rounded-lg flex items-center justify-between">
+                <span className="text-sm text-neutral-600">Your balance:</span>
+                <span className="font-semibold text-neutral-900">{walletLoading ? "Loading..." : formatZar(walletBalance)}</span>
+              </div>
+
+              <form className="space-y-6" onSubmit={handleDonate}>
+                <div>
+                  <Label htmlFor="biz-donate-amount">Donation Amount (R)</Label>
+                  <div className="relative mt-2">
+                    <span className="absolute left-3 top-1/2 -translate-y-1/2 text-neutral-500 font-semibold">R</span>
+                    <Input id="biz-donate-amount" type="number" placeholder="0.00" className="pl-8 h-12 text-xl font-semibold" value={donateAmount} onChange={(e) => setDonateAmount(e.target.value)} min="1" step="any" autoFocus />
+                  </div>
+                </div>
+                <div>
+                  <Label>Quick amounts</Label>
+                  <div className="grid grid-cols-4 gap-2 mt-2">
+                    {["100", "250", "500", "1000"].map((amt) => (
+                      <Button key={amt} type="button" variant="outline" size="sm" onClick={() => setDonateAmount(amt)}>R {amt}</Button>
+                    ))}
+                  </div>
+                </div>
+
+                {/* Donate Error */}
+                {donateError && (
+                  <div className="space-y-2">
+                    <p className="text-sm text-red-600">{donateError}</p>
+                    {donateError.toLowerCase().includes("insufficient") && (
+                      <Button
+                        type="button"
+                        variant="outline"
+                        size="sm"
+                        className="text-orange-600 border-orange-600 hover:bg-orange-50"
+                        onClick={() => { setShowDonateModal(false); setDonateError(null); setActiveTab("wallet"); setTopUpError(null); setTopUpStep(1); setShowTopUp(true); }}
+                      >
+                        <Wallet className="w-4 h-4 mr-1" />
+                        Top Up Wallet
+                      </Button>
+                    )}
+                  </div>
+                )}
+
+                <div className="flex gap-3">
+                  <Button type="submit" className="flex-1 bg-orange-600 hover:bg-orange-700" disabled={donating}>
+                    {donating && <Loader2 className="w-4 h-4 mr-2 animate-spin" />}
+                    {donating ? "Donating…" : `Donate ${!isNaN(amtNum) && amtNum > 0 ? formatZar(amtNum) : "Now"}`}
+                  </Button>
+                  <Button type="button" variant="outline" onClick={() => setShowDonateModal(false)} disabled={donating}>
+                    Cancel
+                  </Button>
+                </div>
+              </form>
+            </div>
+          </Card>
+          </motion.div>
+        </div>
+        );
+      })()}
 
       {/* TOP UP MODAL */}
       {showTopUp && (() => {

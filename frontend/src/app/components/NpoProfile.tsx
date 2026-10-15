@@ -67,15 +67,15 @@ export default function NpoProfile() {
     const amt = parseFloat(donateAmount);
     if (isNaN(amt) || amt <= 0) { toast.error("Enter a valid amount."); return; }
     const ok = await confirm({
-      title: `Donate R ${amt.toLocaleString()} to ${profile.organizationName}?`,
-      description: `R ${amt.toLocaleString()} will be transferred from your wallet to ${profile.organizationName}. This cannot be undone.`,
-      confirmText: `Donate R ${amt.toLocaleString()}`,
+      title: `Donate ${formatZar(amt)} to ${profile.organizationName}?`,
+      description: `${formatZar(amt)} will be transferred from your wallet to ${profile.organizationName}. This cannot be undone.`,
+      confirmText: `Donate ${formatZar(amt)}`,
     });
     if (!ok) return;
     setDonating(true);
     try {
       await individualService.donate(profile.npoId, amt);
-      toast.success(`Thank you! You donated R ${amt.toLocaleString()} to ${profile.organizationName}.`);
+      toast.success(`Thank you! You donated ${formatZar(amt)} to ${profile.organizationName}.`);
       setShowDonate(false);
       setDonateAmount("");
     } catch (e) {
