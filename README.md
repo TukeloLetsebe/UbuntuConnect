@@ -152,12 +152,14 @@ UbuntuConnect/
 │   ├── package.json
 │   └── vite.config.ts
 ├── database/                           # SQL Server migrations
-│   ├── migrations/                    # Sequential migrations (002–031)
-│   └── 000_run_all_migrations.sql     # Master migration runner (STALE — apply 025–031 individually)
+│   ├── migrations/                    # Sequential migrations (002–035)
+│   └── 000_run_all_migrations.sql     # Consolidated runner (kept in sync with MASTER_SCRIPT.sql)
 ├── MASTER_SCRIPT.sql                   # One-shot: builds the entire DB schema (all tables, idempotent)
-├── seed_data.sql                       # Fresh randomized seed: 30 users + supporting data
+├── seed_withpictures.sql               # Consistent demo seed WITH images (31 users) — recommended
+├── seed_data.sql                       # Same consistent demo seed, images NULL (clean slate)
 ├── delete_seed_data.sql                # Wipes all data + resets identity counters (run before re-seeding)
-├── SEED_CREDENTIALS.md                 # Plaintext email + password for every seeded account
+├── SEED_CREDENTIALS.md                 # Email + password + verification state for every seeded account
+├── backend/UbuntuConnectAPI/uploads/   # Committed demo images (served at /uploads/...)
 ├── docs/                               # Full project documentation
 │   ├── 00_PROJECT_CHARTER.md
 │   ├── 01_PROJECT_OVERVIEW.md
@@ -182,7 +184,7 @@ UbuntuConnect/
 ### Prerequisites
 
 - [.NET 9 SDK](https://dotnet.microsoft.com/download/dotnet/9.0) — ships with Visual Studio 2022 (17.12+). Visual Studio 2026 is **not** required.
-- [Node.js 18+](https://nodejs.org/) with pnpm (`npm install -g pnpm`)
+- [Node.js 18+](https://nodejs.org/) (uses `npm` — no extra package manager needed)
 - [SQL Server 2022](https://www.microsoft.com/en-us/sql-server/sql-server-downloads) (LocalDB or full)
 - [Git](https://git-scm.com/)
 
@@ -201,18 +203,40 @@ git checkout v6
 #    Idempotent — safe to re-run; existing objects are skipped.
 sqlcmd -S localhost -E -C -i MASTER_SCRIPT.sql
 
-# 2. (Optional) Load the demo seed data: 30 users + supporting rows.
-#    Login credentials for every seeded account are in SEED_CREDENTIALS.md.
-sqlcmd -S localhost -E -C -i seed_data.sql
+# 2. Load the demo seed data (31 users + supporting rows).
+#    Choose ONE of the two seed files:
+#
+#    a) WITH demo pictures (recommended) — profile/banner/post/fundraiser images
+#       that reference the committed files under
+#       backend/UbuntuConnectAPI/uploads/images/. Use this to see a populated,
+#       image-rich demo on a fresh clone:
+sqlcmd -S localhost -E -C -i seed_withpictures.sql
 
-# To RESET demo data later, wipe first, then re-seed:
-sqlcmd -S localhost -E -C -i delete_seed_data.sql
-sqlcmd -S localhost -E -C -i seed_data.sql
+#    b) Clean, image-free slate (fallback if images ever misbehave):
+# sqlcmd -S localhost -E -C -i seed_data.sql
+
+# To RESET demo data later, wipe first, then re-seed with whichever file:
+# sqlcmd -S localhost -E -C -i delete_seed_data.sql
+# sqlcmd -S localhost -E -C -i seed_withpictures.sql
 ```
 
-> `seed_data.sql` does NOT wipe on its own — run `delete_seed_data.sql` first when you
-> want a clean slate. `MASTER_SCRIPT.sql` consolidates migrations 002–031; the individual
-> files under `database/migrations/` remain the source of truth for incremental history.
+> **Two seed files, same consistent data:**
+> - `seed_withpictures.sql` — identical data **plus** real demo images wired in.
+> - `seed_data.sql` — the same data with all images left `NULL` (clean slate).
+>
+> Both are **internally consistent**: only verified users hold a wallet balance or
+> have transactions/applications, and every wallet balance reconciles to its
+> completed transactions (see `SEED_CREDENTIALS.md` for the full account list and
+> verification states).
+>
+> Neither seed wipes on its own — run `delete_seed_data.sql` first for a clean
+> slate. `MASTER_SCRIPT.sql` is the canonical schema; `database/000_run_all_migrations.sql`
+> is an equivalent consolidated runner, and `database/migrations/` holds the
+> incremental history.
+>
+> **Images:** the demo image files live in `backend/UbuntuConnectAPI/uploads/` and
+> are committed to the repo, so they travel with a clone/zip. For images to appear
+> you must run `seed_withpictures.sql` (which points the records at those files).
 
 ### 3. Backend Setup
 
@@ -236,12 +260,19 @@ The app will be available at **http://localhost:5173**.
 
 ### 5. Default Test Accounts (after seeding)
 
-| Role | Email | Password |
-|------|-------|----------|
-| Admin | admin@ubuntuconnect.co.za | Admin@123 |
-| NPO | greenearth@npo.org | Npo@12345 |
-| Individual | thabo@gmail.com | User@12345 |
-| Business | csr@techcorp.co.za | Biz@12345 |
+The full list of every seeded account (email + password + verification state) is in
+**[`SEED_CREDENTIALS.md`](SEED_CREDENTIALS.md)**. A few to get started:
+
+| Role | Email | Password | Notes |
+|------|-------|----------|-------|
+| Admin | admin@ubuntuconnect.co.za | `Hope!Bright26` | Platform admin |
+| Individual (verified) | thabo.mokoena@gmail.com | `Thabo!2026a` | KYC approved — can donate/volunteer |
+| NPO (verified) | admin@hopebright.org.za | `Hope!Bright26` | Verified — fundraisers, has images |
+| Business (verified) | csr@ubuntucorp.co.za | `Ubuntu!Corp26` | Verified — runs campaigns |
+
+> Unverified demo accounts (e.g. individuals 5–10, NPOs 17–20, businesses 26–30)
+> intentionally cannot transact and have a R0 wallet — this demonstrates the
+> verification gate. See `SEED_CREDENTIALS.md` for which accounts are verified.
 
 ---
 
@@ -477,8 +508,8 @@ Feature seams are configured via `appsettings.json` and are **config-swappable /
 ### Build Verification
 ```bash
 cd frontend
-pnpm install
-pnpm build    # Must pass with zero errors
+npm install
+npm run build    # Must pass with zero errors
 ```
 
 ### Backend Verification
@@ -535,7 +566,7 @@ Full project documentation is available in the `/docs` folder:
 
 1. Create a feature branch from `v6`
 2. Follow existing code patterns (service layer, controller structure)
-3. Ensure `pnpm build` passes before pushing
+3. Ensure `npm run build` passes before pushing
 4. Create a pull request with clear description
 
 ### Branch Naming

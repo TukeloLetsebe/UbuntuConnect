@@ -482,5 +482,7 @@ $RECYCLE.BIN/
 # Vim temporary swap files
 *.swp
 
-# UbuntuConnect uploaded files (local file storage — Task 2)
-backend/UbuntuConnectAPI/uploads/
+# UbuntuConnect uploaded files (local file storage).
+# The committed demo images referenced by seed_withpictures.sql live under
+# uploads/images/ and ARE tracked so they travel on a fresh clone/zip.
+# (Previously this whole folder was ignored.)
