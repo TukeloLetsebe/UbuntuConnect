@@ -57,7 +57,8 @@ public class TransactionController : BaseApiController
                 amount = t.Amount,
                 transactionType = t.TransactionType,
                 status = t.Status,
-                timestamp = t.Timestamp
+                timestamp = t.Timestamp,
+                reason = t.Reason
             })
             .ToListAsync();
 
@@ -83,7 +84,8 @@ public class TransactionController : BaseApiController
             amount = tx.Amount,
             transactionType = tx.TransactionType,
             status = tx.Status,
-            timestamp = tx.Timestamp
+            timestamp = tx.Timestamp,
+            reason = tx.Reason
         });
     }
 
@@ -100,6 +102,12 @@ public class TransactionController : BaseApiController
         if (!gate.Allowed) return StatusCode(403, gate.Reason);
 
         if (req.Amount <= 0) return BadRequest("Amount must be greater than 0");
+
+        // A reason is required so admins can audit what the funds were for.
+        var reason = req.Reason?.Trim();
+        if (string.IsNullOrWhiteSpace(reason))
+            return BadRequest("Please provide a reason for this withdrawal.");
+        if (reason.Length > 255) reason = reason[..255];
 
         // Per-transaction withdrawal limits.
         if (req.Amount < _limits.MinWithdrawal)
@@ -134,7 +142,8 @@ public class TransactionController : BaseApiController
                 Amount = req.Amount,
                 TransactionType = "Withdrawal",
                 Status = "Failed",
-                Timestamp = DateTime.UtcNow
+                Timestamp = DateTime.UtcNow,
+                Reason = reason
             });
             await _context.SaveChangesAsync();
 
@@ -153,7 +162,8 @@ public class TransactionController : BaseApiController
                 Amount = req.Amount,
                 TransactionType = "Withdrawal",
                 Status = "Completed",
-                Timestamp = DateTime.UtcNow
+                Timestamp = DateTime.UtcNow,
+                Reason = reason
             };
 
             _context.Transactions.Add(tx);
@@ -168,7 +178,8 @@ public class TransactionController : BaseApiController
                 amount = tx.Amount,
                 transactionType = tx.TransactionType,
                 status = tx.Status,
-                timestamp = tx.Timestamp
+                timestamp = tx.Timestamp,
+                reason = tx.Reason
             });
         }
         catch

@@ -19,6 +19,12 @@ public partial class Transaction
 
     public DateTime Timestamp { get; set; }
 
+    /// <summary>
+    /// Why the funds moved. Required for withdrawals (enforced in the API),
+    /// null for donations / top-ups / campaign contributions.
+    /// </summary>
+    public string? Reason { get; set; }
+
     public virtual User? ReceiverUser { get; set; }
 
     public virtual User? SenderUser { get; set; }

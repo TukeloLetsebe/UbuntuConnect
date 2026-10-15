@@ -80,10 +80,26 @@ public class AdminController : BaseApiController
                 email = u.UserEmail,
                 userType = u.UserType,
                 isActive = u.IsActive,
-                isVerified = u.IsVerified
+                isVerified = u.IsVerified,
+                registrationDate = u.RegistrationDate
             })
             .ToListAsync();
-        return Ok(users);
+
+        // Resolve display names for all users in one lookup.
+        var names = await _names.ResolveAsync(users.Select(u => u.userId));
+
+        var result = users.Select(u => new
+        {
+            u.userId,
+            u.email,
+            name = names.TryGetValue(u.userId, out var n) ? n : (string?)null,
+            u.userType,
+            u.isActive,
+            u.isVerified,
+            u.registrationDate
+        });
+
+        return Ok(result);
     }
 
     [HttpGet("users/{id}")]
@@ -99,11 +115,30 @@ public class AdminController : BaseApiController
                 location = u.Location,
                 userType = u.UserType,
                 isActive = u.IsActive,
-                isVerified = u.IsVerified
+                isVerified = u.IsVerified,
+                registrationDate = u.RegistrationDate,
+                profileImage = u.Profile != null ? u.Profile.ProfileImage : null,
+                // Inline name resolution for a single user.
+                individualName = u.Individuals.Select(i => i.FirstName + " " + i.LastName).FirstOrDefault(),
+                npoName = u.Npos.Select(n => n.OrganizationName).FirstOrDefault(),
+                businessName = u.Businesses.Select(b => b.ContactPersonName).FirstOrDefault()
             })
             .FirstOrDefaultAsync();
         if (user == null) return NotFound();
-        return Ok(user);
+        var name = user.individualName ?? user.npoName ?? user.businessName;
+        return Ok(new
+        {
+            user.userId,
+            user.email,
+            name,
+            user.contact,
+            user.location,
+            user.userType,
+            user.isActive,
+            user.isVerified,
+            user.registrationDate,
+            user.profileImage
+        });
     }
 
     [HttpPut("users/{id}/activate")]
@@ -291,7 +326,8 @@ public class AdminController : BaseApiController
                 amount = t.Amount,
                 transactionType = t.TransactionType,
                 status = t.Status,
-                timestamp = t.Timestamp
+                timestamp = t.Timestamp,
+                reason = t.Reason
             })
             .ToListAsync();
 
@@ -311,7 +347,8 @@ public class AdminController : BaseApiController
             r.amount,
             r.transactionType,
             r.status,
-            r.timestamp
+            r.timestamp,
+            r.reason
         });
 
         return Ok(txs);

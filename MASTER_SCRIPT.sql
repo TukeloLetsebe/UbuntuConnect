@@ -173,7 +173,9 @@ BEGIN
         Status          NVARCHAR(20)   NOT NULL DEFAULT 'Pending'
                         CONSTRAINT CHK_Transactions_Status
                         CHECK (Status IN ('Pending', 'Completed', 'Failed', 'Reversed')),
-        Timestamp       DATETIME       NOT NULL DEFAULT GETDATE()
+        Timestamp       DATETIME       NOT NULL DEFAULT GETDATE(),
+        -- Why the funds moved (used for Withdrawal audit). See migration 034.
+        Reason          NVARCHAR(255)  NULL
     );
     PRINT '008 | Transactions table created.';
 END

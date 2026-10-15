@@ -424,6 +424,7 @@ public partial class AppDbContext : DbContext
                 .HasDefaultValueSql("(getdate())")
                 .HasColumnType("datetime");
             entity.Property(e => e.TransactionType).HasMaxLength(30);
+            entity.Property(e => e.Reason).HasMaxLength(255);
 
             entity.HasOne(d => d.ReceiverUser).WithMany(p => p.TransactionReceiverUsers)
                 .HasForeignKey(d => d.ReceiverUserId)

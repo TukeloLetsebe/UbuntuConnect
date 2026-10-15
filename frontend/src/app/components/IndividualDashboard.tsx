@@ -1,9 +1,13 @@
 ﻿import { useState, useEffect, useCallback } from "react";
 import { Link, useNavigate, useSearchParams } from "react-router";
-import { motion } from "motion/react";
+import { motion, useReducedMotion } from "motion/react";
 import { toast } from "sonner";
 import { useAuth } from "../../context/AuthContext";
 import NotificationBell from "./NotificationBell";
+import BrandMark from "./BrandMark";
+import ProfileMenu from "./ProfileMenu";
+import HeaderSearch from "./HeaderSearch";
+import DashboardSidebar from "./DashboardSidebar";
 import EmailVerificationBanner from "./EmailVerificationBanner";
 import IdentityVerificationBanner from "./IdentityVerificationBanner";
 import CardPaymentFields, { type CardDetails, emptyCard } from "./CardPaymentFields";
@@ -12,10 +16,11 @@ import ReportPostButton from "./ReportPostButton";
 import LocationPicker, { composeLocation } from "./registration/LocationPicker";
 import { useConfirm } from "./ConfirmDialog";
 import { getNpoColor } from "../../lib/npoColor";
-import { parseLocation, parseProvince, SA_PROVINCES, PROVINCE_OTHER, VOLUNTEER_SKILLS } from "../../lib/registrationOptions";
+import { parseLocation, parseProvince, SA_PROVINCES, PROVINCE_OTHER, VOLUNTEER_SKILLS, INDIVIDUAL_CAUSES } from "../../lib/registrationOptions";
 import { isValidPhone, validationMessages } from "../../lib/validators";
 import { resolveMediaUrl } from "../../lib/api";
-import { individualService, getErrorMessage, type IndividualProfile, type NPOSummary, type NPODetail, type VolunteerOpportunity, type MyVolunteeringItem, type MyDonationsResponse, type MyImpact, type CommunityPost, type FollowedNPO, type MyTransactionsResponse } from "../../services/individualService";
+import { formatZar } from "../../lib/money";
+import { individualService, getErrorMessage, type IndividualProfile, type NPOSummary, type NPODetail, type VolunteerOpportunity, type MyVolunteeringItem, type MyDonationsResponse, type MyImpact, type CommunityPost, type FollowedNPO, type MyTransactionsResponse, type Fundraiser } from "../../services/individualService";
 import { kycService, type KycStatus } from "../../services/kycService";
 import {
   Dialog,
@@ -28,6 +33,8 @@ import { Button } from "./ui/button";
 import { Card } from "./ui/card";
 import { Badge } from "./ui/badge";
 import { Skeleton } from "./ui/skeleton";
+import { Carousel, CarouselContent, CarouselItem, CarouselPrevious, CarouselNext, type CarouselApi } from "./ui/carousel";
+import { useCarouselAutoplay } from "./useCarouselAutoplay";
 import { Input } from "./ui/input";
 import { Label } from "./ui/label";
 import { Textarea } from "./ui/textarea";
@@ -58,7 +65,15 @@ import {
   Trash2,
   Menu,
   ShieldCheck,
-  BadgeCheck
+  BadgeCheck,
+  LayoutDashboard,
+  Target,
+  ChevronLeft,
+  ChevronRight,
+  ChevronDown,
+  CreditCard,
+  ArrowRight,
+  ArrowLeft
 } from "lucide-react";
 
 // Common volunteer skills offered as quick checkboxes. Keeps applications
@@ -85,11 +100,16 @@ export default function IndividualDashboard() {
   const confirm = useConfirm();
   const navigate = useNavigate();
   const [searchParams, setSearchParams] = useSearchParams();
-  const [activeTab, setActiveTab] = useState("discover");
+  const [activeTab, setActiveTab] = useState("overview");
   // Tracks a pending deep-linked apply (from /individual-dashboard?opp=ID)
   const [pendingApplyOppId, setPendingApplyOppId] = useState<number | null>(null);
   const [sidebarOpen, setSidebarOpen] = useState(false);
-  const selectTab = (id: string) => { setActiveTab(id); setSidebarOpen(false); };
+  const selectTab = (id: string) => {
+    setSidebarOpen(false);
+    // "Fundraisers" is a separate route, not a tab.
+    if (id === "fundraisers") { navigate("/fundraisers"); return; }
+    setActiveTab(id);
+  };
 
   const [followedNpoIds, setFollowedNpoIds] = useState<Set<number>>(new Set());
   // Followed NPOs state (loaded from API on mount)
@@ -106,6 +126,7 @@ export default function IndividualDashboard() {
   const [likedPostIds, setLikedPostIds] = useState<Set<number>>(new Set());
 
   // Wallet state
+  const [topUpStep, setTopUpStep] = useState<1 | 2>(1);
   const [walletBalance, setWalletBalance] = useState<number>(0);
   const [walletLoading, setWalletLoading] = useState(false);
   const [txData, setTxData] = useState<MyTransactionsResponse | null>(null);
@@ -171,6 +192,9 @@ export default function IndividualDashboard() {
   const [kycLoading, setKycLoading] = useState(false);
 
   // Volunteer Opportunities state
+  const [oppSearch, setOppSearch] = useState("");
+  const [oppCategory, setOppCategory] = useState("All");
+  const [detailOpp, setDetailOpp] = useState<VolunteerOpportunity | null>(null);
   const [opportunities, setOpportunities] = useState<VolunteerOpportunity[]>([]);
   const [oppsLoading, setOppsLoading] = useState(false);
   const [oppsError, setOppsError] = useState<string | null>(null);
@@ -193,6 +217,7 @@ export default function IndividualDashboard() {
   const [applying, setApplying] = useState(false);
 
   // My Volunteering state
+  const [detailApp, setDetailApp] = useState<MyVolunteeringItem | null>(null);
   const [myVolunteering, setMyVolunteering] = useState<MyVolunteeringItem[]>([]);
   const [myVolLoading, setMyVolLoading] = useState(false);
   const [myVolError, setMyVolError] = useState<string | null>(null);
@@ -204,6 +229,17 @@ export default function IndividualDashboard() {
   const [donationsLoading, setDonationsLoading] = useState(false);
   const [donationsError, setDonationsError] = useState<string | null>(null);
   const [donationsLoaded, setDonationsLoaded] = useState(false);
+
+  // Overview: platform fundraisers strip (auto-sliding carousel)
+  const [overviewFundraisers, setOverviewFundraisers] = useState<Fundraiser[]>([]);
+  const [overviewFundraisersLoading, setOverviewFundraisersLoading] = useState(false);
+  const [overviewCarouselApi, setOverviewCarouselApi] = useState<CarouselApi | undefined>();
+  useCarouselAutoplay(overviewCarouselApi, { delay: 4000 });
+  const reduceMotion = useReducedMotion();
+
+  // Profile Settings: which section is expanded (accordion). Profile open by default.
+  const [openSetting, setOpenSetting] = useState<string | null>("profile-section");
+  const toggleSetting = (key: string) => setOpenSetting(prev => prev === key ? null : key);
 
   // My Impact state
   const [myImpact, setMyImpact] = useState<MyImpact | null>(null);
@@ -332,7 +368,7 @@ export default function IndividualDashboard() {
   }, []);
 
   useEffect(() => {
-    if (activeTab === "profile") loadKyc();
+    if (activeTab === "profile" || activeTab === "overview") loadKyc();
   }, [activeTab, loadKyc]);
 
   // Deep-link: /individual-dashboard?opp={id} jumps to the Volunteer tab and
@@ -450,6 +486,18 @@ export default function IndividualDashboard() {
       loadMyDonations();
     }
   }, [donationsLoaded, loadMyDonations]);
+
+  // Load platform fundraisers for the overview strip
+  const loadOverviewFundraisers = useCallback(async () => {
+    setOverviewFundraisersLoading(true);
+    try { const r = await individualService.getFundraisers(); setOverviewFundraisers(r.data); }
+    catch { /* non-critical */ }
+    finally { setOverviewFundraisersLoading(false); }
+  }, []);
+
+  useEffect(() => {
+    if (activeTab === "overview") loadOverviewFundraisers();
+  }, [activeTab, loadOverviewFundraisers]);
 
   // Load my impact
   const loadMyImpact = useCallback(async () => {
@@ -801,6 +849,16 @@ export default function IndividualDashboard() {
         ? `${volAvailDays.join(", ")}${volAvailDays.length && volAvailTimes.length ? " — " : ""}${volAvailTimes.join(", ")}`
         : "";
 
+    const appliedOpp = opportunities.find((o) => o.opportunityId === selectedOpportunity);
+    const roleName = appliedOpp?.roleTitle ?? "this role";
+    const orgName = appliedOpp?.npoName ?? "the organization";
+    const ok = await confirm({
+      title: `Submit your application for ${roleName}?`,
+      description: `Your details will be sent to ${orgName}. They'll review your application and respond.`,
+      confirmText: "Submit application",
+    });
+    if (!ok) return;
+
     setApplying(true);
     try {
       await individualService.applyVolunteer(selectedOpportunity, {
@@ -848,11 +906,23 @@ export default function IndividualDashboard() {
 
   // Handle cancel/withdraw application
   const handleCancelApplication = async (applicationId: number) => {
-    if (!window.confirm("Are you sure you want to withdraw this application?")) return;
+    const ok = await confirm({
+      title: "Withdraw this application?",
+      description: "Your volunteer application will be removed and the organization notified. This cannot be undone.",
+      confirmText: "Withdraw application",
+      destructive: true,
+    });
+    if (!ok) return;
     setCancelling(applicationId);
+    // Capture the opportunity this application belongs to so we can re-enable
+    // its "Apply" button once the application is withdrawn.
+    const withdrawn = myVolunteering.find((app) => app.applicationId === applicationId);
     try {
       await individualService.cancelApplication(applicationId);
       setMyVolunteering((prev) => prev.filter((app) => app.applicationId !== applicationId));
+      if (withdrawn) {
+        setAppliedOpportunities((prev) => prev.filter((id) => id !== withdrawn.opportunityId));
+      }
       toast.success("Application withdrawn.");
     } catch (err) {
       const errorMsg = getErrorMessage(err);
@@ -950,6 +1020,7 @@ export default function IndividualDashboard() {
       setTopUpCard(emptyCard);
       setTopUpError(null);
       setShowTopUp(false);
+      loadTransactions();
     } catch (err) {
       setTopUpError(getErrorMessage(err));
     } finally {
@@ -1005,70 +1076,180 @@ export default function IndividualDashboard() {
   });
 
   return (
-    <div className="min-h-screen bg-neutral-50">
+    <div className="h-screen w-full flex flex-col overflow-hidden bg-neutral-50">
       {/* Header */}
-      <header className="bg-white border-b border-neutral-200 py-4 px-6 sticky top-0 z-40">
-        <div className="container mx-auto max-w-7xl flex items-center justify-between">
+      <header className="bg-white border-b border-neutral-200 py-4 px-6 z-40 shrink-0">
+        <div className="w-full flex items-center justify-between">
           <div className="flex items-center gap-3">
             <button onClick={() => setSidebarOpen(true)} className="lg:hidden text-neutral-600">
               <Menu className="w-6 h-6" />
             </button>
-            <button onClick={() => setActiveTab("discover")} className="text-xl text-neutral-900 font-bold">
-              UbuntuConnect
-            </button>
+            <BrandMark onClick={() => setActiveTab("overview")} />
           </div>
-          <div className="flex items-center gap-4">
-            <button
-              onClick={() => setActiveTab("profile")}
-              className="text-neutral-600 hover:text-orange-600 transition-colors hidden sm:inline cursor-pointer"
-              title="Go to Profile Settings"
-            >
-              {profile ? `${profile.firstName} ${profile.lastName}` : email || "User"}
-            </button>
+          <HeaderSearch
+            placeholder="Search NPOs by name, cause, or location..."
+            onSubmit={(q) => { setActiveTab("discover"); setSearchQuery(q); }}
+          />
+          <div className="flex items-center gap-3">
+            <span className="hidden md:inline-flex items-center rounded-full bg-primary/10 px-2.5 py-1 text-xs font-medium text-primary">Individual</span>
             <NotificationBell />
-            <Button variant="outline" size="sm" onClick={handleLogout}>
-              <LogOut className="w-4 h-4 mr-2" />
-              Logout
-            </Button>
+            <ProfileMenu
+              name={profile ? `${profile.firstName} ${profile.lastName}` : email || "User"}
+              subtitle={email || undefined}
+              roleLabel="Individual"
+              onProfile={() => setActiveTab("profile")}
+              onLogout={handleLogout}
+            />
           </div>
         </div>
       </header>
 
-      <div className="flex">
-        {/* Sidebar */}
+      <div className="flex flex-1 min-h-0 overflow-hidden">
         {sidebarOpen && <div className="fixed inset-0 bg-black/50 z-30 lg:hidden" onClick={() => setSidebarOpen(false)} />}
-        <aside className={`${sidebarOpen ? "translate-x-0" : "-translate-x-full"} lg:translate-x-0 transition-transform fixed lg:sticky top-0 lg:top-[73px] left-0 z-40 lg:z-30 w-64 bg-white border-r border-neutral-200 h-screen lg:h-[calc(100vh-73px)] p-6 overflow-y-auto`}>
-          <div className="flex justify-between items-center mb-4 lg:hidden"><span className="font-bold">Menu</span><button onClick={() => setSidebarOpen(false)}><X className="w-5 h-5" /></button></div>
-          <nav className="space-y-2">
-            {[
+        <DashboardSidebar
+          activeTab={activeTab}
+          onSelect={selectTab}
+          mobileOpen={sidebarOpen}
+          onMobileClose={() => setSidebarOpen(false)}
+          storageKey="individual-sidebar-collapsed"
+          groups={[
+            { heading: "Core", items: [
+              { id: "overview", icon: LayoutDashboard, label: "Overview" },
               { id: "discover", icon: Search, label: "Discover NPOs" },
-              { id: "following", icon: Heart, label: `Following (${followedNpos.length})` },
+              { id: "following", icon: Heart, label: "Following", badge: followedNpos.length },
+            ]},
+            { heading: "Engagement", items: [
               { id: "volunteer", icon: Briefcase, label: "Volunteer Opportunities" },
+              { id: "myvolunteering", icon: UserCheck, label: "My Volunteering" },
+              { id: "community", icon: MessageSquare, label: "Community Updates" },
+            ]},
+            { heading: "Activity", items: [
               { id: "donations", icon: Banknote, label: "Donations" },
               { id: "wallet", icon: Wallet, label: "Wallet" },
-            ].map(item => (
-              <button key={item.id} onClick={() => selectTab(item.id)} className={`w-full flex items-center gap-3 px-4 py-2 rounded-lg transition-colors ${activeTab === item.id ? "bg-orange-50 text-orange-600" : "text-neutral-600 hover:bg-neutral-50"}`}><item.icon className="w-5 h-5" /> {item.label}</button>
-            ))}
-            <Link to="/fundraisers" onClick={() => setSidebarOpen(false)} className="w-full flex items-center gap-3 px-4 py-2 rounded-lg transition-colors text-neutral-600 hover:bg-neutral-50"><TrendingUp className="w-5 h-5" /> Fundraisers</Link>
-            {[
-              { id: "myvolunteering", icon: UserCheck, label: "My Volunteering" },
+              { id: "fundraisers", icon: Target, label: "Fundraisers" },
               { id: "impact", icon: TrendingUp, label: "My Impact" },
-              { id: "community", icon: MessageSquare, label: "Community Updates" },
-              { id: "profile", icon: Settings, label: "Profile Settings" },
-            ].map(item => (
-              <button key={item.id} onClick={() => selectTab(item.id)} className={`w-full flex items-center gap-3 px-4 py-2 rounded-lg transition-colors ${activeTab === item.id ? "bg-orange-50 text-orange-600" : "text-neutral-600 hover:bg-neutral-50"}`}><item.icon className="w-5 h-5" /> {item.label}</button>
-            ))}
-          </nav>
-        </aside>
+            ]},
+          ]}
+          bottomItems={[
+            { id: "profile", icon: Settings, label: "Profile Settings" },
+          ]}
+        />
 
         {/* Main Content */}
-        <main className="flex-1 p-4 md:p-8 w-full min-w-0">
+        <main className="flex-1 p-4 md:p-8 w-full min-w-0 overflow-y-auto main-scroll">
           <motion.div
             key={activeTab}
-            initial={{ opacity: 0, y: 20 }}
+            initial={reduceMotion ? false : { opacity: 0, y: 20 }}
             animate={{ opacity: 1, y: 0 }}
-            transition={{ duration: 0.3 }}
+            transition={{ duration: reduceMotion ? 0 : 0.3 }}
           >
+            {/* Overview Tab */}
+            {activeTab === "overview" && (
+              <div>
+                <div className="mb-6">
+                  <h1 className="text-2xl font-bold mb-1">Overview</h1>
+                  <p className="text-neutral-600">Welcome back{profile ? `, ${profile.firstName}` : ""}</p>
+                </div>
+                <div className="grid grid-cols-2 lg:grid-cols-4 gap-4 mb-8">
+                  <Card className="p-5 cursor-pointer hover:shadow-md transition-shadow" onClick={() => setActiveTab("wallet")}>
+                    <div className="flex items-center gap-3">
+                      <div className="w-11 h-11 rounded-full bg-green-100 flex items-center justify-center shrink-0"><Wallet className="w-5 h-5 text-green-600" /></div>
+                      <div className="min-w-0"><p className="text-xs text-neutral-500">Wallet Balance</p><p className="text-2xl font-bold leading-tight">{walletLoading ? "…" : formatZar(walletBalance)}</p></div>
+                    </div>
+                  </Card>
+                  <Card className="p-5 cursor-pointer hover:shadow-md transition-shadow" onClick={() => setActiveTab("donations")}>
+                    <div className="flex items-center gap-3">
+                      <div className="w-11 h-11 rounded-full bg-orange-100 flex items-center justify-center shrink-0"><Banknote className="w-5 h-5 text-orange-600" /></div>
+                      <div className="min-w-0"><p className="text-xs text-neutral-500">Total Donated</p><p className="text-2xl font-bold leading-tight">{formatZar(myImpact?.totalDonated || 0)}</p></div>
+                    </div>
+                  </Card>
+                  <Card className="p-5 cursor-pointer hover:shadow-md transition-shadow" onClick={() => setActiveTab("following")}>
+                    <div className="flex items-center gap-3">
+                      <div className="w-11 h-11 rounded-full bg-pink-100 flex items-center justify-center shrink-0"><Heart className="w-5 h-5 text-pink-600" /></div>
+                      <div className="min-w-0"><p className="text-xs text-neutral-500">Following</p><p className="text-2xl font-bold leading-tight">{myImpact?.npoFollowing ?? followedNpos.length}</p></div>
+                    </div>
+                  </Card>
+                  <Card className="p-5 cursor-pointer hover:shadow-md transition-shadow" onClick={() => setActiveTab("myvolunteering")}>
+                    <div className="flex items-center gap-3">
+                      <div className="w-11 h-11 rounded-full bg-blue-100 flex items-center justify-center shrink-0"><Clock className="w-5 h-5 text-blue-600" /></div>
+                      <div className="min-w-0"><p className="text-xs text-neutral-500">Hours Volunteered</p><p className="text-2xl font-bold leading-tight">{myImpact?.totalHoursVolunteered || 0}h</p></div>
+                    </div>
+                  </Card>
+                </div>
+
+                {/* Fundraisers across the platform — sliding discovery strip */}
+                <div className="mb-8">
+                  <div className="flex items-center justify-between mb-3">
+                    <h3 className="font-semibold">Fundraisers to Support</h3>
+                    <div className="flex items-center gap-1">
+                      <Button variant="ghost" size="sm" onClick={() => navigate("/fundraisers")}>View all</Button>
+                      <Button variant="outline" size="icon" className="size-8 rounded-full" aria-label="Previous" onClick={() => overviewCarouselApi?.scrollPrev()}><ChevronLeft className="w-4 h-4" /></Button>
+                      <Button variant="outline" size="icon" className="size-8 rounded-full" aria-label="Next" onClick={() => overviewCarouselApi?.scrollNext()}><ChevronRight className="w-4 h-4" /></Button>
+                    </div>
+                  </div>
+                  {overviewFundraisersLoading ? (
+                    <div className="grid grid-cols-1 md:grid-cols-2 xl:grid-cols-3 gap-4">{[1,2,3].map(i => <Card key={i} className="p-4"><Skeleton className="h-28 w-full mb-3" /><Skeleton className="h-4 w-2/3 mb-2" /><Skeleton className="h-2 w-full" /></Card>)}</div>
+                  ) : overviewFundraisers.length === 0 ? (
+                    <Card className="p-8 text-center"><p className="text-sm text-neutral-500">No fundraisers on the platform yet.</p></Card>
+                  ) : (
+                    <Carousel opts={{ align: "start", loop: true }} setApi={setOverviewCarouselApi} className="w-full">
+                      <CarouselContent>
+                        {[...overviewFundraisers]
+                          .sort((a, b) => (b.projectStatus === "Active" ? 1 : 0) - (a.projectStatus === "Active" ? 1 : 0))
+                          .map(p => {
+                            const pct = p.targetAmount > 0 ? Math.min(100, Math.round((p.raisedAmount / p.targetAmount) * 100)) : 0;
+                            return (
+                              <CarouselItem key={p.projectId} className="basis-4/5 sm:basis-1/2 lg:basis-[30%]">
+                                <Card className="overflow-hidden h-full cursor-pointer hover:shadow-md transition-shadow" onClick={() => navigate(`/fundraisers?project=${p.projectId}`)}>
+                                  {p.images
+                                    ? <img src={resolveMediaUrl(p.images.split(",")[0].trim())} alt={p.projectName} className="w-full h-28 object-cover" onError={(e) => { (e.currentTarget as HTMLImageElement).style.display = "none"; }} />
+                                    : <div className={`w-full h-28 bg-gradient-to-br ${getNpoColor(p.npoName || p.projectName)} flex items-center justify-center`}><Heart className="w-8 h-8 text-white/80" /></div>}
+                                  <div className="p-4">
+                                    <div className="flex items-center justify-between gap-2 mb-1">
+                                      <h4 className="font-medium truncate">{p.projectName}</h4>
+                                      <Badge variant="outline" className="shrink-0 text-xs">{p.projectStatus}</Badge>
+                                    </div>
+                                    <p className="text-xs text-neutral-500 truncate mb-2">{p.npoName || "NPO"}</p>
+                                    <p className="text-xs text-neutral-500 mb-2">{formatZar(p.raisedAmount)} of {formatZar(p.targetAmount)}</p>
+                                    <div className="h-2 w-full rounded-full bg-neutral-100 overflow-hidden"><div className="h-full rounded-full bg-orange-500" style={{ width: `${pct}%` }} /></div>
+                                  </div>
+                                </Card>
+                              </CarouselItem>
+                            );
+                          })}
+                      </CarouselContent>
+                    </Carousel>
+                  )}
+                </div>
+
+                {/* Suggested for you */}
+                {(() => {
+                  type Suggestion = { key: string; title: string; desc: string; cta: string; action: () => void; icon: typeof Heart; tint: string; iconColor: string };
+                  const items: Suggestion[] = [];
+                  if (kycStatus && kycStatus.status !== "Approved") items.push({ key: "verify", title: "Verify your identity", desc: "Confirm your identity to unlock full access.", cta: "Verify", action: () => navigate("/verify-identity"), icon: ShieldCheck, tint: "bg-amber-50 border-amber-100", iconColor: "bg-amber-100 text-amber-600" });
+                  if ((myImpact?.npoFollowing ?? followedNpos.length) === 0) items.push({ key: "follow", title: "Follow an NPO", desc: "Discover organizations and follow causes you care about.", cta: "Discover", action: () => setActiveTab("discover"), icon: Heart, tint: "bg-pink-50 border-pink-100", iconColor: "bg-pink-100 text-pink-600" });
+                  if ((myImpact?.totalDonated || 0) === 0) items.push({ key: "donate", title: "Make your first donation", desc: "Support a fundraiser and track your impact.", cta: "Browse", action: () => setActiveTab("discover"), icon: Banknote, tint: "bg-orange-50 border-orange-100", iconColor: "bg-orange-100 text-orange-600" });
+                  if ((myImpact?.totalHoursVolunteered || 0) === 0) items.push({ key: "volunteer", title: "Start volunteering", desc: "Find opportunities that match your skills.", cta: "Explore", action: () => setActiveTab("volunteer"), icon: Briefcase, tint: "bg-blue-50 border-blue-100", iconColor: "bg-blue-100 text-blue-600" });
+                  if (items.length === 0) return null;
+                  return (
+                    <div>
+                      <h3 className="font-semibold mb-3">Suggested for you</h3>
+                      <div className="grid sm:grid-cols-2 lg:grid-cols-3 gap-4">
+                        {items.map(it => (
+                          <button key={it.key} onClick={it.action} className={`text-left rounded-xl border ${it.tint} p-4 transition-all hover:shadow-md hover:-translate-y-0.5`}>
+                            <div className={`w-10 h-10 rounded-full ${it.iconColor} flex items-center justify-center mb-3`}><it.icon className="w-5 h-5" /></div>
+                            <p className="font-semibold text-neutral-800">{it.title}</p>
+                            <p className="text-sm text-neutral-600 mt-0.5 mb-3">{it.desc}</p>
+                            <span className="inline-flex items-center gap-1 text-sm font-medium text-orange-600">{it.cta} →</span>
+                          </button>
+                        ))}
+                      </div>
+                    </div>
+                  );
+                })()}
+              </div>
+            )}
+
             {/* Discover NPOs Tab */}
             {activeTab === "discover" && (
               <div>
@@ -1203,7 +1384,7 @@ export default function IndividualDashboard() {
                     </div>
 
                     {/* NPO Grid */}
-                    <div className="grid md:grid-cols-2 gap-6">
+                    <div className="grid grid-cols-1 md:grid-cols-2 xl:grid-cols-3 gap-6">
                       {filteredNPOs.map((npo) => (
                         <Card
                           key={npo.npoId}
@@ -1320,7 +1501,7 @@ export default function IndividualDashboard() {
                 ) : (
                   <div>
                     <h2 className="mb-6">Your Followed Organizations</h2>
-                    <div className="grid md:grid-cols-2 gap-6">
+                    <div className="grid grid-cols-1 md:grid-cols-2 xl:grid-cols-3 gap-6">
                       {followedNpos.map((npo) => (
                         <Card
                           key={npo.npoId}
@@ -1386,10 +1567,30 @@ export default function IndividualDashboard() {
             {/* Volunteer Opportunities Tab */}
             {activeTab === "volunteer" && (
               <div>
-                <div className="mb-8">
-                  <h1 className="mb-2">Volunteer Opportunities</h1>
+                <div className="mb-6">
+                  <h1 className="text-2xl font-bold mb-1">Volunteer Opportunities</h1>
                   <p className="text-neutral-600">Find volunteering roles that match your skills and schedule</p>
                 </div>
+
+                {/* Search + category filter */}
+                {!oppsLoading && !oppsError && opportunities.length > 0 && (() => {
+                  const cats = Array.from(new Set(opportunities.map(o => o.category).filter((c): c is string => !!c)));
+                  return (
+                    <div className="flex flex-col sm:flex-row gap-3 mb-6">
+                      <div className="flex-1 relative">
+                        <Search className="absolute left-3 top-1/2 -translate-y-1/2 w-5 h-5 text-neutral-400" />
+                        <Input placeholder="Search by role, organization, or skill..." className="pl-10" value={oppSearch} onChange={(e) => setOppSearch(e.target.value)} />
+                      </div>
+                      <select className="px-3 py-2 border border-neutral-300 rounded-md sm:w-56" value={oppCategory} onChange={(e) => setOppCategory(e.target.value)}>
+                        <option value="All">All categories</option>
+                        {cats.map(c => <option key={c} value={c}>{c}</option>)}
+                      </select>
+                      {(oppSearch || oppCategory !== "All") && (
+                        <Button variant="outline" onClick={() => { setOppSearch(""); setOppCategory("All"); }}>Clear</Button>
+                      )}
+                    </div>
+                  );
+                })()}
 
                 {/* Loading Skeleton */}
                 {oppsLoading && (
@@ -1440,71 +1641,67 @@ export default function IndividualDashboard() {
                 )}
 
                 {/* Opportunities Grid */}
-                {!oppsLoading && !oppsError && opportunities.length > 0 && (
-                  <div className="grid md:grid-cols-2 gap-6">
-                    {opportunities.map((opp) => (
-                      <Card key={opp.opportunityId} className="p-6">
-                        <div className="flex items-start justify-between mb-4">
-                          <div>
-                            <h3 className="mb-1">{opp.roleTitle}</h3>
+                {!oppsLoading && !oppsError && opportunities.length > 0 && (() => {
+                  const q = oppSearch.trim().toLowerCase();
+                  const filteredOpps = opportunities.filter((opp) => {
+                    const matchesCategory = oppCategory === "All" || opp.category === oppCategory;
+                    const matchesSearch = !q
+                      || opp.roleTitle.toLowerCase().includes(q)
+                      || (opp.npoName || "").toLowerCase().includes(q)
+                      || (opp.description || "").toLowerCase().includes(q)
+                      || (opp.skillsRequired || "").toLowerCase().includes(q);
+                    return matchesCategory && matchesSearch;
+                  });
+                  if (filteredOpps.length === 0) {
+                    return (
+                      <Card className="p-12 text-center">
+                        <Search className="w-12 h-12 text-neutral-400 mx-auto mb-3" />
+                        <h3 className="mb-2">No matching opportunities</h3>
+                        <p className="text-neutral-600 mb-4">Try a different search or clear the filters.</p>
+                        <Button variant="outline" onClick={() => { setOppSearch(""); setOppCategory("All"); }}>Clear filters</Button>
+                      </Card>
+                    );
+                  }
+                  return (
+                  <div className="grid grid-cols-1 md:grid-cols-2 xl:grid-cols-3 gap-6">
+                    {filteredOpps.map((opp) => (
+                      <Card key={opp.opportunityId} className="p-5 flex flex-col cursor-pointer hover:shadow-md transition-shadow" onClick={() => setDetailOpp(opp)}>
+                        <div className="flex items-start justify-between gap-2 mb-2">
+                          <div className="min-w-0">
+                            <h3 className="font-semibold truncate">{opp.roleTitle}</h3>
                             <button
-                              onClick={() => navigate(`/npo/${opp.npoId}`)}
-                              className="text-sm text-orange-600 hover:underline text-left"
+                              onClick={(e) => { e.stopPropagation(); navigate(`/npo/${opp.npoId}`); }}
+                              className="text-sm text-orange-600 hover:underline text-left truncate max-w-full"
                               title="View NPO profile"
                             >
                               {opp.npoName || `NPO #${opp.npoId}`}
                             </button>
                           </div>
-                          {opp.category && <Badge className="bg-blue-100 text-blue-700">{opp.category}</Badge>}
+                          {opp.category && <Badge className="bg-blue-100 text-blue-700 shrink-0">{opp.category}</Badge>}
                         </div>
                         {opp.description && (
-                          <p className="text-neutral-600 text-sm mb-4 line-clamp-3">{opp.description}</p>
+                          <p className="text-neutral-600 text-sm mb-3 line-clamp-2">{opp.description}</p>
                         )}
-                        <div className="space-y-2 text-sm mb-4">
-                          {opp.timeCommitment && (
-                            <div className="flex items-center gap-2">
-                              <Clock className="w-4 h-4 text-neutral-400" />
-                              <span>{opp.timeCommitment}</span>
-                            </div>
-                          )}
-                          {opp.duration && (
-                            <div className="flex items-center gap-2">
-                              <Calendar className="w-4 h-4 text-neutral-400" />
-                              <span>Duration: {opp.duration}</span>
-                            </div>
-                          )}
+                        <div className="flex items-center gap-3 text-xs text-neutral-500 mb-4">
+                          <span>{opp.numOfPositions} position{opp.numOfPositions !== 1 ? "s" : ""}</span>
+                          {opp.timeCommitment && <span className="inline-flex items-center gap-1"><Clock className="w-3.5 h-3.5" /> {opp.timeCommitment}</span>}
                         </div>
-                        {opp.skillsRequired && (
-                          <div className="mb-4 p-3 bg-neutral-50 rounded-lg">
-                            <p className="text-xs text-neutral-600 mb-1">Skills Required:</p>
-                            <p className="text-sm">{opp.skillsRequired}</p>
-                          </div>
-                        )}
-                        <div className="flex items-center justify-between text-sm text-neutral-600 mb-4">
-                          <span>{opp.numOfPositions} position{opp.numOfPositions !== 1 ? "s" : ""} available</span>
+                        <div className="mt-auto flex items-center gap-2">
+                          <Button variant="outline" size="sm" className="flex-1" onClick={(e) => { e.stopPropagation(); setDetailOpp(opp); }}>Details</Button>
+                          <Button
+                            size="sm"
+                            className={`flex-1 ${appliedOpportunities.includes(opp.opportunityId) ? "bg-green-600 hover:bg-green-700" : "bg-orange-600 hover:bg-orange-700"}`}
+                            disabled={appliedOpportunities.includes(opp.opportunityId)}
+                            onClick={(e) => { e.stopPropagation(); handleApplyVolunteer(opp.opportunityId); }}
+                          >
+                            {appliedOpportunities.includes(opp.opportunityId) ? <><CheckCircle className="w-4 h-4 mr-1" /> Applied</> : "Apply"}
+                          </Button>
                         </div>
-                        <Button
-                          className={`w-full ${
-                            appliedOpportunities.includes(opp.opportunityId)
-                              ? "bg-green-600 hover:bg-green-700"
-                              : "bg-orange-600 hover:bg-orange-700"
-                          }`}
-                          disabled={appliedOpportunities.includes(opp.opportunityId)}
-                          onClick={() => handleApplyVolunteer(opp.opportunityId)}
-                        >
-                          {appliedOpportunities.includes(opp.opportunityId) ? (
-                            <>
-                              <CheckCircle className="w-4 h-4 mr-2" />
-                              Applied
-                            </>
-                          ) : (
-                            "Apply Now"
-                          )}
-                        </Button>
                       </Card>
                     ))}
                   </div>
-                )}
+                  );
+                })()}
               </div>
             )}
 
@@ -1581,17 +1778,17 @@ export default function IndividualDashboard() {
                 {!myVolLoading && !myVolError && myVolunteering.length > 0 && (
                   <div className="space-y-4">
                     {myVolunteering.map((app) => (
-                      <Card key={app.applicationId} className="p-6">
+                      <Card key={app.applicationId} className="p-6 cursor-pointer hover:shadow-md transition-shadow" onClick={() => setDetailApp(app)}>
                         <div className="flex items-center justify-between">
-                          <div className="flex-1">
-                            <h3 className="font-medium text-neutral-900 mb-1">{app.roleTitle}</h3>
-                            <p className="text-sm text-neutral-600 mb-2">{app.npoName}</p>
+                          <div className="flex-1 min-w-0">
+                            <h3 className="font-medium text-neutral-900 mb-1 truncate">{app.roleTitle}</h3>
+                            <p className="text-sm text-neutral-600 mb-2 truncate">{app.npoName}</p>
                             <div className="flex items-center gap-4 text-sm text-neutral-500">
                               <span>Applied: {new Date(app.applicationDate).toLocaleDateString()}</span>
                               <span>Hours: {app.totalHoursLogged}h</span>
                             </div>
                           </div>
-                          <div className="flex items-center gap-3">
+                          <div className="flex items-center gap-3 shrink-0">
                             <Badge
                               className={
                                 app.status === "Pending"
@@ -1613,7 +1810,7 @@ export default function IndividualDashboard() {
                                 size="sm"
                                 className="text-red-600 border-red-200 hover:bg-red-50"
                                 disabled={cancelling === app.applicationId}
-                                onClick={() => handleCancelApplication(app.applicationId)}
+                                onClick={(e) => { e.stopPropagation(); handleCancelApplication(app.applicationId); }}
                               >
                                 {cancelling === app.applicationId ? (
                                   <Loader2 className="w-4 h-4 animate-spin" />
@@ -1622,6 +1819,7 @@ export default function IndividualDashboard() {
                                 )}
                               </Button>
                             )}
+                            <ChevronRight className="w-4 h-4 text-neutral-400" />
                           </div>
                         </div>
                       </Card>
@@ -1689,7 +1887,7 @@ export default function IndividualDashboard() {
                     <div className="grid md:grid-cols-3 gap-6 mb-8">
                       <Card className="p-6">
                         <div className="text-neutral-600 text-sm mb-2">Total Donated</div>
-                        <div className="text-3xl mb-1">R {totalDonated.toLocaleString()}</div>
+                        <div className="text-3xl mb-1">{formatZar(totalDonated)}</div>
                         <div className="text-sm text-green-600">All time</div>
                       </Card>
                       <Card className="p-6">
@@ -1700,7 +1898,7 @@ export default function IndividualDashboard() {
                       <Card className="p-6">
                         <div className="text-neutral-600 text-sm mb-2">Wallet Balance</div>
                         <div className="text-3xl mb-1">
-                          {walletLoading ? "..." : `R ${walletBalance.toLocaleString()}`}
+                          {walletLoading ? "..." : formatZar(walletBalance)}
                         </div>
                         <div className="text-sm text-neutral-600">Available</div>
                       </Card>
@@ -1756,59 +1954,34 @@ export default function IndividualDashboard() {
             {/* Wallet Tab */}
             {activeTab === "wallet" && (
               <div>
-                <div className="mb-8">
-                  <h1 className="mb-2">My Wallet</h1>
-                  <p className="text-neutral-600">Manage your wallet balance</p>
+                <div className="flex items-center justify-between mb-6">
+                  <div>
+                    <h1 className="text-2xl font-bold mb-1">My Wallet</h1>
+                    <p className="text-neutral-600">Manage your wallet balance</p>
+                  </div>
+                  <div className="flex gap-2">
+                    <Button variant="outline" size="sm" onClick={loadTransactions}><RefreshCw className="w-4 h-4" /></Button>
+                    <Button className="bg-orange-600 hover:bg-orange-700" onClick={() => { setTopUpError(null); setTopUpStep(1); setShowTopUp(true); }}><Wallet className="w-4 h-4 mr-2" /> Top Up</Button>
+                  </div>
                 </div>
 
-                {/* Overview: balance + lifetime totals */}
-                <div className="grid md:grid-cols-4 gap-6 mb-8">
-                  <Card className="p-8 bg-gradient-to-br from-orange-500 to-orange-600 text-white md:col-span-1">
-                    <p className="text-white/80 mb-2 text-sm">Available Balance</p>
-                    <h2 className="text-3xl font-bold text-white">{walletLoading ? "…" : `R ${walletBalance.toLocaleString()}`}</h2>
-                  </Card>
-                  <Card className="p-6"><p className="text-neutral-600 text-sm mb-1">Total Topped Up</p><p className="text-2xl font-bold text-blue-600">R {(txData?.summary.totalToppedUp ?? 0).toLocaleString()}</p></Card>
-                  <Card className="p-6"><p className="text-neutral-600 text-sm mb-1">Total Donated</p><p className="text-2xl font-bold text-green-600">R {(txData?.summary.totalDonated ?? 0).toLocaleString()}</p></Card>
-                  <Card className="p-6"><p className="text-neutral-600 text-sm mb-1">Total Withdrawn</p><p className="text-2xl font-bold text-orange-600">R {(txData?.summary.totalWithdrawn ?? 0).toLocaleString()}</p></Card>
-                </div>
-
-                {/* Top Up Section */}
-                <Card className="p-6">
-                  <h3 className="mb-4">Top Up Wallet</h3>
-                  <form className="space-y-4" onSubmit={handleTopUpSubmit}>
-                    <div>
-                      <Label htmlFor="wallet-topup">Amount (R)</Label>
-                      <Input
-                        id="wallet-topup"
-                        type="number"
-                        placeholder="Enter amount"
-                        className="mt-2"
-                        value={topUpAmount}
-                        onChange={(e) => setTopUpAmount(e.target.value)}
-                        min="1"
-                        step="any"
-                      />
-                    </div>
-                    <div>
-                      <Label>Quick amounts</Label>
-                      <div className="grid grid-cols-4 gap-2 mt-2">
-                        <Button type="button" variant="outline" size="sm" onClick={() => setTopUpAmount("100")}>R 100</Button>
-                        <Button type="button" variant="outline" size="sm" onClick={() => setTopUpAmount("250")}>R 250</Button>
-                        <Button type="button" variant="outline" size="sm" onClick={() => setTopUpAmount("500")}>R 500</Button>
-                        <Button type="button" variant="outline" size="sm" onClick={() => setTopUpAmount("1000")}>R 1000</Button>
+                {/* Overview: prominent balance + lifetime totals */}
+                <div className="grid md:grid-cols-3 gap-6 mb-8">
+                  <Card className="p-8 bg-gradient-to-br from-orange-500 to-orange-600 text-white">
+                    <div className="flex items-center gap-3">
+                      <div className="w-12 h-12 rounded-full bg-white/20 flex items-center justify-center"><Wallet className="w-6 h-6" /></div>
+                      <div>
+                        <p className="text-white/80 text-sm">Available Balance</p>
+                        <h2 className="text-3xl font-bold text-white">{walletLoading ? "…" : formatZar(walletBalance)}</h2>
                       </div>
                     </div>
-                    <CardPaymentFields value={topUpCard} onChange={setTopUpCard} disabled={toppingUp} />
-                    {topUpError && <p className="text-sm text-red-600">{topUpError}</p>}
-                    <Button type="submit" className="bg-orange-600 hover:bg-orange-700" disabled={toppingUp}>
-                      {toppingUp && <Loader2 className="w-4 h-4 mr-2 animate-spin" />}
-                      Top Up
-                    </Button>
-                  </form>
-                </Card>
+                  </Card>
+                  <Card className="p-6"><p className="text-neutral-600 text-sm mb-1">Total Topped Up</p><p className="text-2xl font-bold text-blue-600">{formatZar(txData?.summary.totalToppedUp ?? 0)}</p></Card>
+                  <Card className="p-6"><p className="text-neutral-600 text-sm mb-1">Total Donated</p><p className="text-2xl font-bold text-green-600">{formatZar(txData?.summary.totalDonated ?? 0)}</p></Card>
+                </div>
 
                 {/* Transaction History */}
-                <Card className="p-6 mt-8">
+                <Card className="p-6">
                   <div className="flex items-center justify-between mb-4">
                     <h3>Transaction History</h3>
                     <Button variant="outline" size="sm" onClick={loadTransactions}><RefreshCw className="w-4 h-4" /></Button>
@@ -1831,7 +2004,7 @@ export default function IndividualDashboard() {
                             </div>
                           </div>
                           <div className="text-right">
-                            <p className={`font-semibold ${tx.direction === "in" ? "text-green-600" : "text-neutral-900"}`}>{tx.direction === "in" ? "+" : "−"}R {tx.amount.toLocaleString()}</p>
+                            <p className={`font-semibold ${tx.direction === "in" ? "text-green-600" : "text-neutral-900"}`}>{tx.direction === "in" ? "+" : "−"}{formatZar(tx.amount)}</p>
                             <Badge className={tx.status === "Completed" ? "bg-green-100 text-green-700" : tx.status === "Failed" ? "bg-red-100 text-red-700" : "bg-amber-100 text-amber-700"}>{tx.status}</Badge>
                           </div>
                         </div>
@@ -1933,7 +2106,7 @@ export default function IndividualDashboard() {
                       }
 
                       return (
-                        <div className="grid md:grid-cols-2 gap-6">
+                        <div className="grid grid-cols-1 md:grid-cols-2 xl:grid-cols-3 gap-6">
                           {filteredPosts.map((post) => (
                             <Card
                               key={post.postId}
@@ -2088,7 +2261,7 @@ export default function IndividualDashboard() {
                       <Card className="p-8 bg-gradient-to-br from-orange-500 to-orange-600 text-white">
                         <div>
                           <p className="text-white/80 mb-2">Donations Impact</p>
-                          <h2 className="text-white mb-2">R {(myImpact?.totalDonated || 0).toLocaleString()}</h2>
+                          <h2 className="text-white mb-2">{formatZar(myImpact?.totalDonated || 0)}</h2>
                           <p className="text-white/90">Supporting {nposSupported} organization{nposSupported !== 1 ? "s" : ""}</p>
                         </div>
                       </Card>
@@ -2106,7 +2279,7 @@ export default function IndividualDashboard() {
                     <div className="grid md:grid-cols-4 gap-6 mb-8">
                       <Card className="p-6">
                         <div className="text-neutral-600 text-sm mb-2">Total Donated</div>
-                        <div className="text-2xl font-semibold mb-1">R {(myImpact?.totalDonated || 0).toLocaleString()}</div>
+                        <div className="text-2xl font-semibold mb-1">{formatZar(myImpact?.totalDonated || 0)}</div>
                         <div className="text-sm text-green-600">All time</div>
                       </Card>
                       <Card className="p-6">
@@ -2142,11 +2315,26 @@ export default function IndividualDashboard() {
 
             {/* Profile Settings Tab */}
             {activeTab === "profile" && (
-              <div>
-                <div className="mb-8">
-                  <h1 className="mb-2">Profile Settings</h1>
+              <div className="max-w-4xl mx-auto">
+                <div className="mb-6">
+                  <h1 className="text-2xl font-bold mb-1">Profile Settings</h1>
                   <p className="text-neutral-600">Manage your account information</p>
                 </div>
+
+                {/* Identity header: avatar + name + email */}
+                {profile && (
+                  <Card className="p-5 mb-6">
+                    <div className="flex items-center gap-4">
+                      <div className="w-14 h-14 rounded-full bg-orange-100 text-orange-700 flex items-center justify-center text-lg font-bold shrink-0">
+                        {`${(profile.firstName || "").charAt(0)}${(profile.lastName || "").charAt(0)}`.toUpperCase() || (profile.email || "U").charAt(0).toUpperCase()}
+                      </div>
+                      <div className="min-w-0">
+                        <p className="text-lg font-semibold text-neutral-900 truncate">{profile.firstName} {profile.lastName}</p>
+                        <p className="text-sm text-neutral-500 truncate">{profile.email || email}</p>
+                      </div>
+                    </div>
+                  </Card>
+                )}
 
                 {/* Identity Verification (KYC) — always visible so the flow is reachable */}
                 <Card className="p-8 mb-6">
@@ -2228,92 +2416,123 @@ export default function IndividualDashboard() {
 
                 {!profileLoading && !profileError && profile && (
                   <>
-                    <Card className="p-8 mb-6">
-                      <h3 className="mb-6">Personal Information</h3>
-                      <form className="space-y-6" onSubmit={handleProfileUpdate}>
-                        <div className="grid md:grid-cols-2 gap-6">
+                    {/* Section: Profile — collapsible */}
+                    <Card className="mb-4 overflow-hidden">
+                      <button type="button" onClick={() => toggleSetting("profile-section")} className="w-full flex items-center justify-between gap-3 p-5 text-left hover:bg-neutral-50 transition-colors">
+                        <div className="flex items-center gap-3">
+                          <div className="w-9 h-9 rounded-lg bg-orange-100 text-orange-600 flex items-center justify-center shrink-0"><Settings className="w-4 h-4" /></div>
                           <div>
-                            <Label htmlFor="first-name">First Name</Label>
-                            <Input
-                              id="first-name"
-                              value={profileFirstName}
-                              onChange={(e) => setProfileFirstName(e.target.value)}
-                              className="mt-2"
-                              required
-                            />
-                          </div>
-                          <div>
-                            <Label htmlFor="last-name">Last Name</Label>
-                            <Input
-                              id="last-name"
-                              value={profileLastName}
-                              onChange={(e) => setProfileLastName(e.target.value)}
-                              className="mt-2"
-                              required
-                            />
+                            <h3 className="font-semibold leading-tight">Profile</h3>
+                            <p className="text-xs text-neutral-500">Your name and the causes you care about.</p>
                           </div>
                         </div>
-                        <div>
-                          <Label htmlFor="email">Email Address</Label>
-                          <Input
-                            id="email"
-                            type="email"
-                            value={profile.email || email || ""}
-                            className="mt-2 bg-neutral-100"
-                            readOnly
-                          />
-                          <p className="text-xs text-neutral-500 mt-1">Email cannot be changed</p>
-                        </div>
-                        <div>
-                          <Label htmlFor="phone">Phone Number</Label>
-                          <Input
-                            id="phone"
-                            type="tel"
-                            value={profileContact}
-                            onChange={(e) => setProfileContact(e.target.value)}
-                            placeholder="+27 XX XXX XXXX"
-                            className="mt-2"
-                            aria-invalid={!!profileContact.trim() && !isValidPhone(profileContact)}
-                          />
-                          {!!profileContact.trim() && !isValidPhone(profileContact) && (
-                            <p className="text-xs text-red-500 mt-1">{validationMessages.phone}</p>
-                          )}
-                        </div>
-                        <div>
-                          <LocationPicker
-                            province={profileProvince}
-                            city={profileCity}
-                            onProvinceChange={setProfileProvince}
-                            onCityChange={setProfileCity}
-                            disabled={profileUpdating}
-                            required
-                          />
-                        </div>
-                        <div>
-                          <Label htmlFor="cause-of-care">Cause of Care</Label>
-                          <Input
-                            id="cause-of-care"
-                            value={profileCauseOfCare}
-                            onChange={(e) => setProfileCauseOfCare(e.target.value)}
-                            placeholder="e.g., Education, Youth Development"
-                            className="mt-2"
-                          />
-                          <p className="text-xs text-neutral-500 mt-1">What causes are you passionate about?</p>
-                        </div>
-                        <Button
-                          type="submit"
-                          className="bg-orange-600 hover:bg-orange-700"
-                          disabled={profileUpdating}
-                        >
-                          {profileUpdating && <Loader2 className="w-4 h-4 mr-2 animate-spin" />}
-                          Update Profile
-                        </Button>
-                      </form>
+                        <ChevronDown className={`w-5 h-5 text-neutral-400 shrink-0 transition-transform ${openSetting === "profile-section" ? "rotate-180" : ""}`} />
+                      </button>
+                      {openSetting === "profile-section" && (
+                        <form className="space-y-5 px-5 pb-5 border-t border-neutral-100 pt-5" onSubmit={handleProfileUpdate}>
+                          <div className="grid md:grid-cols-2 gap-5">
+                            <div>
+                              <Label htmlFor="first-name">First Name</Label>
+                              <Input id="first-name" value={profileFirstName} onChange={(e) => setProfileFirstName(e.target.value)} className="mt-2" required />
+                            </div>
+                            <div>
+                              <Label htmlFor="last-name">Last Name</Label>
+                              <Input id="last-name" value={profileLastName} onChange={(e) => setProfileLastName(e.target.value)} className="mt-2" required />
+                            </div>
+                          </div>
+                          <div>
+                            <Label>Causes of Care</Label>
+                            <p className="text-xs text-neutral-500 mt-1 mb-2">Select the causes you're passionate about.</p>
+                            {(() => {
+                              const selected = profileCauseOfCare.split(",").map(s => s.trim()).filter(Boolean);
+                              const toggle = (cause: string) => {
+                                const set = new Set(selected);
+                                if (set.has(cause)) set.delete(cause); else set.add(cause);
+                                setProfileCauseOfCare(Array.from(set).join(", "));
+                              };
+                              return (
+                                <div className="flex flex-wrap gap-2">
+                                  {INDIVIDUAL_CAUSES.map(cause => {
+                                    const active = selected.includes(cause);
+                                    return (
+                                      <button
+                                        key={cause}
+                                        type="button"
+                                        onClick={() => toggle(cause)}
+                                        aria-pressed={active}
+                                        className={`px-3 py-1.5 rounded-full border text-sm transition-colors ${active ? "bg-orange-600 border-orange-600 text-white" : "bg-white border-neutral-200 text-neutral-700 hover:border-orange-300 hover:bg-orange-50"}`}
+                                      >
+                                        {cause}
+                                      </button>
+                                    );
+                                  })}
+                                </div>
+                              );
+                            })()}
+                          </div>
+                          <div className="flex justify-end">
+                            <Button type="submit" className="bg-orange-600 hover:bg-orange-700" disabled={profileUpdating}>
+                              {profileUpdating && <Loader2 className="w-4 h-4 mr-2 animate-spin" />}
+                              Save profile
+                            </Button>
+                          </div>
+                        </form>
+                      )}
                     </Card>
 
-                    <Card className="p-8 mb-6">
-                      <h3 className="mb-4">Change Password</h3>
-                      <form className="space-y-6" onSubmit={handlePasswordChange}>
+                    {/* Section: Contact — collapsible */}
+                    <Card className="mb-4 overflow-hidden">
+                      <button type="button" onClick={() => toggleSetting("contact-section")} className="w-full flex items-center justify-between gap-3 p-5 text-left hover:bg-neutral-50 transition-colors">
+                        <div className="flex items-center gap-3">
+                          <div className="w-9 h-9 rounded-lg bg-blue-100 text-blue-600 flex items-center justify-center shrink-0"><MapPin className="w-4 h-4" /></div>
+                          <div>
+                            <h3 className="font-semibold leading-tight">Contact</h3>
+                            <p className="text-xs text-neutral-500">How we and NPOs can reach you.</p>
+                          </div>
+                        </div>
+                        <ChevronDown className={`w-5 h-5 text-neutral-400 shrink-0 transition-transform ${openSetting === "contact-section" ? "rotate-180" : ""}`} />
+                      </button>
+                      {openSetting === "contact-section" && (
+                        <form className="space-y-5 px-5 pb-5 border-t border-neutral-100 pt-5" onSubmit={handleProfileUpdate}>
+                          <div>
+                            <Label htmlFor="email">Email Address</Label>
+                            <Input id="email" type="email" value={profile.email || email || ""} className="mt-2 bg-neutral-100" readOnly />
+                            <p className="text-xs text-neutral-500 mt-1">Email cannot be changed</p>
+                          </div>
+                          <div>
+                            <Label htmlFor="phone">Phone Number</Label>
+                            <Input id="phone" type="tel" value={profileContact} onChange={(e) => setProfileContact(e.target.value)} placeholder="+27 XX XXX XXXX" className="mt-2" aria-invalid={!!profileContact.trim() && !isValidPhone(profileContact)} />
+                            {!!profileContact.trim() && !isValidPhone(profileContact) && (
+                              <p className="text-xs text-red-500 mt-1">{validationMessages.phone}</p>
+                            )}
+                          </div>
+                          <div>
+                            <LocationPicker province={profileProvince} city={profileCity} onProvinceChange={setProfileProvince} onCityChange={setProfileCity} disabled={profileUpdating} required />
+                          </div>
+                          <div className="flex justify-end">
+                            <Button type="submit" className="bg-orange-600 hover:bg-orange-700" disabled={profileUpdating}>
+                              {profileUpdating && <Loader2 className="w-4 h-4 mr-2 animate-spin" />}
+                              Save contact
+                            </Button>
+                          </div>
+                        </form>
+                      )}
+                    </Card>
+
+                    {/* Section: Security — collapsible */}
+                    <Card className="mb-4 overflow-hidden">
+                      <button type="button" onClick={() => toggleSetting("security-section")} className="w-full flex items-center justify-between gap-3 p-5 text-left hover:bg-neutral-50 transition-colors">
+                        <div className="flex items-center gap-3">
+                          <div className="w-9 h-9 rounded-lg bg-neutral-200 text-neutral-700 flex items-center justify-center shrink-0"><ShieldCheck className="w-4 h-4" /></div>
+                          <div>
+                            <h3 className="font-semibold leading-tight">Security</h3>
+                            <p className="text-xs text-neutral-500">Change your password.</p>
+                          </div>
+                        </div>
+                        <ChevronDown className={`w-5 h-5 text-neutral-400 shrink-0 transition-transform ${openSetting === "security-section" ? "rotate-180" : ""}`} />
+                      </button>
+                      {openSetting === "security-section" && (
+                      <form className="space-y-5 px-5 pb-5 border-t border-neutral-100 pt-5" onSubmit={handlePasswordChange}>
                         <div>
                           <Label htmlFor="current-password">Current Password</Label>
                           <Input
@@ -2356,10 +2575,23 @@ export default function IndividualDashboard() {
                           Change Password
                         </Button>
                       </form>
+                      )}
                     </Card>
 
-                    <Card className="p-8 border-red-200 bg-red-50">
-                      <h3 className="mb-4 text-red-900">Deactivate Account</h3>
+                    {/* Section: Danger zone — collapsible */}
+                    <Card className="mb-4 overflow-hidden border-red-200">
+                      <button type="button" onClick={() => toggleSetting("danger-section")} className="w-full flex items-center justify-between gap-3 p-5 text-left hover:bg-red-50 transition-colors">
+                        <div className="flex items-center gap-3">
+                          <div className="w-9 h-9 rounded-lg bg-red-100 text-red-600 flex items-center justify-center shrink-0"><AlertCircle className="w-4 h-4" /></div>
+                          <div>
+                            <h3 className="font-semibold leading-tight text-red-900">Deactivate Account</h3>
+                            <p className="text-xs text-red-700/80">Disable login. Your data is preserved.</p>
+                          </div>
+                        </div>
+                        <ChevronDown className={`w-5 h-5 text-red-400 shrink-0 transition-transform ${openSetting === "danger-section" ? "rotate-180" : ""}`} />
+                      </button>
+                      {openSetting === "danger-section" && (
+                      <div className="px-5 pb-5 border-t border-red-200 pt-5 bg-red-50">
                       <p className="text-red-800 text-sm mb-6">
                         Deactivating your account will prevent you from logging in. Your data will be preserved but your account will be inactive. Contact support to reactivate.
                       </p>
@@ -2388,6 +2620,8 @@ export default function IndividualDashboard() {
                           Deactivate My Account
                         </Button>
                       </form>
+                      </div>
+                      )}
                     </Card>
                   </>
                 )}
@@ -2397,6 +2631,217 @@ export default function IndividualDashboard() {
           </motion.div>
         </main>
       </div>
+
+      {/* Top Up Wallet Modal — 2-step guided flow */}
+      {showTopUp && (() => {
+        const amtNum = parseFloat(topUpAmount);
+        const amountValid = !!topUpAmount && !isNaN(amtNum) && amtNum > 0;
+        const cardDigits = topUpCard.cardNumber.replace(/\D/g, "");
+        return (
+        <div className="fixed inset-0 bg-black/50 backdrop-blur-sm flex items-center justify-center z-50 p-4" onClick={() => !toppingUp && setShowTopUp(false)}>
+          <motion.div
+            initial={reduceMotion ? false : { opacity: 0, scale: 0.96, y: 10 }}
+            animate={{ opacity: 1, scale: 1, y: 0 }}
+            transition={{ duration: reduceMotion ? 0 : 0.18 }}
+            className="w-full max-w-md"
+            onClick={(e) => e.stopPropagation()}
+          >
+          <Card className="overflow-hidden max-h-[90vh] overflow-y-auto main-scroll p-0">
+            {/* Gradient header + step indicator */}
+            <div className="relative bg-gradient-to-br from-orange-500 to-orange-600 text-white p-6">
+              <button onClick={() => setShowTopUp(false)} disabled={toppingUp} className="absolute top-4 right-4 text-white/80 hover:text-white transition-colors"><X className="w-5 h-5" /></button>
+              <div className="flex items-center gap-3 mb-4">
+                <div className="w-11 h-11 rounded-full bg-white/20 flex items-center justify-center shrink-0"><Wallet className="w-5 h-5" /></div>
+                <div>
+                  <h2 className="text-lg font-bold leading-tight">Top Up Wallet</h2>
+                  <p className="text-white/80 text-sm">Balance: {formatZar(walletBalance)}</p>
+                </div>
+              </div>
+              {/* Step progress */}
+              <div className="flex items-center gap-2">
+                <div className="flex items-center gap-2 text-sm font-medium"><span className={`w-6 h-6 rounded-full grid place-items-center text-xs ${topUpStep >= 1 ? "bg-white text-orange-600" : "bg-white/30"}`}>1</span> Amount</div>
+                <div className={`flex-1 h-0.5 rounded ${topUpStep === 2 ? "bg-white" : "bg-white/30"}`} />
+                <div className="flex items-center gap-2 text-sm font-medium"><span className={`w-6 h-6 rounded-full grid place-items-center text-xs ${topUpStep >= 2 ? "bg-white text-orange-600" : "bg-white/30"}`}>2</span> Payment</div>
+              </div>
+            </div>
+
+            <div className="p-6">
+              {/* STEP 1 — Amount */}
+              {topUpStep === 1 && (
+                <motion.div initial={reduceMotion ? false : { opacity: 0, x: 12 }} animate={{ opacity: 1, x: 0 }} transition={{ duration: reduceMotion ? 0 : 0.18 }} className="space-y-5">
+                  <div>
+                    <Label htmlFor="wallet-topup">How much would you like to add?</Label>
+                    <div className="relative mt-2">
+                      <span className="absolute left-3 top-1/2 -translate-y-1/2 text-neutral-500 font-semibold">R</span>
+                      <Input id="wallet-topup" type="number" placeholder="0.00" className="pl-8 h-12 text-xl font-semibold" value={topUpAmount} onChange={(e) => setTopUpAmount(e.target.value)} min="1" step="any" autoFocus />
+                    </div>
+                  </div>
+                  <div className="grid grid-cols-2 gap-2">
+                    {["100", "250", "500", "1000"].map((amt) => (
+                      <button key={amt} type="button" onClick={() => setTopUpAmount(amt)} className={`py-2.5 rounded-xl border text-sm font-semibold transition-colors ${topUpAmount === amt ? "bg-orange-600 border-orange-600 text-white" : "bg-white border-neutral-200 text-neutral-700 hover:border-orange-300 hover:bg-orange-50"}`}>R {amt}</button>
+                    ))}
+                  </div>
+                  <Button type="button" className="w-full bg-orange-600 hover:bg-orange-700" disabled={!amountValid} onClick={() => { setTopUpError(null); setTopUpStep(2); }}>
+                    Continue <ArrowRight className="w-4 h-4 ml-1" />
+                  </Button>
+                </motion.div>
+              )}
+
+              {/* STEP 2 — Payment */}
+              {topUpStep === 2 && (
+                <motion.div initial={reduceMotion ? false : { opacity: 0, x: 12 }} animate={{ opacity: 1, x: 0 }} transition={{ duration: reduceMotion ? 0 : 0.18 }}>
+                  {/* Live card preview */}
+                  <div className="rounded-2xl p-5 mb-5 bg-gradient-to-br from-neutral-800 to-neutral-900 text-white shadow-md">
+                    <div className="flex items-center justify-between mb-6">
+                      <CreditCard className="w-7 h-7 text-white/70" />
+                      <span className="text-xs text-white/60">Simulated</span>
+                    </div>
+                    <p className="font-mono tracking-widest text-lg">{(cardDigits.padEnd(16, "•").match(/.{1,4}/g) || []).join(" ").slice(0, 19)}</p>
+                    <div className="flex items-center justify-between mt-4 text-xs text-white/70">
+                      <span>{topUpCard.cardExpiry || "MM/YY"}</span>
+                      <span>CVV {topUpCard.cardCvv ? "•".repeat(topUpCard.cardCvv.length) : "•••"}</span>
+                    </div>
+                  </div>
+
+                  <form className="space-y-4" onSubmit={handleTopUpSubmit}>
+                    <p className="text-xs text-neutral-500 -mt-1">Simulated card — enter any numbers (no real charge).</p>
+                    <div>
+                      <Label htmlFor="card-number">Card Number</Label>
+                      <Input id="card-number" inputMode="numeric" autoComplete="off" placeholder="4111 1111 1111 1111" className="mt-1" disabled={toppingUp}
+                        value={topUpCard.cardNumber}
+                        onChange={(e) => { const d = e.target.value.replace(/\D/g, "").slice(0, 19); setTopUpCard({ ...topUpCard, cardNumber: d.replace(/(.{4})/g, "$1 ").trim() }); }} />
+                    </div>
+                    <div className="grid grid-cols-2 gap-3">
+                      <div>
+                        <Label htmlFor="card-expiry">Expiry (MM/YY)</Label>
+                        <Input id="card-expiry" inputMode="numeric" autoComplete="off" placeholder="12/28" className="mt-1" disabled={toppingUp}
+                          value={topUpCard.cardExpiry}
+                          onChange={(e) => { const d = e.target.value.replace(/\D/g, "").slice(0, 4); setTopUpCard({ ...topUpCard, cardExpiry: d.length <= 2 ? d : `${d.slice(0,2)}/${d.slice(2)}` }); }} />
+                      </div>
+                      <div>
+                        <Label htmlFor="card-cvv">CVV</Label>
+                        <Input id="card-cvv" inputMode="numeric" autoComplete="off" placeholder="123" maxLength={4} className="mt-1" disabled={toppingUp}
+                          value={topUpCard.cardCvv}
+                          onChange={(e) => setTopUpCard({ ...topUpCard, cardCvv: e.target.value.replace(/\D/g, "").slice(0, 4) })} />
+                      </div>
+                    </div>
+                    {topUpError && <p className="text-sm text-red-600">{topUpError}</p>}
+                    <div className="flex gap-3 pt-1">
+                      <Button type="button" variant="outline" onClick={() => setTopUpStep(1)} disabled={toppingUp}><ArrowLeft className="w-4 h-4 mr-1" /> Back</Button>
+                      <Button type="submit" className="flex-1 bg-orange-600 hover:bg-orange-700" disabled={toppingUp}>
+                        {toppingUp && <Loader2 className="w-4 h-4 mr-2 animate-spin" />}
+                        Pay {amountValid ? formatZar(amtNum) : ""}
+                      </Button>
+                    </div>
+                  </form>
+                </motion.div>
+              )}
+            </div>
+          </Card>
+          </motion.div>
+        </div>
+        );
+      })()}
+
+      {/* My Application Detail Dialog */}
+      <Dialog open={!!detailApp} onOpenChange={(o) => { if (!o) setDetailApp(null); }}>
+        <DialogContent className="sm:max-w-md">
+          {detailApp && (
+            <>
+              <DialogHeader>
+                <DialogTitle>{detailApp.roleTitle}</DialogTitle>
+                <DialogDescription>{detailApp.npoName}</DialogDescription>
+              </DialogHeader>
+              <div className="space-y-4 py-2">
+                <div className="flex items-center justify-between">
+                  <span className="text-sm text-neutral-500">Status</span>
+                  <Badge
+                    className={
+                      detailApp.status === "Pending" ? "bg-amber-100 text-amber-700"
+                      : detailApp.status === "Accepted" ? "bg-green-100 text-green-700"
+                      : detailApp.status === "Completed" ? "bg-blue-100 text-blue-700"
+                      : detailApp.status === "Rejected" ? "bg-red-100 text-red-700"
+                      : "bg-neutral-100 text-neutral-600"
+                    }
+                  >
+                    {detailApp.status}
+                  </Badge>
+                </div>
+                <div className="flex items-center justify-between">
+                  <span className="text-sm text-neutral-500">Applied on</span>
+                  <span className="text-sm font-medium">{new Date(detailApp.applicationDate).toLocaleDateString("en-ZA", { year: "numeric", month: "long", day: "numeric" })}</span>
+                </div>
+                <div className="flex items-center justify-between">
+                  <span className="text-sm text-neutral-500">Hours logged</span>
+                  <span className="text-sm font-medium">{detailApp.totalHoursLogged}h</span>
+                </div>
+
+                {/* Status explainer */}
+                <div className="rounded-lg bg-neutral-50 border border-neutral-100 p-3 text-sm text-neutral-600">
+                  {detailApp.status === "Pending" && "Your application is awaiting review by the organization."}
+                  {detailApp.status === "Accepted" && "You've been accepted! The organization may log your volunteer hours."}
+                  {detailApp.status === "Completed" && "This volunteering has been completed. Your logged hours are kept on your impact."}
+                  {detailApp.status === "Rejected" && "This application was not accepted. You can apply to other opportunities."}
+                </div>
+
+                {detailApp.status === "Pending" && (
+                  <Button
+                    variant="outline"
+                    className="w-full text-red-600 border-red-200 hover:bg-red-50"
+                    disabled={cancelling === detailApp.applicationId}
+                    onClick={() => { const id = detailApp.applicationId; setDetailApp(null); handleCancelApplication(id); }}
+                  >
+                    {cancelling === detailApp.applicationId ? <Loader2 className="w-4 h-4 animate-spin" /> : "Withdraw application"}
+                  </Button>
+                )}
+              </div>
+            </>
+          )}
+        </DialogContent>
+      </Dialog>
+
+      {/* Volunteer Opportunity Detail Dialog */}
+      <Dialog open={!!detailOpp} onOpenChange={(o) => { if (!o) setDetailOpp(null); }}>
+        <DialogContent className="sm:max-w-lg">
+          {detailOpp && (
+            <>
+              <DialogHeader>
+                <DialogTitle>{detailOpp.roleTitle}</DialogTitle>
+                <DialogDescription>
+                  <button onClick={() => { navigate(`/npo/${detailOpp.npoId}`); setDetailOpp(null); }} className="text-orange-600 hover:underline">
+                    {detailOpp.npoName || `NPO #${detailOpp.npoId}`}
+                  </button>
+                </DialogDescription>
+              </DialogHeader>
+              <div className="space-y-4 py-2">
+                <div className="flex flex-wrap items-center gap-2">
+                  {detailOpp.category && <Badge className="bg-blue-100 text-blue-700">{detailOpp.category}</Badge>}
+                  <Badge variant="outline">{detailOpp.numOfPositions} position{detailOpp.numOfPositions !== 1 ? "s" : ""}</Badge>
+                </div>
+                {detailOpp.description && <p className="text-sm text-neutral-700">{detailOpp.description}</p>}
+                <div className="space-y-2 text-sm">
+                  {detailOpp.timeCommitment && (
+                    <div className="flex items-center gap-2"><Clock className="w-4 h-4 text-neutral-400" /><span>{detailOpp.timeCommitment}</span></div>
+                  )}
+                  {detailOpp.duration && (
+                    <div className="flex items-center gap-2"><Calendar className="w-4 h-4 text-neutral-400" /><span>Duration: {detailOpp.duration}</span></div>
+                  )}
+                </div>
+                {detailOpp.skillsRequired && (
+                  <div className="p-3 bg-neutral-50 rounded-lg"><p className="text-xs text-neutral-600 mb-1">Skills Required:</p><p className="text-sm">{detailOpp.skillsRequired}</p></div>
+                )}
+                <Button
+                  className={`w-full ${appliedOpportunities.includes(detailOpp.opportunityId) ? "bg-green-600 hover:bg-green-700" : "bg-orange-600 hover:bg-orange-700"}`}
+                  disabled={appliedOpportunities.includes(detailOpp.opportunityId)}
+                  onClick={() => { handleApplyVolunteer(detailOpp.opportunityId); setDetailOpp(null); }}
+                >
+                  {appliedOpportunities.includes(detailOpp.opportunityId) ? <><CheckCircle className="w-4 h-4 mr-2" /> Applied</> : "Apply Now"}
+                </Button>
+              </div>
+            </>
+          )}
+        </DialogContent>
+      </Dialog>
 
       {/* NPO Detail Dialog */}
       <Dialog open={npoDetailOpen} onOpenChange={setNpoDetailOpen}>
@@ -2486,7 +2931,7 @@ export default function IndividualDashboard() {
             <div className="mb-6 p-3 bg-neutral-50 rounded-lg flex items-center justify-between">
               <span className="text-sm text-neutral-600">Your balance:</span>
               <span className="font-semibold text-neutral-900">
-                {walletLoading ? "Loading..." : `R ${walletBalance.toLocaleString()}`}
+                {walletLoading ? "Loading..." : formatZar(walletBalance)}
               </span>
             </div>
 

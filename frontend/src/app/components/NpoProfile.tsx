@@ -2,9 +2,11 @@ import { useState, useEffect, useCallback } from "react";
 import { useParams, Link, useNavigate } from "react-router";
 import { toast } from "sonner";
 import { resolveMediaUrl } from "../../lib/api";
+import { formatZar } from "../../lib/money";
 import { useAuth } from "../../context/AuthContext";
 import { npoProfileService, type PublicNpoProfile } from "../../services/npoProfileService";
 import { individualService } from "../../services/individualService";
+import { useConfirm } from "./ConfirmDialog";
 import { Button } from "./ui/button";
 import { Card } from "./ui/card";
 import { Badge } from "./ui/badge";
@@ -34,6 +36,7 @@ function getErrorMessage(error: unknown): string {
 export default function NpoProfile() {
   const { npoId } = useParams<{ npoId: string }>();
   const navigate = useNavigate();
+  const confirm = useConfirm();
   const { userType, userId, isAuthenticated, isEmailVerified } = useAuth();
   const [profile, setProfile] = useState<PublicNpoProfile | null>(null);
   const [loading, setLoading] = useState(true);
@@ -63,6 +66,12 @@ export default function NpoProfile() {
     if (!profile) return;
     const amt = parseFloat(donateAmount);
     if (isNaN(amt) || amt <= 0) { toast.error("Enter a valid amount."); return; }
+    const ok = await confirm({
+      title: `Donate R ${amt.toLocaleString()} to ${profile.organizationName}?`,
+      description: `R ${amt.toLocaleString()} will be transferred from your wallet to ${profile.organizationName}. This cannot be undone.`,
+      confirmText: `Donate R ${amt.toLocaleString()}`,
+    });
+    if (!ok) return;
     setDonating(true);
     try {
       await individualService.donate(profile.npoId, amt);
@@ -245,23 +254,33 @@ export default function NpoProfile() {
             {profile.fundraisers.length === 0 ? (
               <Card className="p-8 text-center mt-4"><p className="text-neutral-600">No active fundraisers.</p></Card>
             ) : (
-              <div className="grid sm:grid-cols-2 gap-4 mt-4">
-                {profile.fundraisers.map(f => (
-                  <Card key={f.projectId} className="overflow-hidden flex flex-col">
-                    {f.images && <img src={resolveMediaUrl(f.images.split(",")[0].trim())} alt={f.projectName} className="w-full h-40 object-cover" />}
-                    <div className="p-5 flex flex-col flex-1">
-                      <div className="flex items-center gap-2 mb-2"><Target className="w-4 h-4 text-orange-600" /><h3 className="font-semibold">{f.projectName}</h3></div>
-                      {f.projectDesc && <p className="text-sm text-neutral-600 line-clamp-2 mb-3">{f.projectDesc}</p>}
-                      <Progress value={f.targetAmount > 0 ? Math.min(100, (f.raisedAmount / f.targetAmount) * 100) : 0} className="h-2" />
-                      <p className="text-xs text-neutral-500 mt-1">R {f.raisedAmount.toLocaleString()} of R {f.targetAmount.toLocaleString()}</p>
-                      {(userType === "Individual" || userType === "Business") && (
-                        <Button asChild variant="outline" size="sm" className="mt-3 w-full">
-                          <Link to={`/fundraisers?project=${f.projectId}`}>View &amp; donate</Link>
-                        </Button>
-                      )}
-                    </div>
-                  </Card>
-                ))}
+              <div className="grid grid-cols-1 lg:grid-cols-2 gap-5 mt-4">
+                {profile.fundraisers.map(f => {
+                  const pct = f.targetAmount > 0 ? Math.min(100, (f.raisedAmount / f.targetAmount) * 100) : 0;
+                  return (
+                    <Card key={f.projectId} className="overflow-hidden flex flex-col">
+                      {f.images
+                        ? <img src={resolveMediaUrl(f.images.split(",")[0].trim())} alt={f.projectName} className="w-full h-56 object-cover" />
+                        : <div className="w-full h-56 bg-orange-50 flex items-center justify-center"><Target className="w-10 h-10 text-orange-300" /></div>}
+                      <div className="p-6 flex flex-col flex-1">
+                        <div className="flex items-center gap-2 mb-2"><Target className="w-5 h-5 text-orange-600 shrink-0" /><h3 className="font-semibold text-lg">{f.projectName}</h3></div>
+                        {f.projectDesc && <p className="text-sm text-neutral-600 line-clamp-3 mb-4">{f.projectDesc}</p>}
+                        <div className="mt-auto">
+                          <Progress value={pct} className="h-2.5" />
+                          <div className="flex items-center justify-between mt-2 text-sm">
+                            <span className="font-semibold text-neutral-900">{formatZar(f.raisedAmount)}</span>
+                            <span className="text-neutral-500">of {formatZar(f.targetAmount)} · {Math.round(pct)}%</span>
+                          </div>
+                          {(userType === "Individual" || userType === "Business") && (
+                            <Button asChild variant="outline" className="mt-4 w-full">
+                              <Link to={`/fundraisers?project=${f.projectId}`}>View &amp; donate</Link>
+                            </Button>
+                          )}
+                        </div>
+                      </div>
+                    </Card>
+                  );
+                })}
               </div>
             )}
           </TabsContent>
@@ -270,20 +289,25 @@ export default function NpoProfile() {
             {profile.opportunities.length === 0 ? (
               <Card className="p-8 text-center mt-4"><p className="text-neutral-600">No volunteer opportunities.</p></Card>
             ) : (
-              <div className="grid sm:grid-cols-2 gap-4 mt-4">
+              <div className="grid grid-cols-1 lg:grid-cols-2 gap-5 mt-4">
                 {profile.opportunities.map(o => (
-                  <Card key={o.opportunityId} className="p-5 flex flex-col">
-                    <div className="flex items-center gap-2 mb-1"><HandHeart className="w-4 h-4 text-orange-600" /><h3 className="font-semibold">{o.roleTitle}</h3></div>
-                    <div className="flex items-center gap-2 mb-2">
-                      {o.category && <Badge variant="outline">{o.category}</Badge>}
-                      <Badge className="bg-green-100 text-green-700">{o.numOfPositions} position{o.numOfPositions === 1 ? "" : "s"}</Badge>
+                  <Card key={o.opportunityId} className="overflow-hidden flex flex-col">
+                    <div className="h-28 bg-gradient-to-br from-orange-500 to-orange-600 flex items-center justify-center">
+                      <HandHeart className="w-10 h-10 text-white/90" />
                     </div>
-                    {o.description && <p className="text-sm text-neutral-600 line-clamp-3">{o.description}</p>}
-                    {userType === "Individual" && (
-                      <Button asChild variant="outline" size="sm" className="mt-3 w-full">
-                        <Link to={`/individual-dashboard?opp=${o.opportunityId}`}>View &amp; apply</Link>
-                      </Button>
-                    )}
+                    <div className="p-6 flex flex-col flex-1">
+                      <h3 className="font-semibold text-lg mb-2">{o.roleTitle}</h3>
+                      <div className="flex flex-wrap items-center gap-2 mb-3">
+                        {o.category && <Badge variant="outline">{o.category}</Badge>}
+                        <Badge className="bg-green-100 text-green-700">{o.numOfPositions} position{o.numOfPositions === 1 ? "" : "s"}</Badge>
+                      </div>
+                      {o.description && <p className="text-sm text-neutral-600 line-clamp-3">{o.description}</p>}
+                      {userType === "Individual" && (
+                        <Button asChild variant="outline" className="mt-4 w-full">
+                          <Link to={`/individual-dashboard?opp=${o.opportunityId}`}>View &amp; apply</Link>
+                        </Button>
+                      )}
+                    </div>
                   </Card>
                 ))}
               </div>

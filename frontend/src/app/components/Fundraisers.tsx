@@ -4,6 +4,7 @@ import { motion } from "motion/react";
 import { toast } from "sonner";
 import { useAuth } from "../../context/AuthContext";
 import api, { resolveMediaUrl } from "../../lib/api";
+import { useConfirm } from "./ConfirmDialog";
 import { Button } from "./ui/button";
 import { Card } from "./ui/card";
 import { Badge } from "./ui/badge";
@@ -73,6 +74,7 @@ function getErrorMessage(error: unknown): string {
 
 export default function Fundraisers() {
   const { logout, userId, userType } = useAuth();
+  const confirm = useConfirm();
   const [searchParams, setSearchParams] = useSearchParams();
   const [fundraisers, setFundraisers] = useState<Fundraiser[]>([]);
   const [loading, setLoading] = useState(false);
@@ -125,6 +127,13 @@ export default function Fundraisers() {
     const amt = parseFloat(donateAmount);
     if (isNaN(amt) || amt <= 0) { toast.error("Please enter a valid amount greater than 0."); return; }
     if (amt > walletBalance) { toast.error("Insufficient balance. Please top up your wallet first."); return; }
+
+    const ok = await confirm({
+      title: `Donate R ${amt.toLocaleString()} to ${selectedProject.projectName}?`,
+      description: `R ${amt.toLocaleString()} will be transferred from your wallet to "${selectedProject.projectName}" by ${selectedProject.npoName}. This cannot be undone.`,
+      confirmText: `Donate R ${amt.toLocaleString()}`,
+    });
+    if (!ok) return;
 
     setDonating(true);
     try {

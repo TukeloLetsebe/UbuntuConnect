@@ -189,7 +189,7 @@ public class PaymentSimulationTests
         using var ctx = TestDbContextFactory.Create();
         var user = AddUserWithWallet(ctx, 10000);
         var controller = TransactionController(ctx, user.UserId, new WalletLimitsOptions());
-        var result = await controller.Withdraw(new WithdrawFundsRequest { UserId = user.UserId, Amount = 1000 });
+        var result = await controller.Withdraw(new WithdrawFundsRequest { UserId = user.UserId, Amount = 1000, Reason = "Program costs" });
         Assert.IsType<CreatedAtActionResult>(result);
         Assert.Equal(9000, ctx.Wallets.Single(w => w.UserId == user.UserId).Balance);
     }
@@ -200,7 +200,7 @@ public class PaymentSimulationTests
         using var ctx = TestDbContextFactory.Create();
         var user = AddUserWithWallet(ctx, 100000);
         var controller = TransactionController(ctx, user.UserId, new WalletLimitsOptions { MaxWithdrawal = 5000 });
-        var result = await controller.Withdraw(new WithdrawFundsRequest { UserId = user.UserId, Amount = 6000 });
+        var result = await controller.Withdraw(new WithdrawFundsRequest { UserId = user.UserId, Amount = 6000, Reason = "Program costs" });
         Assert.IsType<BadRequestObjectResult>(result);
         Assert.Equal(100000, ctx.Wallets.Single(w => w.UserId == user.UserId).Balance);
     }
@@ -211,7 +211,7 @@ public class PaymentSimulationTests
         using var ctx = TestDbContextFactory.Create();
         var user = AddUserWithWallet(ctx, 100000);
         var controller = TransactionController(ctx, user.UserId, new WalletLimitsOptions { MinWithdrawal = 50 });
-        var result = await controller.Withdraw(new WithdrawFundsRequest { UserId = user.UserId, Amount = 10 });
+        var result = await controller.Withdraw(new WithdrawFundsRequest { UserId = user.UserId, Amount = 10, Reason = "Program costs" });
         Assert.IsType<BadRequestObjectResult>(result);
     }
 
@@ -235,8 +235,20 @@ public class PaymentSimulationTests
         var controller = TransactionController(ctx, user.UserId,
             new WalletLimitsOptions { MaxWithdrawal = 20000, MaxWithdrawalPerDay = 10000 });
         // 8000 already withdrawn; 3000 more would exceed the 10000 daily cap.
-        var result = await controller.Withdraw(new WithdrawFundsRequest { UserId = user.UserId, Amount = 3000 });
+        var result = await controller.Withdraw(new WithdrawFundsRequest { UserId = user.UserId, Amount = 3000, Reason = "Program costs" });
         Assert.IsType<BadRequestObjectResult>(result);
         Assert.Equal(100000, ctx.Wallets.Single(w => w.UserId == user.UserId).Balance);
+    }
+
+    [Fact]
+    public async Task Withdrawal_without_reason_is_rejected()
+    {
+        using var ctx = TestDbContextFactory.Create();
+        var user = AddUserWithWallet(ctx, 10000);
+        var controller = TransactionController(ctx, user.UserId, new WalletLimitsOptions());
+        var result = await controller.Withdraw(new WithdrawFundsRequest { UserId = user.UserId, Amount = 1000, Reason = "   " });
+        Assert.IsType<BadRequestObjectResult>(result);
+        // No funds moved and no row committed when the reason is missing.
+        Assert.Equal(10000, ctx.Wallets.Single(w => w.UserId == user.UserId).Balance);
     }
 }

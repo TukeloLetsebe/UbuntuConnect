@@ -1,9 +1,14 @@
 import { useState, useEffect, useCallback } from "react";
 import { Link, useNavigate } from "react-router";
-import { motion } from "motion/react";
+import { motion, useReducedMotion } from "motion/react";
 import { toast } from "sonner";
 import { useAuth } from "../../context/AuthContext";
 import NotificationBell from "./NotificationBell";
+import BrandMark from "./BrandMark";
+import ProfileMenu from "./ProfileMenu";
+import HeaderSearch from "./HeaderSearch";
+import DashboardSidebar from "./DashboardSidebar";
+import { CardGridSkeleton } from "./LoadingSkeletons";
 import EmailVerificationBanner from "./EmailVerificationBanner";
 import ReportPostButton from "./ReportPostButton";
 import CardPaymentFields, { type CardDetails, emptyCard } from "./CardPaymentFields";
@@ -11,16 +16,17 @@ import DocumentUploadField from "./DocumentUploadField";
 import { useConfirm } from "./ConfirmDialog";
 import { getNpoColor } from "../../lib/npoColor";
 import type { BusinessVerificationItem } from "../../services/businessService";
-import ImageUploadField from "./ImageUploadField";
 import ImageCropField from "./ImageCropField";
 import PostDetailModal from "./PostDetailModal";
 import { parseProvince, SA_PROVINCES, PROVINCE_OTHER } from "../../lib/registrationOptions";
 import BusinessReportsPanel from "./reports/BusinessReportsPanel";
 import { resolveMediaUrl } from "../../lib/api";
+import { formatZar } from "../../lib/money";
 import { businessService, getErrorMessage, type BusinessProfile, type NPOSummary, type FollowedNPO, type Campaign, type CampaignApplication, type DonationsResponse, type BusinessImpact, type CommunityPost, type CommentItem, type Fundraiser, type NpoDocuments } from "../../services/businessService";
 import { Button } from "./ui/button";
 import { Card } from "./ui/card";
-import { Carousel, CarouselContent, CarouselItem, CarouselPrevious, CarouselNext } from "./ui/carousel";
+import { Carousel, CarouselContent, CarouselItem, CarouselPrevious, CarouselNext, type CarouselApi } from "./ui/carousel";
+import { useCarouselAutoplay } from "./useCarouselAutoplay";
 import { Badge } from "./ui/badge";
 import { Input } from "./ui/input";
 import { Label } from "./ui/label";
@@ -30,16 +36,29 @@ import {
   Search, Heart, TrendingUp, LogOut, DollarSign, Users, Plus, X,
   Building2, Target, MessageSquare, Loader2, RefreshCw, Wallet,
   Calendar, FileText, CheckCircle, AlertCircle, Eye, UserCheck, Ban,
-  ArrowUpFromLine, Send, Trash2, Edit, Menu, MapPin, Settings, Shield, Clock, Upload
+  ArrowUpFromLine, Send, Trash2, Edit, Menu, MapPin, Settings, Shield, Clock, Upload,
+  LayoutDashboard, Megaphone, ChevronLeft, ChevronRight, ChevronDown,
+  CreditCard, ArrowRight, ArrowLeft
 } from "lucide-react";
 
 export default function BusinessDashboard() {
-  const { logout, userId } = useAuth();
+  const { logout, userId, email } = useAuth();
   const confirm = useConfirm();
   const navigate = useNavigate();
   const [activeTab, setActiveTab] = useState("overview");
   const [sidebarOpen, setSidebarOpen] = useState(false);
-  const selectTab = (id: string) => { setActiveTab(id); setSidebarOpen(false); };
+  const [overviewCarouselApi, setOverviewCarouselApi] = useState<CarouselApi | undefined>();
+  useCarouselAutoplay(overviewCarouselApi, { delay: 4000 });
+  const reduceMotion = useReducedMotion();
+  // Profile Settings accordion — which section is expanded (Branding open by default).
+  const [openSetting, setOpenSetting] = useState<string | null>("branding");
+  const toggleSetting = (key: string) => setOpenSetting(prev => prev === key ? null : key);
+  const selectTab = (id: string) => {
+    setSidebarOpen(false);
+    // "Fundraisers" is a separate route, not a tab.
+    if (id === "fundraisers") { navigate("/fundraisers"); return; }
+    setActiveTab(id);
+  };
 
   // Profile
   const [profile, setProfile] = useState<BusinessProfile | null>(null);
@@ -89,6 +108,7 @@ export default function BusinessDashboard() {
   const [walletBalance, setWalletBalance] = useState<number>(0);
   const [walletLoading, setWalletLoading] = useState(false);
   const [showTopUp, setShowTopUp] = useState(false);
+  const [topUpStep, setTopUpStep] = useState<1 | 2>(1);
   const [topUpAmount, setTopUpAmount] = useState("");
   const [topUpCard, setTopUpCard] = useState<CardDetails>(emptyCard);
   const [toppingUp, setToppingUp] = useState(false);
@@ -223,7 +243,7 @@ export default function BusinessDashboard() {
     try {
       const [c, f] = await Promise.all([businessService.getMyCampaigns(), businessService.getFundraisers()]);
       setCampaigns(c.data);
-      setAllFundraisers(f.data.filter(x => x.projectStatus === "Active"));
+      setAllFundraisers(f.data);
     } catch { /* non-critical slider */ }
   }, []);
 
@@ -236,7 +256,7 @@ export default function BusinessDashboard() {
 
   useEffect(() => { loadProfile(); loadWallet(); loadImpact(); }, [loadProfile, loadWallet, loadImpact]);
   useEffect(() => {
-    if (activeTab === "overview") loadOverviewSlider();
+    if (activeTab === "overview") { loadOverviewSlider(); loadVerification(); }
     if (activeTab === "discover") loadNPOs();
     if (activeTab === "campaigns") loadCampaigns();
     if (activeTab === "donations") loadDonations();
@@ -384,7 +404,9 @@ export default function BusinessDashboard() {
   };
 
   const handleDeleteCampaign = async (id: number) => {
-    if (!confirm("Delete this campaign?")) return;
+    const c = campaigns.find(x => x.campaignId === id);
+    const ok = await confirm({ title: `Delete ${c ? `"${c.title}"` : "this campaign"}?`, description: "The campaign and its applications will be permanently removed. This cannot be undone.", confirmText: "Delete", destructive: true });
+    if (!ok) return;
     try { await businessService.deleteCampaign(id); setCampaigns(p => p.filter(c => c.campaignId !== id)); toast.success("Deleted."); }
     catch (e) { toast.error(getErrorMessage(e)); }
   };
@@ -515,43 +537,51 @@ export default function BusinessDashboard() {
 
   // ═══ RENDER ═══
   return (
-    <div className="min-h-screen bg-neutral-50">
-      <header className="bg-white border-b border-neutral-200 py-4 px-6 sticky top-0 z-40"><div className="container mx-auto max-w-7xl flex items-center justify-between"><div className="flex items-center gap-3"><button onClick={() => setSidebarOpen(true)} className="lg:hidden text-neutral-600"><Menu className="w-6 h-6" /></button><button onClick={() => setActiveTab("overview")} className="text-xl text-neutral-900 font-bold">UbuntuConnect</button></div><div className="flex items-center gap-4"><button onClick={() => setActiveTab("editprofile")} className="text-neutral-600 hover:text-orange-600 transition-colors hidden sm:inline cursor-pointer" title="Go to Profile Settings">{profile?.contactPersonName || profile?.businessEmail || "Business"}</button><NotificationBell /><Button variant="outline" size="sm" onClick={logout}><LogOut className="w-4 h-4 mr-2" /> Logout</Button></div></div></header>
+    <div className="h-screen w-full flex flex-col overflow-hidden bg-neutral-50">
+      <header className="bg-white border-b border-neutral-200 py-4 px-6 z-40 shrink-0"><div className="w-full flex items-center justify-between"><div className="flex items-center gap-3"><button onClick={() => setSidebarOpen(true)} className="lg:hidden text-neutral-600"><Menu className="w-6 h-6" /></button><BrandMark onClick={() => setActiveTab("overview")} /></div><HeaderSearch placeholder="Search NPOs by name, cause, or location..." onSubmit={(q) => { setActiveTab("discover"); setNpoSearchQuery(q); }} /><div className="flex items-center gap-3"><span className="hidden md:inline-flex items-center rounded-full bg-primary/10 px-2.5 py-1 text-xs font-medium text-primary">Business</span><NotificationBell /><ProfileMenu name={profile?.contactPersonName || profile?.businessEmail || "Business"} subtitle={profile?.businessEmail || email || undefined} roleLabel="Business" onProfile={() => setActiveTab("editprofile")} onLogout={logout} /></div></div></header>
 
-      <div className="flex">
+      <div className="flex flex-1 min-h-0 overflow-hidden">
         {sidebarOpen && <div className="fixed inset-0 bg-black/50 z-30 lg:hidden" onClick={() => setSidebarOpen(false)} />}
-        <aside className={`${sidebarOpen ? "translate-x-0" : "-translate-x-full"} lg:translate-x-0 transition-transform fixed lg:sticky top-0 lg:top-[73px] left-0 z-40 lg:z-30 w-64 bg-white border-r border-neutral-200 h-screen lg:h-[calc(100vh-73px)] p-6 overflow-y-auto`}>
-          <div className="flex justify-between items-center mb-4 lg:hidden"><span className="font-bold">Menu</span><button onClick={() => setSidebarOpen(false)}><X className="w-5 h-5" /></button></div>
-          <nav className="space-y-2">
-            {[
-              { id: "overview", icon: TrendingUp, label: "Overview" },
+        <DashboardSidebar
+          activeTab={activeTab}
+          onSelect={selectTab}
+          mobileOpen={sidebarOpen}
+          onMobileClose={() => setSidebarOpen(false)}
+          storageKey="business-sidebar-collapsed"
+          groups={[
+            { heading: "Core", items: [
+              { id: "overview", icon: LayoutDashboard, label: "Overview" },
               { id: "discover", icon: Search, label: "Discover NPOs" },
               { id: "following", icon: Heart, label: "Following" },
-              { id: "campaigns", icon: Target, label: "Campaigns" },
+            ]},
+            { heading: "Engagement", items: [
+              { id: "community", icon: MessageSquare, label: "Community Feed" },
+            ]},
+            { heading: "Activity", items: [
               { id: "donations", icon: DollarSign, label: "Donations" },
               { id: "wallet", icon: Wallet, label: "Wallet" },
-              { id: "community", icon: MessageSquare, label: "Community Feed" },
-              { id: "verification", icon: Shield, label: "Verification" },
-              { id: "reports", icon: TrendingUp, label: "Reports" },
-              { id: "editprofile", icon: Settings, label: "Profile Settings" },
-            ].map(item => (
-              <button key={item.id} onClick={() => selectTab(item.id)} className={`w-full flex items-center gap-3 px-4 py-2 rounded-lg transition-colors ${activeTab === item.id ? "bg-orange-50 text-orange-600" : "text-neutral-600 hover:bg-neutral-50"}`}><item.icon className="w-5 h-5" /> {item.label}</button>
-            ))}
-            <Link to="/fundraisers" onClick={() => setSidebarOpen(false)} className="w-full flex items-center gap-3 px-4 py-2 rounded-lg transition-colors text-neutral-600 hover:bg-neutral-50"><Target className="w-5 h-5" /> Fundraisers</Link>
-          </nav>
-        </aside>
+              { id: "fundraisers", icon: Target, label: "Fundraisers" },
+              { id: "campaigns", icon: Megaphone, label: "Campaigns" },
+              { id: "reports", icon: FileText, label: "Reports" },
+            ]},
+          ]}
+          bottomItems={[
+            { id: "verification", icon: Shield, label: "Verification" },
+            { id: "editprofile", icon: Settings, label: "Profile Settings" },
+          ]}
+        />
 
-        <main className="flex-1 p-4 md:p-8 w-full min-w-0">
-          <motion.div key={activeTab} initial={{ opacity: 0, y: 20 }} animate={{ opacity: 1, y: 0 }} transition={{ duration: 0.3 }}>
+        <main className="flex-1 p-4 md:p-8 w-full min-w-0 overflow-y-auto main-scroll">
+          <motion.div key={activeTab} initial={reduceMotion ? false : { opacity: 0, y: 20 }} animate={{ opacity: 1, y: 0 }} transition={{ duration: reduceMotion ? 0 : 0.3 }}>
 
             {/* OVERVIEW */}
             {activeTab === "overview" && (<div>
-              <div className="mb-8"><h1 className="text-2xl font-bold mb-2">Business Dashboard</h1><p className="text-neutral-600">Welcome back, {profile?.contactPersonName || "Business"}</p></div>
-              <div className="grid md:grid-cols-4 gap-6 mb-8">
-                <Card className="p-6 cursor-pointer hover:shadow-md" onClick={() => setActiveTab("wallet")}><div className="flex justify-between mb-2"><span className="text-neutral-600 text-sm">Balance</span><Wallet className="w-5 h-5 text-neutral-400" /></div><div className="text-3xl font-bold">R {walletBalance.toLocaleString()}</div></Card>
-                <Card className="p-6 cursor-pointer hover:shadow-md" onClick={() => setActiveTab("donations")}><div className="flex justify-between mb-2"><span className="text-neutral-600 text-sm">Total Donated</span><DollarSign className="w-5 h-5 text-neutral-400" /></div><div className="text-3xl font-bold">R {(impact?.totalDonated || 0).toLocaleString()}</div></Card>
-                <Card className="p-6 cursor-pointer hover:shadow-md" onClick={() => setActiveTab("campaigns")}><div className="flex justify-between mb-2"><span className="text-neutral-600 text-sm">Campaigns</span><Target className="w-5 h-5 text-neutral-400" /></div><div className="text-3xl font-bold">{impact?.activeCampaigns || 0}</div></Card>
-                <Card className="p-6 cursor-pointer hover:shadow-md" onClick={() => setActiveTab("discover")}><div className="flex justify-between mb-2"><span className="text-neutral-600 text-sm">NPOs Supported</span><Users className="w-5 h-5 text-neutral-400" /></div><div className="text-3xl font-bold">{impact?.nposSupported || 0}</div></Card>
+              <div className="mb-6"><h1 className="text-2xl font-bold mb-1">Overview</h1><p className="text-neutral-600">Welcome back, {profile?.contactPersonName || "Business"}</p></div>
+              <div className="grid grid-cols-2 lg:grid-cols-4 gap-4 mb-8">
+                <Card className="p-5 cursor-pointer hover:shadow-md transition-shadow" onClick={() => setActiveTab("wallet")}><div className="flex items-center gap-3"><div className="w-11 h-11 rounded-full bg-green-100 flex items-center justify-center shrink-0"><Wallet className="w-5 h-5 text-green-600" /></div><div className="min-w-0"><p className="text-xs text-neutral-500">Balance</p><p className="text-2xl font-bold leading-tight">{formatZar(walletBalance)}</p></div></div></Card>
+                <Card className="p-5 cursor-pointer hover:shadow-md transition-shadow" onClick={() => setActiveTab("donations")}><div className="flex items-center gap-3"><div className="w-11 h-11 rounded-full bg-orange-100 flex items-center justify-center shrink-0"><DollarSign className="w-5 h-5 text-orange-600" /></div><div className="min-w-0"><p className="text-xs text-neutral-500">Total Donated</p><p className="text-2xl font-bold leading-tight">{formatZar(impact?.totalDonated || 0)}</p></div></div></Card>
+                <Card className="p-5 cursor-pointer hover:shadow-md transition-shadow" onClick={() => setActiveTab("campaigns")}><div className="flex items-center gap-3"><div className="w-11 h-11 rounded-full bg-blue-100 flex items-center justify-center shrink-0"><Target className="w-5 h-5 text-blue-600" /></div><div className="min-w-0"><p className="text-xs text-neutral-500">Campaigns</p><p className="text-2xl font-bold leading-tight">{impact?.activeCampaigns || 0}</p></div></div></Card>
+                <Card className="p-5 cursor-pointer hover:shadow-md transition-shadow" onClick={() => setActiveTab("discover")}><div className="flex items-center gap-3"><div className="w-11 h-11 rounded-full bg-purple-100 flex items-center justify-center shrink-0"><Users className="w-5 h-5 text-purple-600" /></div><div className="min-w-0"><p className="text-xs text-neutral-500">NPOs Supported</p><p className="text-2xl font-bold leading-tight">{impact?.nposSupported || 0}</p></div></div></Card>
               </div>
               {profile?.csrGoal && <Card className="p-6 mb-8"><h3 className="font-semibold mb-2">CSR Goal</h3><p className="text-neutral-600">{profile.csrGoal}</p></Card>}
 
@@ -579,74 +609,175 @@ export default function BusinessDashboard() {
                 </div>
               )}
 
-              {allFundraisers.length > 0 && (
-                <div className="mb-8">
-                  <div className="flex items-center justify-between mb-3"><h2 className="text-lg font-semibold">NPO Fundraisers</h2><Link to="/fundraisers" className="text-sm text-orange-600 hover:underline">See all</Link></div>
-                  <Carousel opts={{ align: "start" }} className="w-full">
+              {/* Fundraisers across the platform — sliding discovery strip */}
+              <div className="mb-8">
+                <div className="flex items-center justify-between mb-3"><h3 className="font-semibold">Fundraisers to Support</h3><div className="flex items-center gap-1"><Link to="/fundraisers" className="text-sm text-orange-600 hover:underline mr-1">See all</Link><Button variant="outline" size="icon" className="size-8 rounded-full" aria-label="Previous" onClick={() => overviewCarouselApi?.scrollPrev()}><ChevronLeft className="w-4 h-4" /></Button><Button variant="outline" size="icon" className="size-8 rounded-full" aria-label="Next" onClick={() => overviewCarouselApi?.scrollNext()}><ChevronRight className="w-4 h-4" /></Button></div></div>
+                {allFundraisers.length === 0 ? (
+                  <Card className="p-8 text-center"><p className="text-sm text-neutral-500">No fundraisers on the platform yet.</p></Card>
+                ) : (
+                  <Carousel opts={{ align: "start", loop: true }} setApi={setOverviewCarouselApi} className="w-full">
                     <CarouselContent>
-                      {allFundraisers.map(f => (
-                        <CarouselItem key={f.projectId} className="md:basis-1/2 lg:basis-1/3">
-                          <Card className="overflow-hidden h-full">
-                            {f.images && <img src={resolveMediaUrl(f.images.split(",")[0].trim())} alt={f.projectName} className="w-full h-28 object-cover" />}
-                            <div className="p-4">
-                              <p className="text-xs text-orange-600 font-medium truncate">{f.npoName}</p>
-                              <h3 className="font-semibold text-sm truncate">{f.projectName}</h3>
-                              <div className="w-full bg-neutral-200 rounded-full h-2 mt-2"><div className="bg-orange-600 h-2 rounded-full" style={{ width: `${f.targetAmount > 0 ? Math.min(100, (f.raisedAmount / f.targetAmount) * 100) : 0}%` }} /></div>
-                              <p className="text-xs text-neutral-500 mt-1">R {f.raisedAmount.toLocaleString()} of R {f.targetAmount.toLocaleString()}</p>
-                              <div className="flex gap-2 mt-3"><Button size="sm" variant="outline" className="flex-1" onClick={() => handleViewDocs(f.npoId, f.npoName)}><FileText className="w-3.5 h-3.5 mr-1" /> Docs</Button><Button asChild size="sm" className="flex-1 bg-orange-600 hover:bg-orange-700"><Link to={`/npo/${f.npoId}`}>Profile</Link></Button></div>
-                            </div>
-                          </Card>
-                        </CarouselItem>
-                      ))}
+                      {[...allFundraisers]
+                        .sort((a, b) => (b.projectStatus === "Active" ? 1 : 0) - (a.projectStatus === "Active" ? 1 : 0))
+                        .map(f => {
+                          const pct = f.targetAmount > 0 ? Math.min(100, Math.round((f.raisedAmount / f.targetAmount) * 100)) : 0;
+                          return (
+                            <CarouselItem key={f.projectId} className="basis-4/5 sm:basis-1/2 lg:basis-[30%]">
+                              <Card className="overflow-hidden h-full">
+                                {f.images
+                                  ? <img src={resolveMediaUrl(f.images.split(",")[0].trim())} alt={f.projectName} className="w-full h-28 object-cover" onError={(e) => { (e.currentTarget as HTMLImageElement).style.display = "none"; }} />
+                                  : <div className={`w-full h-28 bg-gradient-to-br ${getNpoColor(f.npoName || f.projectName)} flex items-center justify-center`}><Target className="w-8 h-8 text-white/80" /></div>}
+                                <div className="p-4">
+                                  <p className="text-xs text-orange-600 font-medium truncate">{f.npoName}</p>
+                                  <div className="flex items-center justify-between gap-2"><h4 className="font-medium text-sm truncate">{f.projectName}</h4><Badge variant="outline" className="shrink-0 text-xs">{f.projectStatus}</Badge></div>
+                                  <div className="w-full bg-neutral-100 rounded-full h-2 mt-2 overflow-hidden"><div className="bg-orange-500 h-2 rounded-full" style={{ width: `${pct}%` }} /></div>
+                                  <p className="text-xs text-neutral-500 mt-1">{formatZar(f.raisedAmount)} of {formatZar(f.targetAmount)}</p>
+                                  <div className="flex gap-2 mt-3"><Button size="sm" variant="outline" className="flex-1" onClick={() => handleViewDocs(f.npoId, f.npoName)}><FileText className="w-3.5 h-3.5 mr-1" /> Docs</Button><Button asChild size="sm" className="flex-1 bg-orange-600 hover:bg-orange-700"><Link to={`/npo/${f.npoId}`}>Profile</Link></Button></div>
+                                </div>
+                              </Card>
+                            </CarouselItem>
+                          );
+                        })}
                     </CarouselContent>
-                    <CarouselPrevious />
-                    <CarouselNext />
                   </Carousel>
-                </div>
-              )}
+                )}
+              </div>
+
+              {/* Suggested for you */}
+              {(() => {
+                type Suggestion = { key: string; title: string; desc: string; cta: string; action: () => void; icon: typeof Target; tint: string; iconColor: string };
+                const items: Suggestion[] = [];
+                if (verifications.length === 0 || !verifications.some(v => v.status === "Approved")) items.push({ key: "verify", title: "Get verified", desc: "Verify your business to build trust with NPOs.", cta: "Verify", action: () => setActiveTab("verification"), icon: Shield, tint: "bg-amber-50 border-amber-100", iconColor: "bg-amber-100 text-amber-600" });
+                if (campaigns.length === 0) items.push({ key: "campaign", title: "Launch a campaign", desc: "Invite NPOs to partner on a CSR campaign.", cta: "Create", action: () => setActiveTab("campaigns"), icon: Megaphone, tint: "bg-orange-50 border-orange-100", iconColor: "bg-orange-100 text-orange-600" });
+                if ((impact?.totalDonated || 0) === 0) items.push({ key: "donate", title: "Make your first donation", desc: "Support an NPO fundraiser directly.", cta: "Discover", action: () => setActiveTab("discover"), icon: DollarSign, tint: "bg-green-50 border-green-100", iconColor: "bg-green-100 text-green-600" });
+                if (walletBalance === 0) items.push({ key: "topup", title: "Top up your wallet", desc: "Add funds so you can donate and fund campaigns.", cta: "Top up", action: () => setActiveTab("wallet"), icon: Wallet, tint: "bg-blue-50 border-blue-100", iconColor: "bg-blue-100 text-blue-600" });
+                if (items.length === 0) return null;
+                return (
+                  <div>
+                    <h3 className="font-semibold mb-3">Suggested for you</h3>
+                    <div className="grid sm:grid-cols-2 lg:grid-cols-3 gap-4">
+                      {items.map(it => (
+                        <button key={it.key} onClick={it.action} className={`text-left rounded-xl border ${it.tint} p-4 transition-all hover:shadow-md hover:-translate-y-0.5`}>
+                          <div className={`w-10 h-10 rounded-full ${it.iconColor} flex items-center justify-center mb-3`}><it.icon className="w-5 h-5" /></div>
+                          <p className="font-semibold text-neutral-800">{it.title}</p>
+                          <p className="text-sm text-neutral-600 mt-0.5 mb-3">{it.desc}</p>
+                          <span className="inline-flex items-center gap-1 text-sm font-medium text-orange-600">{it.cta} →</span>
+                        </button>
+                      ))}
+                    </div>
+                  </div>
+                );
+              })()}
             </div>)}
 
             {/* PROFILE SETTINGS */}
-            {activeTab === "editprofile" && (<div className="max-w-2xl">
-              <div className="mb-8"><h1 className="text-2xl font-bold mb-2">Profile Settings</h1><p className="text-neutral-600">Manage how your business appears and your account security.</p></div>
-              <form onSubmit={handleSaveProfile} className="space-y-6">
-                <Card className="p-6 space-y-5">
-                  <ImageCropField label="Banner / Cover Image" value={editBackgroundImage} onChange={setEditBackgroundImage} aspect={16 / 5} rounded="lg" disabled={savingProfile} />
-                  <ImageCropField label="Profile Picture / Logo" value={editProfileImage} onChange={setEditProfileImage} aspect={1} rounded="full" disabled={savingProfile} />
-                  <div><Label>Email Address</Label><Input type="email" value={profile?.email || ""} className="mt-1 bg-neutral-100" readOnly /><p className="text-xs text-neutral-500 mt-1">Email cannot be changed.</p></div>
-                  <div><Label>Bio</Label><Textarea value={editBio} onChange={e => setEditBio(e.target.value)} rows={4} placeholder="Tell NPOs about your business..." className="mt-1" maxLength={1000} disabled={savingProfile} /></div>
-                  <div className="grid grid-cols-2 gap-4">
-                    <div><Label>Industry</Label><Input value={editIndustry} onChange={e => setEditIndustry(e.target.value)} className="mt-1" disabled={savingProfile} /></div>
-                    <div><Label>CSR Goal</Label><Input value={editCsrGoal} onChange={e => setEditCsrGoal(e.target.value)} className="mt-1" disabled={savingProfile} /></div>
-                  </div>
-                  <div className="grid grid-cols-2 gap-4">
-                    <div><Label>Contact Person</Label><Input value={editContactName} onChange={e => setEditContactName(e.target.value)} className="mt-1" disabled={savingProfile} /></div>
-                    <div><Label>Contact Title</Label><Input value={editContactTitle} onChange={e => setEditContactTitle(e.target.value)} className="mt-1" disabled={savingProfile} /></div>
-                  </div>
-                  <Button type="submit" className="bg-orange-600 hover:bg-orange-700" disabled={savingProfile}>{savingProfile && <Loader2 className="w-4 h-4 mr-2 animate-spin" />}Save Changes</Button>
-                </Card>
-              </form>
+            {activeTab === "editprofile" && (<div className="max-w-4xl mx-auto">
+              <div className="mb-6"><h1 className="text-2xl font-bold mb-1">Profile Settings</h1><p className="text-neutral-600">Manage how your business appears and your account security.</p></div>
 
-              {/* Change password */}
-              <Card className="p-6 mt-6">
-                <h3 className="font-semibold mb-4">Change Password</h3>
-                <form className="space-y-4" onSubmit={handleChangePassword}>
-                  <div><Label>Current Password</Label><Input type="password" value={currentPassword} onChange={e => setCurrentPassword(e.target.value)} className="mt-1" required /></div>
-                  <div><Label>New Password</Label><Input type="password" value={newPassword} onChange={e => setNewPassword(e.target.value)} className="mt-1" required /><p className="text-xs text-neutral-500 mt-1">Must be at least 8 characters.</p></div>
-                  <div><Label>Confirm New Password</Label><Input type="password" value={confirmPassword} onChange={e => setConfirmPassword(e.target.value)} className="mt-1" required /></div>
-                  {passwordError && <p className="text-sm text-red-600">{passwordError}</p>}
-                  <Button type="submit" variant="outline" disabled={passwordChanging}>{passwordChanging && <Loader2 className="w-4 h-4 mr-2 animate-spin" />}Change Password</Button>
-                </form>
+              {/* Identity header: logo + name + verification */}
+              <Card className="p-5 mb-6">
+                <div className="flex items-center gap-4">
+                  <div className="w-14 h-14 rounded-full overflow-hidden shrink-0 flex items-center justify-center bg-orange-100 text-orange-700 text-lg font-bold">
+                    {editProfileImage
+                      ? <img src={resolveMediaUrl(editProfileImage)} alt="" className="w-full h-full object-cover" onError={(e) => { (e.currentTarget as HTMLImageElement).style.display = "none"; }} />
+                      : (profile?.contactPersonName || profile?.businessEmail || "B").charAt(0).toUpperCase()}
+                  </div>
+                  <div className="min-w-0 flex-1">
+                    <div className="flex items-center gap-2">
+                      <p className="text-lg font-semibold text-neutral-900 truncate">{profile?.contactPersonName || "Business"}</p>
+                      {verifications.some(v => v.status === "Approved") && <Badge className="bg-green-100 text-green-700 gap-1 shrink-0"><CheckCircle className="w-3.5 h-3.5" /> Verified</Badge>}
+                    </div>
+                    <p className="text-sm text-neutral-500 truncate">{profile?.businessEmail || email}</p>
+                  </div>
+                </div>
               </Card>
 
-              {/* Deactivate account */}
-              <Card className="p-6 mt-6 border-red-200 bg-red-50">
-                <h3 className="font-semibold mb-4 text-red-900">Deactivate Account</h3>
-                <p className="text-red-800 text-sm mb-4">Deactivating prevents you from logging in. Your data is preserved; contact support to reactivate.</p>
-                <form className="space-y-4" onSubmit={handleDeactivateAccount}>
-                  <div><Label className="text-red-900">Confirm your password</Label><Input type="password" value={deactivatePassword} onChange={e => setDeactivatePassword(e.target.value)} placeholder="Enter your password" className="mt-1" required /></div>
-                  <Button type="submit" variant="outline" className="text-red-600 border-red-600 hover:bg-red-100" disabled={deactivating}>{deactivating && <Loader2 className="w-4 h-4 mr-2 animate-spin" />}Deactivate My Account</Button>
-                </form>
+              <form onSubmit={handleSaveProfile}>
+                {/* Section: Branding */}
+                <Card className="mb-4 overflow-hidden">
+                  <button type="button" onClick={() => toggleSetting("branding")} className="w-full flex items-center justify-between gap-3 p-5 text-left hover:bg-neutral-50 transition-colors">
+                    <div className="flex items-center gap-3">
+                      <div className="w-9 h-9 rounded-lg bg-orange-100 text-orange-600 flex items-center justify-center shrink-0"><Settings className="w-4 h-4" /></div>
+                      <div><h3 className="font-semibold leading-tight">Branding</h3><p className="text-xs text-neutral-500">Your banner and logo.</p></div>
+                    </div>
+                    <ChevronDown className={`w-5 h-5 text-neutral-400 shrink-0 transition-transform ${openSetting === "branding" ? "rotate-180" : ""}`} />
+                  </button>
+                  {openSetting === "branding" && (
+                    <div className="px-5 pb-5 border-t border-neutral-100 pt-5 space-y-5">
+                      <ImageCropField label="Banner / Cover Image" value={editBackgroundImage} onChange={setEditBackgroundImage} aspect={16 / 5} rounded="lg" disabled={savingProfile} />
+                      <ImageCropField label="Profile Picture / Logo" value={editProfileImage} onChange={setEditProfileImage} aspect={1} rounded="full" disabled={savingProfile} />
+                    </div>
+                  )}
+                </Card>
+
+                {/* Section: Business Details */}
+                <Card className="mb-4 overflow-hidden">
+                  <button type="button" onClick={() => toggleSetting("details")} className="w-full flex items-center justify-between gap-3 p-5 text-left hover:bg-neutral-50 transition-colors">
+                    <div className="flex items-center gap-3">
+                      <div className="w-9 h-9 rounded-lg bg-blue-100 text-blue-600 flex items-center justify-center shrink-0"><Building2 className="w-4 h-4" /></div>
+                      <div><h3 className="font-semibold leading-tight">Business Details</h3><p className="text-xs text-neutral-500">Bio, industry, CSR goal and contact person.</p></div>
+                    </div>
+                    <ChevronDown className={`w-5 h-5 text-neutral-400 shrink-0 transition-transform ${openSetting === "details" ? "rotate-180" : ""}`} />
+                  </button>
+                  {openSetting === "details" && (
+                    <div className="px-5 pb-5 border-t border-neutral-100 pt-5 space-y-5">
+                      <div><Label>Email Address</Label><Input type="email" value={profile?.email || ""} className="mt-1 bg-neutral-100" readOnly /><p className="text-xs text-neutral-500 mt-1">Email cannot be changed.</p></div>
+                      <div><Label>Bio</Label><Textarea value={editBio} onChange={e => setEditBio(e.target.value)} rows={4} placeholder="Tell NPOs about your business..." className="mt-1" maxLength={1000} disabled={savingProfile} /></div>
+                      <div className="grid grid-cols-2 gap-4">
+                        <div><Label>Industry</Label><Input value={editIndustry} onChange={e => setEditIndustry(e.target.value)} className="mt-1" disabled={savingProfile} /></div>
+                        <div><Label>CSR Goal</Label><Input value={editCsrGoal} onChange={e => setEditCsrGoal(e.target.value)} className="mt-1" disabled={savingProfile} /></div>
+                      </div>
+                      <div className="grid grid-cols-2 gap-4">
+                        <div><Label>Contact Person</Label><Input value={editContactName} onChange={e => setEditContactName(e.target.value)} className="mt-1" disabled={savingProfile} /></div>
+                        <div><Label>Contact Title</Label><Input value={editContactTitle} onChange={e => setEditContactTitle(e.target.value)} className="mt-1" disabled={savingProfile} /></div>
+                      </div>
+                    </div>
+                  )}
+                </Card>
+
+                <div className="flex justify-end mb-6">
+                  <Button type="submit" className="bg-orange-600 hover:bg-orange-700" disabled={savingProfile}>{savingProfile && <Loader2 className="w-4 h-4 mr-2 animate-spin" />}Save Changes</Button>
+                </div>
+              </form>
+
+              {/* Section: Security */}
+              <Card className="mb-4 overflow-hidden">
+                <button type="button" onClick={() => toggleSetting("security")} className="w-full flex items-center justify-between gap-3 p-5 text-left hover:bg-neutral-50 transition-colors">
+                  <div className="flex items-center gap-3">
+                    <div className="w-9 h-9 rounded-lg bg-neutral-200 text-neutral-700 flex items-center justify-center shrink-0"><Shield className="w-4 h-4" /></div>
+                    <div><h3 className="font-semibold leading-tight">Security</h3><p className="text-xs text-neutral-500">Change your password.</p></div>
+                  </div>
+                  <ChevronDown className={`w-5 h-5 text-neutral-400 shrink-0 transition-transform ${openSetting === "security" ? "rotate-180" : ""}`} />
+                </button>
+                {openSetting === "security" && (
+                  <form className="space-y-4 px-5 pb-5 border-t border-neutral-100 pt-5" onSubmit={handleChangePassword}>
+                    <div><Label>Current Password</Label><Input type="password" value={currentPassword} onChange={e => setCurrentPassword(e.target.value)} className="mt-1" required /></div>
+                    <div><Label>New Password</Label><Input type="password" value={newPassword} onChange={e => setNewPassword(e.target.value)} className="mt-1" required /><p className="text-xs text-neutral-500 mt-1">Must be at least 8 characters.</p></div>
+                    <div><Label>Confirm New Password</Label><Input type="password" value={confirmPassword} onChange={e => setConfirmPassword(e.target.value)} className="mt-1" required /></div>
+                    {passwordError && <p className="text-sm text-red-600">{passwordError}</p>}
+                    <div className="flex justify-end"><Button type="submit" variant="outline" disabled={passwordChanging}>{passwordChanging && <Loader2 className="w-4 h-4 mr-2 animate-spin" />}Change Password</Button></div>
+                  </form>
+                )}
+              </Card>
+
+              {/* Section: Danger zone */}
+              <Card className="mb-4 overflow-hidden border-red-200">
+                <button type="button" onClick={() => toggleSetting("danger")} className="w-full flex items-center justify-between gap-3 p-5 text-left hover:bg-red-50 transition-colors">
+                  <div className="flex items-center gap-3">
+                    <div className="w-9 h-9 rounded-lg bg-red-100 text-red-600 flex items-center justify-center shrink-0"><AlertCircle className="w-4 h-4" /></div>
+                    <div><h3 className="font-semibold leading-tight text-red-900">Deactivate Account</h3><p className="text-xs text-red-700/80">Disable login. Your data is preserved.</p></div>
+                  </div>
+                  <ChevronDown className={`w-5 h-5 text-red-400 shrink-0 transition-transform ${openSetting === "danger" ? "rotate-180" : ""}`} />
+                </button>
+                {openSetting === "danger" && (
+                  <div className="px-5 pb-5 border-t border-red-200 pt-5 bg-red-50">
+                    <p className="text-red-800 text-sm mb-4">Deactivating prevents you from logging in. Your data is preserved; contact support to reactivate.</p>
+                    <form className="space-y-4" onSubmit={handleDeactivateAccount}>
+                      <div><Label className="text-red-900">Confirm your password</Label><Input type="password" value={deactivatePassword} onChange={e => setDeactivatePassword(e.target.value)} placeholder="Enter your password" className="mt-1" required /></div>
+                      <Button type="submit" variant="outline" className="text-red-600 border-red-600 hover:bg-red-100" disabled={deactivating}>{deactivating && <Loader2 className="w-4 h-4 mr-2 animate-spin" />}Deactivate My Account</Button>
+                    </form>
+                  </div>
+                )}
               </Card>
             </div>)}
 
@@ -700,8 +831,8 @@ export default function BusinessDashboard() {
                 </div>
                 <p className="text-sm text-neutral-600">Showing {filteredNpos.length} organization{filteredNpos.length !== 1 ? "s" : ""}</p>
               </div>
-              {nposLoading ? <div className="flex justify-center py-12"><Loader2 className="w-8 h-8 animate-spin text-orange-600" /></div> : filteredNpos.length === 0 ? <Card className="p-12 text-center"><p className="text-neutral-600">No NPOs found.</p></Card> : (
-                <div className="grid md:grid-cols-2 gap-6">{filteredNpos.map(npo => (
+              {nposLoading ? <CardGridSkeleton /> : filteredNpos.length === 0 ? <Card className="p-12 text-center"><p className="text-neutral-600">No NPOs found.</p></Card> : (
+                <div className="grid grid-cols-1 md:grid-cols-2 xl:grid-cols-3 gap-6">{filteredNpos.map(npo => (
                   <Card key={npo.npoId} className="overflow-hidden hover:shadow-lg transition-shadow cursor-pointer" onClick={() => navigate(`/npo/${npo.npoId}`)}>
                     <div className={`h-40 bg-gradient-to-br ${getNpoColor(npo.organizationName)} flex items-center justify-center overflow-hidden`}>
                       {npo.profileImage
@@ -733,7 +864,7 @@ export default function BusinessDashboard() {
             {activeTab === "following" && (<div>
               <h1 className="text-2xl font-bold mb-6">Following</h1>
               {followedNpos.length === 0 ? <Card className="p-12 text-center"><p className="text-neutral-600">You're not following any NPOs yet.</p><Button onClick={() => setActiveTab("discover")} className="mt-4">Discover NPOs</Button></Card> : (
-                <div className="grid md:grid-cols-2 gap-6">{followedNpos.map(npo => (
+                <div className="grid grid-cols-1 md:grid-cols-2 xl:grid-cols-3 gap-6">{followedNpos.map(npo => (
                   <Card key={npo.npoId} className="overflow-hidden hover:shadow-lg transition-shadow cursor-pointer" onClick={() => navigate(`/npo/${npo.npoId}`)}>
                     <div className={`h-40 bg-gradient-to-br ${getNpoColor(npo.organizationName)} flex items-center justify-center overflow-hidden`}>
                       {npo.profileImage
@@ -769,7 +900,7 @@ export default function BusinessDashboard() {
                   <Card key={c.campaignId} className="p-6 cursor-pointer hover:shadow-md transition-shadow" onClick={() => handleViewApplications(c)}>
                     {c.imageUrl && <img src={resolveMediaUrl(c.imageUrl)} alt={c.title} className="w-full h-48 object-cover object-center rounded-lg mb-4" onError={(e) => { (e.currentTarget as HTMLImageElement).style.display = "none"; }} />}
                     <div className="flex items-start justify-between">
-                      <div className="flex-1"><h3 className="font-semibold text-lg">{c.title}</h3>{c.category && <Badge variant="outline" className="mt-1">{c.category}</Badge>}{c.description && <p className="text-neutral-600 text-sm mt-2">{c.description}</p>}<div className="flex gap-4 mt-3 text-sm text-neutral-500">{c.budgetPerPartner && <span>R {c.budgetPerPartner.toLocaleString()}/partner</span>}<span><Calendar className="w-4 h-4 inline mr-1" />{c.startDate}</span>{c.applicantCount !== undefined && <span>{c.applicantCount} applicant{c.applicantCount !== 1 ? "s" : ""}</span>}</div></div>
+                      <div className="flex-1"><h3 className="font-semibold text-lg">{c.title}</h3>{c.category && <Badge variant="outline" className="mt-1">{c.category}</Badge>}{c.description && <p className="text-neutral-600 text-sm mt-2">{c.description}</p>}<div className="flex gap-4 mt-3 text-sm text-neutral-500">{c.budgetPerPartner && <span>{formatZar(c.budgetPerPartner)}/partner</span>}<span><Calendar className="w-4 h-4 inline mr-1" />{c.startDate}</span>{c.applicantCount !== undefined && <span>{c.applicantCount} applicant{c.applicantCount !== 1 ? "s" : ""}</span>}</div></div>
                       <div className="flex gap-2 ml-4"><Button size="sm" variant="outline" onClick={(e) => { e.stopPropagation(); handleViewApplications(c); }}><Eye className="w-4 h-4 mr-1" /> Apps</Button><Button size="sm" variant="outline" onClick={(e) => { e.stopPropagation(); setEditCampaignImageUrl(c.imageUrl ?? null); setEditingCampaign(c); }}><Edit className="w-4 h-4" /></Button><Button size="sm" variant="outline" className="text-red-600" onClick={(e) => { e.stopPropagation(); handleDeleteCampaign(c.campaignId); }}><X className="w-4 h-4" /></Button></div>
                     </div>
                   </Card>
@@ -802,22 +933,22 @@ export default function BusinessDashboard() {
 
             {/* WALLET */}
             {activeTab === "wallet" && (<div>
-              <div className="flex items-center justify-between mb-6"><div><h1 className="text-2xl font-bold mb-2">Wallet</h1><p className="text-neutral-600">Top up to donate and fund partnership campaigns</p></div><div className="flex gap-2"><Button variant="outline" size="sm" onClick={loadWallet}><RefreshCw className="w-4 h-4" /></Button><Button className="bg-orange-600 hover:bg-orange-700" onClick={() => { setTopUpError(null); setShowTopUp(true); }}><ArrowUpFromLine className="w-4 h-4 mr-2" /> Top Up</Button></div></div>
+              <div className="flex items-center justify-between mb-6"><div><h1 className="text-2xl font-bold mb-2">Wallet</h1><p className="text-neutral-600">Top up to donate and fund partnership campaigns</p></div><div className="flex gap-2"><Button variant="outline" size="sm" onClick={loadWallet}><RefreshCw className="w-4 h-4" /></Button><Button className="bg-orange-600 hover:bg-orange-700" onClick={() => { setTopUpError(null); setTopUpStep(1); setShowTopUp(true); }}><ArrowUpFromLine className="w-4 h-4 mr-2" /> Top Up</Button></div></div>
               {walletLoading ? <div className="flex justify-center py-12"><Loader2 className="w-8 h-8 animate-spin" /></div> : (<>
                 <div className="grid md:grid-cols-3 gap-6 mb-8">
-                  <Card className="p-8 bg-gradient-to-br from-orange-500 to-orange-600 text-white"><div className="flex items-center gap-3"><div className="w-12 h-12 rounded-full bg-white/20 flex items-center justify-center"><Wallet className="w-6 h-6" /></div><div><p className="text-white/80 text-sm">Balance</p><h2 className="text-2xl font-bold">R {walletBalance.toLocaleString()}</h2></div></div></Card>
-                  <Card className="p-6"><p className="text-neutral-600 text-sm mb-1">Total Topped Up</p><p className="text-3xl font-bold text-blue-600">R {transactions.filter(t => t.type === "TopUp" && t.status === "Completed").reduce((s, t) => s + t.amount, 0).toLocaleString()}</p></Card>
-                  <Card className="p-6"><p className="text-neutral-600 text-sm mb-1">Total Given</p><p className="text-3xl font-bold text-green-600">R {transactions.filter(t => t.direction === "out" && t.status === "Completed").reduce((s, t) => s + t.amount, 0).toLocaleString()}</p></Card>
+                  <Card className="p-8 bg-gradient-to-br from-orange-500 to-orange-600 text-white"><div className="flex items-center gap-3"><div className="w-12 h-12 rounded-full bg-white/20 flex items-center justify-center"><Wallet className="w-6 h-6" /></div><div><p className="text-white/80 text-sm">Balance</p><h2 className="text-2xl font-bold">{formatZar(walletBalance)}</h2></div></div></Card>
+                  <Card className="p-6"><p className="text-neutral-600 text-sm mb-1">Total Topped Up</p><p className="text-3xl font-bold text-blue-600">{formatZar(transactions.filter(t => t.type === "TopUp" && t.status === "Completed").reduce((s, t) => s + t.amount, 0))}</p></Card>
+                  <Card className="p-6"><p className="text-neutral-600 text-sm mb-1">Total Given</p><p className="text-3xl font-bold text-green-600">{formatZar(transactions.filter(t => t.direction === "out" && t.status === "Completed").reduce((s, t) => s + t.amount, 0))}</p></Card>
                 </div>
-                <Card className="p-6"><h3 className="font-semibold mb-4">Transaction History</h3>{transactions.length === 0 ? <p className="text-neutral-600 text-sm">No transactions yet. Top up your wallet to get started.</p> : <div className="space-y-3">{transactions.map(tx => (<div key={tx.transactionId} className="flex items-center justify-between p-4 border rounded-lg"><div className="flex items-center gap-4"><div className={`w-10 h-10 rounded-full flex items-center justify-center ${tx.type === "TopUp" ? "bg-blue-100" : "bg-green-100"}`}>{tx.type === "TopUp" ? <ArrowUpFromLine className="w-5 h-5 text-blue-600" /> : <Heart className="w-5 h-5 text-green-600" />}</div><div><p className="text-sm font-medium">{tx.type === "TopUp" ? "Wallet top-up" : tx.type === "CampaignContribution" ? "Campaign funding" : "Donation"}</p><p className="text-xs text-neutral-500">{tx.counterpartyName} · {new Date(tx.timestamp).toLocaleDateString()}</p></div></div><div className="text-right"><p className={`font-semibold ${tx.direction === "in" ? "text-blue-600" : "text-green-600"}`}>{tx.direction === "in" ? "+" : "-"}R {tx.amount.toLocaleString()}</p><Badge className={tx.status === "Completed" ? "bg-green-100 text-green-700" : tx.status === "Failed" ? "bg-red-100 text-red-700" : "bg-amber-100 text-amber-700"}>{tx.status}</Badge></div></div>))}</div>}</Card>
+                <Card className="p-6"><h3 className="font-semibold mb-4">Transaction History</h3>{transactions.length === 0 ? <p className="text-neutral-600 text-sm">No transactions yet. Top up your wallet to get started.</p> : <div className="space-y-3">{transactions.map(tx => (<div key={tx.transactionId} className="flex items-center justify-between p-4 border rounded-lg"><div className="flex items-center gap-4"><div className={`w-10 h-10 rounded-full flex items-center justify-center ${tx.type === "TopUp" ? "bg-blue-100" : "bg-green-100"}`}>{tx.type === "TopUp" ? <ArrowUpFromLine className="w-5 h-5 text-blue-600" /> : <Heart className="w-5 h-5 text-green-600" />}</div><div><p className="text-sm font-medium">{tx.type === "TopUp" ? "Wallet top-up" : tx.type === "CampaignContribution" ? "Campaign funding" : "Donation"}</p><p className="text-xs text-neutral-500">{tx.counterpartyName} · {new Date(tx.timestamp).toLocaleDateString()}</p></div></div><div className="text-right"><p className={`font-semibold ${tx.direction === "in" ? "text-blue-600" : "text-green-600"}`}>{tx.direction === "in" ? "+" : "-"}{formatZar(tx.amount)}</p><Badge className={tx.status === "Completed" ? "bg-green-100 text-green-700" : tx.status === "Failed" ? "bg-red-100 text-red-700" : "bg-amber-100 text-amber-700"}>{tx.status}</Badge></div></div>))}</div>}</Card>
               </>)}
             </div>)}
 
             {/* COMMUNITY */}
             {activeTab === "community" && (<div>
               <div className="flex items-center justify-between mb-6"><h1 className="text-2xl font-bold">Community Feed</h1><Button variant="outline" size="sm" onClick={loadCommunity}><RefreshCw className="w-4 h-4 mr-2" /> Refresh</Button></div>
-              {communityLoading ? <div className="flex justify-center py-12"><Loader2 className="w-8 h-8 animate-spin" /></div> : communityPosts.length === 0 ? <Card className="p-12 text-center"><p className="text-neutral-600">No posts yet.</p></Card> : (
-                <div className="grid md:grid-cols-2 gap-6">{communityPosts.map(post => (
+              {communityLoading ? <CardGridSkeleton /> : communityPosts.length === 0 ? <Card className="p-12 text-center"><p className="text-neutral-600">No posts yet.</p></Card> : (
+                <div className="grid grid-cols-1 md:grid-cols-2 xl:grid-cols-3 gap-6">{communityPosts.map(post => (
                   <Card key={post.postId} className="overflow-hidden hover:shadow-lg transition-shadow cursor-pointer" onClick={() => handleOpenComments(post)}>
                     {post.mediaUrl && <img src={resolveMediaUrl(post.mediaUrl)} alt="" className="w-full h-48 object-cover" />}
                     <div className="p-6">{post.authorNpoId ? <button onClick={(e) => { e.stopPropagation(); navigate(`/npo/${post.authorNpoId}`); }} className="text-xs text-orange-600 font-medium mb-1 hover:underline">{post.authorName}</button> : <p className="text-xs text-orange-600 font-medium mb-1">{post.authorName}</p>}<h3 className="font-semibold mb-2">{post.postTitle}</h3>{post.content && <p className="text-neutral-600 text-sm mb-4 line-clamp-3">{post.content}</p>}<div className="flex items-center justify-between text-sm"><div className="flex items-center gap-4"><button onClick={(e) => { e.stopPropagation(); handleLikePost(post.postId); }} className={`flex items-center gap-1 ${likedPostIds.has(post.postId) ? "text-red-500" : "text-neutral-600"}`}><Heart className={`w-4 h-4 ${likedPostIds.has(post.postId) ? "fill-current" : ""}`} /> {post.likeCount}</button><button onClick={(e) => { e.stopPropagation(); handleOpenComments(post); }} className="flex items-center gap-1 text-neutral-600 hover:text-orange-600"><MessageSquare className="w-4 h-4" /> Comment</button><span onClick={(e) => e.stopPropagation()}><ReportPostButton postId={post.postId} /></span></div><span className="text-neutral-500 text-xs">{new Date(post.timestamp).toLocaleDateString()}</span></div></div>
@@ -842,7 +973,7 @@ export default function BusinessDashboard() {
           <div className="grid grid-cols-2 gap-4"><div><Label>Category</Label><Input name="category" placeholder="e.g. Education" /></div><div><Label>Budget per Partner (R)</Label><Input name="budgetPerPartner" type="number" step="0.01" /></div></div>
           <div><Label>Requirements</Label><Textarea name="requirements" placeholder="What you expect from partner NPOs..." /></div>
           <div className="grid grid-cols-2 gap-4"><div><Label>Start Date *</Label><Input name="startDate" type="date" required /></div><div><Label>End Date</Label><Input name="endDate" type="date" /></div></div>
-          <ImageUploadField label="Campaign Image (optional)" value={campaignImageUrl} onChange={setCampaignImageUrl} />
+          <ImageCropField label="Campaign Image (optional)" value={campaignImageUrl} onChange={setCampaignImageUrl} aspect={16 / 9} rounded="lg" />
           <Button type="submit" className="w-full bg-orange-600 hover:bg-orange-700">Create Campaign</Button>
         </form>
       </Card></div>)}
@@ -856,7 +987,7 @@ export default function BusinessDashboard() {
           <div className="grid grid-cols-2 gap-4"><div><Label>Category</Label><Input name="category" defaultValue={editingCampaign.category || ""} placeholder="e.g. Education" /></div><div><Label>Budget per Partner (R)</Label><Input name="budgetPerPartner" type="number" step="0.01" defaultValue={editingCampaign.budgetPerPartner ?? ""} /></div></div>
           <div><Label>Requirements</Label><Textarea name="requirements" defaultValue={editingCampaign.requirements || ""} placeholder="What you expect from partner NPOs..." /></div>
           <div className="grid grid-cols-2 gap-4"><div><Label>Start Date</Label><Input name="startDate" type="date" defaultValue={editingCampaign.startDate ? editingCampaign.startDate.slice(0, 10) : ""} /></div><div><Label>End Date</Label><Input name="endDate" type="date" defaultValue={editingCampaign.endDate ? editingCampaign.endDate.slice(0, 10) : ""} /><p className="text-xs text-neutral-500 mt-1">Leave blank for open-ended.</p></div></div>
-          <ImageUploadField label="Campaign Image (optional)" value={editCampaignImageUrl} onChange={setEditCampaignImageUrl} />
+          <ImageCropField label="Campaign Image (optional)" value={editCampaignImageUrl} onChange={setEditCampaignImageUrl} aspect={16 / 9} rounded="lg" />
           <div className="flex gap-3"><Button type="submit" className="flex-1 bg-orange-600 hover:bg-orange-700">Save Changes</Button><Button type="button" variant="outline" onClick={() => setEditingCampaign(null)}>Cancel</Button></div>
         </form>
       </Card></div>)}
@@ -864,7 +995,7 @@ export default function BusinessDashboard() {
       {/* DONATE MODAL */}
       {showDonateModal && (<div className="fixed inset-0 bg-black/50 flex items-center justify-center z-50 p-4"><Card className="w-full max-w-sm p-6">
         <div className="flex justify-between items-center mb-4"><h2 className="text-lg font-bold">Donate to NPO</h2><Button variant="ghost" size="sm" onClick={() => setShowDonateModal(false)}><X className="w-4 h-4" /></Button></div>
-        <p className="text-sm text-neutral-600 mb-4">Balance: R {walletBalance.toLocaleString()}</p>
+        <p className="text-sm text-neutral-600 mb-4">Balance: {formatZar(walletBalance)}</p>
         <form onSubmit={handleDonate} className="space-y-4">
           <div><Label>Amount (R)</Label><Input type="number" step="0.01" min="1" value={donateAmount} onChange={e => setDonateAmount(e.target.value)} required /></div>
           <Button type="submit" className="w-full bg-orange-600 hover:bg-orange-700" disabled={donating}>{donating ? <Loader2 className="w-4 h-4 animate-spin" /> : "Donate"}</Button>
@@ -872,15 +1003,110 @@ export default function BusinessDashboard() {
       </Card></div>)}
 
       {/* TOP UP MODAL */}
-      {showTopUp && (<div className="fixed inset-0 bg-black/50 flex items-center justify-center z-50 p-4"><Card className="w-full max-w-sm p-6">
-        <div className="flex justify-between items-center mb-4"><h2 className="text-lg font-bold">Top Up Wallet</h2><Button variant="ghost" size="sm" onClick={() => setShowTopUp(false)}><X className="w-4 h-4" /></Button></div>
-        <form onSubmit={handleTopUp} className="space-y-4">
-          <div><Label>Amount (R)</Label><Input type="number" step="0.01" min="1" value={topUpAmount} onChange={e => setTopUpAmount(e.target.value)} required /><div className="grid grid-cols-4 gap-2 mt-2">{["100", "250", "500", "1000"].map(a => (<Button key={a} type="button" variant="outline" size="sm" onClick={() => setTopUpAmount(a)}>R {a}</Button>))}</div></div>
-          <CardPaymentFields value={topUpCard} onChange={setTopUpCard} disabled={toppingUp} />
-          {topUpError && <p className="text-sm text-red-600">{topUpError}</p>}
-          <Button type="submit" className="w-full bg-orange-600 hover:bg-orange-700" disabled={toppingUp}>{toppingUp ? <Loader2 className="w-4 h-4 animate-spin" /> : "Top Up"}</Button>
-        </form>
-      </Card></div>)}
+      {showTopUp && (() => {
+        const amtNum = parseFloat(topUpAmount);
+        const amountValid = !!topUpAmount && !isNaN(amtNum) && amtNum > 0;
+        const cardDigits = topUpCard.cardNumber.replace(/\D/g, "");
+        return (
+        <div className="fixed inset-0 bg-black/50 backdrop-blur-sm flex items-center justify-center z-50 p-4" onClick={() => !toppingUp && setShowTopUp(false)}>
+          <motion.div
+            initial={reduceMotion ? false : { opacity: 0, scale: 0.96, y: 10 }}
+            animate={{ opacity: 1, scale: 1, y: 0 }}
+            transition={{ duration: reduceMotion ? 0 : 0.18 }}
+            className="w-full max-w-md"
+            onClick={(e) => e.stopPropagation()}
+          >
+          <Card className="overflow-hidden max-h-[90vh] overflow-y-auto main-scroll p-0">
+            <div className="relative bg-gradient-to-br from-orange-500 to-orange-600 text-white p-6">
+              <button onClick={() => setShowTopUp(false)} disabled={toppingUp} className="absolute top-4 right-4 text-white/80 hover:text-white transition-colors"><X className="w-5 h-5" /></button>
+              <div className="flex items-center gap-3 mb-4">
+                <div className="w-11 h-11 rounded-full bg-white/20 flex items-center justify-center shrink-0"><Wallet className="w-5 h-5" /></div>
+                <div>
+                  <h2 className="text-lg font-bold leading-tight">Top Up Wallet</h2>
+                  <p className="text-white/80 text-sm">Balance: {formatZar(walletBalance)}</p>
+                </div>
+              </div>
+              <div className="flex items-center gap-2">
+                <div className="flex items-center gap-2 text-sm font-medium"><span className={`w-6 h-6 rounded-full grid place-items-center text-xs ${topUpStep >= 1 ? "bg-white text-orange-600" : "bg-white/30"}`}>1</span> Amount</div>
+                <div className={`flex-1 h-0.5 rounded ${topUpStep === 2 ? "bg-white" : "bg-white/30"}`} />
+                <div className="flex items-center gap-2 text-sm font-medium"><span className={`w-6 h-6 rounded-full grid place-items-center text-xs ${topUpStep >= 2 ? "bg-white text-orange-600" : "bg-white/30"}`}>2</span> Payment</div>
+              </div>
+            </div>
+
+            <div className="p-6">
+              {topUpStep === 1 && (
+                <motion.div initial={reduceMotion ? false : { opacity: 0, x: 12 }} animate={{ opacity: 1, x: 0 }} transition={{ duration: reduceMotion ? 0 : 0.18 }} className="space-y-5">
+                  <div>
+                    <Label htmlFor="biz-topup">How much would you like to add?</Label>
+                    <div className="relative mt-2">
+                      <span className="absolute left-3 top-1/2 -translate-y-1/2 text-neutral-500 font-semibold">R</span>
+                      <Input id="biz-topup" type="number" placeholder="0.00" className="pl-8 h-12 text-xl font-semibold" value={topUpAmount} onChange={(e) => setTopUpAmount(e.target.value)} min="1" step="any" autoFocus />
+                    </div>
+                  </div>
+                  <div className="grid grid-cols-2 gap-2">
+                    {["100", "250", "500", "1000"].map((amt) => (
+                      <button key={amt} type="button" onClick={() => setTopUpAmount(amt)} className={`py-2.5 rounded-xl border text-sm font-semibold transition-colors ${topUpAmount === amt ? "bg-orange-600 border-orange-600 text-white" : "bg-white border-neutral-200 text-neutral-700 hover:border-orange-300 hover:bg-orange-50"}`}>R {amt}</button>
+                    ))}
+                  </div>
+                  <Button type="button" className="w-full bg-orange-600 hover:bg-orange-700" disabled={!amountValid} onClick={() => { setTopUpError(null); setTopUpStep(2); }}>
+                    Continue <ArrowRight className="w-4 h-4 ml-1" />
+                  </Button>
+                </motion.div>
+              )}
+
+              {topUpStep === 2 && (
+                <motion.div initial={reduceMotion ? false : { opacity: 0, x: 12 }} animate={{ opacity: 1, x: 0 }} transition={{ duration: reduceMotion ? 0 : 0.18 }}>
+                  <div className="rounded-2xl p-5 mb-5 bg-gradient-to-br from-neutral-800 to-neutral-900 text-white shadow-md">
+                    <div className="flex items-center justify-between mb-6">
+                      <CreditCard className="w-7 h-7 text-white/70" />
+                      <span className="text-xs text-white/60">Simulated</span>
+                    </div>
+                    <p className="font-mono tracking-widest text-lg">{(cardDigits.padEnd(16, "•").match(/.{1,4}/g) || []).join(" ").slice(0, 19)}</p>
+                    <div className="flex items-center justify-between mt-4 text-xs text-white/70">
+                      <span>{topUpCard.cardExpiry || "MM/YY"}</span>
+                      <span>CVV {topUpCard.cardCvv ? "•".repeat(topUpCard.cardCvv.length) : "•••"}</span>
+                    </div>
+                  </div>
+
+                  <form className="space-y-4" onSubmit={handleTopUp}>
+                    <p className="text-xs text-neutral-500 -mt-1">Simulated card — enter any numbers (no real charge).</p>
+                    <div>
+                      <Label htmlFor="biz-card-number">Card Number</Label>
+                      <Input id="biz-card-number" inputMode="numeric" autoComplete="off" placeholder="4111 1111 1111 1111" className="mt-1" disabled={toppingUp}
+                        value={topUpCard.cardNumber}
+                        onChange={(e) => { const d = e.target.value.replace(/\D/g, "").slice(0, 19); setTopUpCard({ ...topUpCard, cardNumber: d.replace(/(.{4})/g, "$1 ").trim() }); }} />
+                    </div>
+                    <div className="grid grid-cols-2 gap-3">
+                      <div>
+                        <Label htmlFor="biz-card-expiry">Expiry (MM/YY)</Label>
+                        <Input id="biz-card-expiry" inputMode="numeric" autoComplete="off" placeholder="12/28" className="mt-1" disabled={toppingUp}
+                          value={topUpCard.cardExpiry}
+                          onChange={(e) => { const d = e.target.value.replace(/\D/g, "").slice(0, 4); setTopUpCard({ ...topUpCard, cardExpiry: d.length <= 2 ? d : `${d.slice(0,2)}/${d.slice(2)}` }); }} />
+                      </div>
+                      <div>
+                        <Label htmlFor="biz-card-cvv">CVV</Label>
+                        <Input id="biz-card-cvv" inputMode="numeric" autoComplete="off" placeholder="123" maxLength={4} className="mt-1" disabled={toppingUp}
+                          value={topUpCard.cardCvv}
+                          onChange={(e) => setTopUpCard({ ...topUpCard, cardCvv: e.target.value.replace(/\D/g, "").slice(0, 4) })} />
+                      </div>
+                    </div>
+                    {topUpError && <p className="text-sm text-red-600">{topUpError}</p>}
+                    <div className="flex gap-3 pt-1">
+                      <Button type="button" variant="outline" onClick={() => setTopUpStep(1)} disabled={toppingUp}><ArrowLeft className="w-4 h-4 mr-1" /> Back</Button>
+                      <Button type="submit" className="flex-1 bg-orange-600 hover:bg-orange-700" disabled={toppingUp}>
+                        {toppingUp && <Loader2 className="w-4 h-4 mr-2 animate-spin" />}
+                        Pay {amountValid ? formatZar(amtNum) : ""}
+                      </Button>
+                    </div>
+                  </form>
+                </motion.div>
+              )}
+            </div>
+          </Card>
+          </motion.div>
+        </div>
+        );
+      })()}
 
       {/* VERIFICATION SUBMIT MODAL */}
       {showVerificationForm && (<div className="fixed inset-0 bg-black/50 flex items-center justify-center z-50 p-4"><Card className="w-full max-w-lg p-6">

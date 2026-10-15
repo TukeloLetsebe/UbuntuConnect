@@ -1,13 +1,18 @@
 import { useState, useEffect, useCallback } from "react";
 import { Link } from "react-router";
-import { motion } from "motion/react";
+import { motion, useReducedMotion } from "motion/react";
 import { toast } from "sonner";
 import { useAuth } from "../../context/AuthContext";
 import NotificationBell from "./NotificationBell";
+import BrandMark from "./BrandMark";
+import ProfileMenu from "./ProfileMenu";
+import HeaderSearch from "./HeaderSearch";
+import DashboardSidebar from "./DashboardSidebar";
 import AdminReportsPanel from "./reports/AdminReportsPanel";
-import { adminService, getErrorMessage, type PlatformStats, type UserItem, type VerificationItem, type TransactionItem, type KycSubmissionItem } from "../../services/adminService";
+import { adminService, getErrorMessage, type PlatformStats, type UserItem, type UserDetail, type VerificationItem, type TransactionItem, type KycSubmissionItem } from "../../services/adminService";
 import { moderationService, type ReportedPostItem } from "../../services/moderationService";
 import { resolveMediaUrl } from "../../lib/api";
+import { formatZar } from "../../lib/money";
 import { useConfirm } from "./ConfirmDialog";
 import { Button } from "./ui/button";
 import { Card } from "./ui/card";
@@ -17,12 +22,14 @@ import { Tabs, TabsContent, TabsList, TabsTrigger } from "./ui/tabs";
 import {
   Shield, Users, Building2, Heart, TrendingUp, LogOut,
   CheckCircle, X, Search, DollarSign, AlertCircle,
-  Eye, UserCheck, Ban, Loader2, RefreshCw, FileText, Menu, Flag
+  Eye, UserCheck, Ban, Loader2, RefreshCw, FileText, Menu, Flag,
+  LayoutDashboard
 } from "lucide-react";
 
 export default function AdminDashboard() {
-  const { logout } = useAuth();
+  const { logout, email } = useAuth();
   const confirm = useConfirm();
+  const reduceMotion = useReducedMotion();
   const [activeTab, setActiveTab] = useState("overview");
   const [sidebarOpen, setSidebarOpen] = useState(false);
   const selectTab = (id: string) => { setActiveTab(id); setSidebarOpen(false); };
@@ -36,6 +43,8 @@ export default function AdminDashboard() {
   const [usersLoading, setUsersLoading] = useState(false);
   const [userSearchQuery, setUserSearchQuery] = useState("");
   const [userTypeFilter, setUserTypeFilter] = useState("All");
+  const [selectedUserDetail, setSelectedUserDetail] = useState<UserDetail | null>(null);
+  const [userDetailLoading, setUserDetailLoading] = useState(false);
 
   // Verifications
   const [verifications, setVerifications] = useState<VerificationItem[]>([]);
@@ -45,6 +54,7 @@ export default function AdminDashboard() {
   // Transactions
   const [transactions, setTransactions] = useState<TransactionItem[]>([]);
   const [transactionsLoading, setTransactionsLoading] = useState(false);
+  const [selectedTx, setSelectedTx] = useState<TransactionItem | null>(null);
 
   // Reported posts (moderation)
   const [reports, setReports] = useState<ReportedPostItem[]>([]);
@@ -115,6 +125,9 @@ export default function AdminDashboard() {
 
   // ═══ HANDLERS ═══
   const handleActivateUser = async (id: number) => {
+    const u = users.find(x => x.userId === id);
+    const ok = await confirm({ title: `Activate ${u?.email ?? "this user"}?`, description: "The account will be able to log in again.", confirmText: "Activate" });
+    if (!ok) return;
     try { await adminService.activateUser(id); setUsers(p => p.map(u => u.userId === id ? { ...u, isActive: true } : u)); toast.success("User activated."); }
     catch (e) { toast.error(getErrorMessage(e)); }
   };
@@ -161,6 +174,8 @@ export default function AdminDashboard() {
   };
 
   const handleDismissReport = async (reportId: number) => {
+    const ok = await confirm({ title: "Dismiss this report?", description: "The report will be cleared and the post left as-is.", confirmText: "Dismiss" });
+    if (!ok) return;
     try { await moderationService.dismiss(reportId); setReports(p => p.filter(r => r.reportId !== reportId)); toast.success("Report dismissed."); }
     catch (e) { toast.error(getErrorMessage(e)); }
   };
@@ -179,48 +194,75 @@ export default function AdminDashboard() {
   };
 
   const handleApproveKyc = async (individualId: number) => {
+    const k = kyc.find(x => x.individualId === individualId);
+    const who = k?.fullName ?? "this individual";
+    const ok = await confirm({ title: `Approve ${who}'s identity?`, description: "Their identity will be marked verified and they'll be notified.", confirmText: "Approve" });
+    if (!ok) return;
     try { await adminService.approveKyc(individualId); setKyc(p => p.filter(k => k.individualId !== individualId)); loadStats(); toast.success("Identity approved — individual notified."); }
     catch (e) { toast.error(getErrorMessage(e)); }
   };
 
   const handleRejectKyc = async (individualId: number) => {
+    const k = kyc.find(x => x.individualId === individualId);
+    const who = k?.fullName ?? "this individual";
+    const ok = await confirm({ title: `Reject ${who}'s identity?`, description: "Their submission will be rejected and they'll be asked to resubmit.", confirmText: "Reject", destructive: true });
+    if (!ok) return;
     const reason = prompt("Reason for rejection (optional):") ?? undefined;
     try { await adminService.rejectKyc(individualId, reason); setKyc(p => p.filter(k => k.individualId !== individualId)); toast.success("Submission rejected — individual notified."); }
     catch (e) { toast.error(getErrorMessage(e)); }
   };
 
+  const openUserDetail = async (userId: number) => {
+    setUserDetailLoading(true);
+    setSelectedUserDetail(null);
+    try {
+      const r = await adminService.getUser(userId);
+      setSelectedUserDetail(r.data);
+    } catch (e) { toast.error(getErrorMessage(e)); }
+    finally { setUserDetailLoading(false); }
+  };
+
   const filteredUsers = users.filter(u => {
-    const matchesSearch = !userSearchQuery || u.email.toLowerCase().includes(userSearchQuery.toLowerCase());
+    const q = userSearchQuery.toLowerCase();
+    const matchesSearch = !userSearchQuery || u.email.toLowerCase().includes(q) || (u.name || "").toLowerCase().includes(q);
     const matchesType = userTypeFilter === "All" || u.userType === userTypeFilter;
     return matchesSearch && matchesType;
   });
 
   // ═══ RENDER ═══
   return (
-    <div className="min-h-screen bg-neutral-50">
-      <header className="bg-white border-b border-neutral-200 py-4 px-6 sticky top-0 z-40"><div className="container mx-auto max-w-7xl flex items-center justify-between"><div className="flex items-center gap-3"><button onClick={() => setSidebarOpen(true)} className="lg:hidden text-neutral-600"><Menu className="w-6 h-6" /></button><button onClick={() => setActiveTab("overview")} className="text-xl text-neutral-900 font-bold">UbuntuConnect</button></div><div className="flex items-center gap-4"><Badge className="bg-purple-100 text-purple-700"><Shield className="w-3 h-3 mr-1" /> Admin</Badge><NotificationBell /><Button variant="outline" size="sm" onClick={logout}><LogOut className="w-4 h-4 mr-2" /> Logout</Button></div></div></header>
+    <div className="h-screen w-full flex flex-col overflow-hidden bg-neutral-50">
+      <header className="bg-white border-b border-neutral-200 py-4 px-6 z-40 shrink-0"><div className="w-full flex items-center justify-between"><div className="flex items-center gap-3"><button onClick={() => setSidebarOpen(true)} className="lg:hidden text-neutral-600"><Menu className="w-6 h-6" /></button><BrandMark onClick={() => setActiveTab("overview")} /></div><HeaderSearch placeholder="Search users by email..." onSubmit={(q) => { setActiveTab("users"); setUserSearchQuery(q); }} /><div className="flex items-center gap-3"><Badge className="bg-purple-100 text-purple-700 hidden md:inline-flex"><Shield className="w-3 h-3 mr-1" /> Admin Portal</Badge><NotificationBell /><ProfileMenu name={email || "Admin"} subtitle={email || undefined} roleLabel="Admin" onLogout={logout} /></div></div></header>
 
-      <div className="flex">
+      <div className="flex flex-1 min-h-0 overflow-hidden">
         {sidebarOpen && <div className="fixed inset-0 bg-black/50 z-30 lg:hidden" onClick={() => setSidebarOpen(false)} />}
-        <aside className={`${sidebarOpen ? "translate-x-0" : "-translate-x-full"} lg:translate-x-0 transition-transform fixed lg:sticky top-0 lg:top-[73px] left-0 z-40 lg:z-30 w-64 bg-white border-r border-neutral-200 h-screen lg:h-[calc(100vh-73px)] p-6 overflow-y-auto`}>
-          <div className="flex justify-between items-center mb-4 lg:hidden"><span className="font-bold">Menu</span><button onClick={() => setSidebarOpen(false)}><X className="w-5 h-5" /></button></div>
-          <nav className="space-y-2">
-            {[
-              { id: "overview", icon: TrendingUp, label: "Overview" },
+        <DashboardSidebar
+          activeTab={activeTab}
+          onSelect={selectTab}
+          mobileOpen={sidebarOpen}
+          onMobileClose={() => setSidebarOpen(false)}
+          storageKey="admin-sidebar-collapsed"
+          accent="purple"
+          groups={[
+            { heading: "Core", items: [
+              { id: "overview", icon: LayoutDashboard, label: "Overview" },
               { id: "users", icon: Users, label: "User Management" },
+            ]},
+            { heading: "Moderation", items: [
               { id: "verifications", icon: Shield, label: "Verifications" },
               { id: "kyc", icon: UserCheck, label: "Individual KYC" },
               { id: "moderation", icon: Flag, label: "Reported Posts" },
+            ]},
+            { heading: "Platform", items: [
               { id: "transactions", icon: DollarSign, label: "Transactions" },
-              { id: "reports", icon: TrendingUp, label: "Reports" },
-            ].map(item => (
-              <button key={item.id} onClick={() => selectTab(item.id)} className={`w-full flex items-center gap-3 px-4 py-2 rounded-lg transition-colors ${activeTab === item.id ? "bg-purple-50 text-purple-600" : "text-neutral-600 hover:bg-neutral-50"}`}><item.icon className="w-5 h-5" /> {item.label}</button>
-            ))}
-          </nav>
-        </aside>
+              { id: "reports", icon: FileText, label: "Reports" },
+            ]},
+          ]}
+          bottomItems={[]}
+        />
 
-        <main className="flex-1 p-4 md:p-8 w-full min-w-0">
-          <motion.div key={activeTab} initial={{ opacity: 0, y: 20 }} animate={{ opacity: 1, y: 0 }} transition={{ duration: 0.3 }}>
+        <main className="flex-1 p-4 md:p-8 w-full min-w-0 overflow-y-auto main-scroll">
+          <motion.div key={activeTab} initial={reduceMotion ? false : { opacity: 0, y: 20 }} animate={{ opacity: 1, y: 0 }} transition={{ duration: reduceMotion ? 0 : 0.3 }}>
 
             {/* OVERVIEW */}
             {activeTab === "overview" && (<div>
@@ -244,33 +286,53 @@ export default function AdminDashboard() {
 
             {/* USERS */}
             {activeTab === "users" && (<div>
-              <div className="flex items-center justify-between mb-6"><div><h1 className="text-2xl font-bold mb-2">User Management</h1><p className="text-neutral-600">{users.length} total users</p></div><Button variant="outline" size="sm" onClick={loadUsers}><RefreshCw className="w-4 h-4" /></Button></div>
-              <div className="flex gap-4 mb-6">
-                <Input placeholder="Search by email..." value={userSearchQuery} onChange={e => setUserSearchQuery(e.target.value)} className="max-w-sm" />
-                <div className="flex gap-2">
+              <div className="flex items-center justify-between mb-6"><div><h1 className="text-2xl font-bold mb-2">User Management</h1><p className="text-neutral-600">{filteredUsers.length} of {users.length} users</p></div><Button variant="outline" size="sm" onClick={loadUsers}><RefreshCw className="w-4 h-4" /></Button></div>
+              <div className="flex flex-wrap gap-4 mb-6">
+                <Input placeholder="Search by name or email..." value={userSearchQuery} onChange={e => setUserSearchQuery(e.target.value)} className="max-w-sm" />
+                <div className="flex flex-wrap gap-2">
                   {["All", "Individual", "NPO", "Business", "Admin"].map(type => (
                     <Button key={type} size="sm" variant={userTypeFilter === type ? "default" : "outline"} className={userTypeFilter === type ? "bg-purple-600" : ""} onClick={() => setUserTypeFilter(type)}>{type}</Button>
                   ))}
                 </div>
               </div>
-              {usersLoading ? <div className="flex justify-center py-12"><Loader2 className="w-8 h-8 animate-spin text-purple-600" /></div> : (
-                <div className="space-y-2">{filteredUsers.map(user => (
-                  <Card key={user.userId} className="p-4">
-                    <div className="flex items-center justify-between">
-                      <div className="flex items-center gap-4">
-                        <div className="w-10 h-10 rounded-full bg-neutral-100 flex items-center justify-center"><span className="text-sm font-bold">{user.email.charAt(0).toUpperCase()}</span></div>
-                        <div><p className="font-medium">{user.email}</p><div className="flex gap-2 mt-1"><Badge variant="outline" className="text-xs">{user.userType}</Badge>{user.isVerified && <Badge className="text-xs bg-green-100 text-green-700">Verified</Badge>}{!user.isActive && <Badge className="text-xs bg-red-100 text-red-700">Inactive</Badge>}</div></div>
-                      </div>
-                      <div className="flex gap-2">
-                        {user.isActive ? (
-                          <Button size="sm" variant="outline" className="text-red-600" onClick={() => handleDeactivateUser(user.userId)}><Ban className="w-4 h-4 mr-1" /> Deactivate</Button>
-                        ) : (
-                          <Button size="sm" variant="outline" className="text-green-600" onClick={() => handleActivateUser(user.userId)}><UserCheck className="w-4 h-4 mr-1" /> Activate</Button>
-                        )}
-                      </div>
-                    </div>
-                  </Card>
-                ))}</div>
+              {usersLoading ? <div className="flex justify-center py-12"><Loader2 className="w-8 h-8 animate-spin text-purple-600" /></div> : filteredUsers.length === 0 ? <Card className="p-12 text-center"><Users className="w-12 h-12 text-neutral-400 mx-auto mb-3" /><p className="text-neutral-600">No users match your filters.</p></Card> : (
+                <div className="grid grid-cols-2 md:grid-cols-3 lg:grid-cols-4 xl:grid-cols-5 gap-4">
+                  {filteredUsers.map(user => {
+                    const displayName = user.name || user.email;
+                    const initial = (user.name || user.email).charAt(0).toUpperCase();
+                    const gradient = user.userType === "Individual"
+                      ? "from-blue-500 to-blue-600"
+                      : user.userType === "NPO"
+                      ? "from-orange-500 to-orange-600"
+                      : user.userType === "Business"
+                      ? "from-purple-500 to-purple-600"
+                      : "from-neutral-600 to-neutral-700";
+                    const badgeColor = user.userType === "Individual" ? "bg-blue-100 text-blue-700" : user.userType === "NPO" ? "bg-orange-100 text-orange-700" : user.userType === "Business" ? "bg-purple-100 text-purple-700" : "bg-neutral-100 text-neutral-700";
+                    return (
+                      <Card
+                        key={user.userId}
+                        className="overflow-hidden cursor-pointer hover:shadow-lg hover:-translate-y-0.5 transition-all"
+                        onClick={() => openUserDetail(user.userId)}
+                        role="button"
+                        tabIndex={0}
+                        onKeyDown={(e) => { if (e.key === "Enter" || e.key === " ") { e.preventDefault(); openUserDetail(user.userId); } }}
+                      >
+                        <div className={`bg-gradient-to-br ${gradient} h-16 flex items-center justify-center relative`}>
+                          <div className="w-12 h-12 rounded-full bg-white/25 backdrop-blur-sm flex items-center justify-center border-2 border-white/40">
+                            <span className="text-lg font-bold text-white">{initial}</span>
+                          </div>
+                          {!user.isActive && <span className="absolute top-1.5 right-1.5 w-2.5 h-2.5 rounded-full bg-red-400 border border-white" title="Inactive" />}
+                          {user.isVerified && <span className="absolute top-1.5 left-1.5 w-2.5 h-2.5 rounded-full bg-green-400 border border-white" title="Verified" />}
+                        </div>
+                        <div className="p-3 text-center">
+                          <p className="font-semibold text-sm truncate">{displayName}</p>
+                          <p className="text-[11px] text-neutral-500 truncate">{user.email}</p>
+                          <Badge className={`mt-2 text-[10px] px-2 py-0.5 ${badgeColor}`}>{user.userType}</Badge>
+                        </div>
+                      </Card>
+                    );
+                  })}
+                </div>
               )}
             </div>)}
 
@@ -387,15 +449,25 @@ export default function AdminDashboard() {
               <div className="flex items-center justify-between mb-6"><div><h1 className="text-2xl font-bold mb-2">All Transactions</h1><p className="text-neutral-600">Platform-wide transaction history</p></div><Button variant="outline" size="sm" onClick={loadTransactions}><RefreshCw className="w-4 h-4" /></Button></div>
               {transactionsLoading ? <div className="flex justify-center py-12"><Loader2 className="w-8 h-8 animate-spin text-purple-600" /></div> : transactions.length === 0 ? <Card className="p-12 text-center"><p className="text-neutral-600">No transactions recorded.</p></Card> : (
                 <div className="space-y-2">{transactions.slice(0, 50).map(t => (
-                  <Card key={t.transactionId} className="p-4">
+                  <Card
+                    key={t.transactionId}
+                    className="p-4 cursor-pointer hover:shadow-md transition-shadow"
+                    onClick={() => setSelectedTx(t)}
+                    role="button"
+                    tabIndex={0}
+                    onKeyDown={(e) => { if (e.key === "Enter" || e.key === " ") { e.preventDefault(); setSelectedTx(t); } }}
+                  >
                     <div className="flex items-center justify-between">
-                      <div className="flex items-center gap-4">
-                        <div className={`w-10 h-10 rounded-full flex items-center justify-center ${t.transactionType === "Donation" ? "bg-green-100" : t.transactionType === "TopUp" ? "bg-blue-100" : "bg-orange-100"}`}>
+                      <div className="flex items-center gap-4 min-w-0">
+                        <div className={`w-10 h-10 rounded-full flex items-center justify-center shrink-0 ${t.transactionType === "Donation" ? "bg-green-100" : t.transactionType === "TopUp" ? "bg-blue-100" : "bg-orange-100"}`}>
                           <DollarSign className={`w-5 h-5 ${t.transactionType === "Donation" ? "text-green-600" : t.transactionType === "TopUp" ? "text-blue-600" : "text-orange-600"}`} />
                         </div>
-                        <div><p className="font-medium">R {t.amount.toLocaleString()}</p><p className="text-xs text-neutral-500">{t.transactionType} • {new Date(t.timestamp).toLocaleString()}</p>{(t.senderName || t.receiverName) && <p className="text-xs text-neutral-500">{t.senderName ?? "External"} → {t.receiverName ?? "External"}</p>}</div>
+                        <div className="min-w-0"><p className="font-medium">{formatZar(t.amount)}</p><p className="text-xs text-neutral-500">{t.transactionType} • {new Date(t.timestamp).toLocaleString()}</p>{(t.senderName || t.receiverName) && <p className="text-xs text-neutral-500 truncate">{t.senderName ?? "External"} → {t.receiverName ?? "External"}</p>}{t.reason && <p className="text-xs text-neutral-600 truncate">Reason: {t.reason}</p>}</div>
                       </div>
-                      <Badge className={t.status === "Completed" ? "bg-green-100 text-green-700" : t.status === "Failed" ? "bg-red-100 text-red-700" : "bg-yellow-100 text-yellow-700"}>{t.status}</Badge>
+                      <div className="flex items-center gap-3 shrink-0">
+                        <Badge className={t.status === "Completed" ? "bg-green-100 text-green-700" : t.status === "Failed" ? "bg-red-100 text-red-700" : "bg-yellow-100 text-yellow-700"}>{t.status}</Badge>
+                        <Eye className="w-4 h-4 text-neutral-400" />
+                      </div>
                     </div>
                   </Card>
                 ))}</div>
@@ -408,6 +480,107 @@ export default function AdminDashboard() {
           </motion.div>
         </main>
       </div>
+
+      {/* User detail */}
+      {(selectedUserDetail || userDetailLoading) && (
+        <div className="fixed inset-0 bg-black/50 flex items-center justify-center z-50 p-4" onClick={() => { if (!userDetailLoading) setSelectedUserDetail(null); }}>
+          <motion.div
+            initial={reduceMotion ? false : { opacity: 0, scale: 0.96, y: 10 }}
+            animate={{ opacity: 1, scale: 1, y: 0 }}
+            transition={{ duration: reduceMotion ? 0 : 0.18 }}
+            className="w-full max-w-md"
+            onClick={(e) => e.stopPropagation()}
+          >
+            <Card className="overflow-hidden p-0">
+              {userDetailLoading ? (
+                <div className="flex justify-center py-16"><Loader2 className="w-8 h-8 animate-spin text-purple-600" /></div>
+              ) : selectedUserDetail && (() => {
+                const u = selectedUserDetail;
+                const displayName = u.name || u.email;
+                const initial = (u.name || u.email).charAt(0).toUpperCase();
+                const gradient = u.userType === "Individual"
+                  ? "from-blue-500 to-blue-600"
+                  : u.userType === "NPO"
+                  ? "from-orange-500 to-orange-600"
+                  : u.userType === "Business"
+                  ? "from-purple-500 to-purple-600"
+                  : "from-neutral-600 to-neutral-700";
+                const badgeColor = u.userType === "Individual" ? "bg-blue-100 text-blue-700" : u.userType === "NPO" ? "bg-orange-100 text-orange-700" : u.userType === "Business" ? "bg-purple-100 text-purple-700" : "bg-neutral-100 text-neutral-700";
+                const joinedDate = u.registrationDate ? new Date(u.registrationDate) : null;
+                const joinedStr = joinedDate && !isNaN(joinedDate.getTime()) ? joinedDate.toLocaleDateString() : "—";
+                return (
+                  <>
+                    <div className={`relative bg-gradient-to-br ${gradient} text-white p-6 flex flex-col items-center text-center`}>
+                      <button onClick={() => setSelectedUserDetail(null)} className="absolute top-4 right-4 text-white/80 hover:text-white transition-colors"><X className="w-5 h-5" /></button>
+                      <div className="w-20 h-20 rounded-full bg-white/25 backdrop-blur-sm flex items-center justify-center mb-3 overflow-hidden border-3 border-white/40">
+                        {u.profileImage
+                          ? <img src={resolveMediaUrl(u.profileImage)} alt="" className="w-full h-full object-cover" onError={(e) => { (e.currentTarget as HTMLImageElement).style.display = "none"; }} />
+                          : <span className="text-2xl font-bold">{initial}</span>}
+                      </div>
+                      <p className="text-lg font-bold">{displayName}</p>
+                      <p className="text-white/70 text-sm">{u.email}</p>
+                      <div className="flex gap-2 mt-2">
+                        <Badge className={badgeColor}>{u.userType}</Badge>
+                        {u.isVerified && <Badge className="bg-green-100 text-green-700">Verified</Badge>}
+                        {!u.isActive && <Badge className="bg-red-100 text-red-700">Inactive</Badge>}
+                      </div>
+                    </div>
+                    <div className="p-6 space-y-3 text-sm">
+                      <div className="flex items-start justify-between gap-3"><span className="text-neutral-500 shrink-0">User ID</span><span className="font-medium">#{u.userId}</span></div>
+                      <div className="flex items-start justify-between gap-3"><span className="text-neutral-500 shrink-0">Contact</span><span className="font-medium text-right">{u.contact || "—"}</span></div>
+                      <div className="flex items-start justify-between gap-3"><span className="text-neutral-500 shrink-0">Location</span><span className="font-medium text-right">{u.location || "—"}</span></div>
+                      <div className="flex items-start justify-between gap-3"><span className="text-neutral-500 shrink-0">Joined</span><span className="font-medium">{joinedStr}</span></div>
+                    </div>
+                    <div className="px-6 pb-6 flex gap-3">
+                      {u.isActive ? (
+                        <Button size="sm" variant="outline" className="flex-1 text-red-600" onClick={() => { handleDeactivateUser(u.userId); setSelectedUserDetail(null); }}><Ban className="w-4 h-4 mr-1" /> Deactivate</Button>
+                      ) : (
+                        <Button size="sm" variant="outline" className="flex-1 text-green-600" onClick={() => { handleActivateUser(u.userId); setSelectedUserDetail(null); }}><UserCheck className="w-4 h-4 mr-1" /> Activate</Button>
+                      )}
+                      <Button variant="outline" className="flex-1" onClick={() => setSelectedUserDetail(null)}>Close</Button>
+                    </div>
+                  </>
+                );
+              })()}
+            </Card>
+          </motion.div>
+        </div>
+      )}
+
+      {/* Transaction detail */}
+      {selectedTx && (
+        <div className="fixed inset-0 bg-black/50 flex items-center justify-center z-50 p-4" onClick={() => setSelectedTx(null)}>
+          <motion.div
+            initial={reduceMotion ? false : { opacity: 0, scale: 0.96, y: 10 }}
+            animate={{ opacity: 1, scale: 1, y: 0 }}
+            transition={{ duration: reduceMotion ? 0 : 0.18 }}
+            className="w-full max-w-md"
+            onClick={(e) => e.stopPropagation()}
+          >
+            <Card className="overflow-hidden p-0">
+              <div className="relative bg-gradient-to-br from-neutral-800 to-neutral-900 text-white p-6">
+                <button onClick={() => setSelectedTx(null)} className="absolute top-4 right-4 text-white/80 hover:text-white transition-colors"><X className="w-5 h-5" /></button>
+                <p className="text-white/70 text-sm">{selectedTx.transactionType}</p>
+                <p className="text-3xl font-bold tracking-tight">{formatZar(selectedTx.amount)}</p>
+                <Badge className={`mt-2 ${selectedTx.status === "Completed" ? "bg-green-100 text-green-700" : selectedTx.status === "Failed" ? "bg-red-100 text-red-700" : "bg-yellow-100 text-yellow-700"}`}>{selectedTx.status}</Badge>
+              </div>
+              <div className="p-6 space-y-3 text-sm">
+                <div className="flex items-start justify-between gap-3"><span className="text-neutral-500 shrink-0">Transaction ID</span><span className="font-medium text-right">#{selectedTx.transactionId}</span></div>
+                <div className="flex items-start justify-between gap-3"><span className="text-neutral-500 shrink-0">From</span><span className="font-medium text-right">{selectedTx.senderName ?? "External"}</span></div>
+                <div className="flex items-start justify-between gap-3"><span className="text-neutral-500 shrink-0">To</span><span className="font-medium text-right">{selectedTx.receiverName ?? "External"}</span></div>
+                <div className="flex items-start justify-between gap-3"><span className="text-neutral-500 shrink-0">Date</span><span className="font-medium text-right">{new Date(selectedTx.timestamp).toLocaleString()}</span></div>
+                <div className="pt-3 border-t border-neutral-100">
+                  <span className="text-neutral-500">Reason</span>
+                  <p className="font-medium mt-1">{selectedTx.reason ? selectedTx.reason : <span className="text-neutral-400 font-normal">No reason recorded (not a withdrawal).</span>}</p>
+                </div>
+              </div>
+              <div className="px-6 pb-6">
+                <Button variant="outline" className="w-full" onClick={() => setSelectedTx(null)}>Close</Button>
+              </div>
+            </Card>
+          </motion.div>
+        </div>
+      )}
     </div>
   );
 }

@@ -1,25 +1,33 @@
 import { useState, useEffect, useCallback } from "react";
 import { Link, useNavigate } from "react-router";
-import { motion } from "motion/react";
+import { motion, useReducedMotion } from "motion/react";
 import { toast } from "sonner";
 import { useAuth } from "../../context/AuthContext";
 import NotificationBell from "./NotificationBell";
+import BrandMark from "./BrandMark";
+import ProfileMenu from "./ProfileMenu";
+import HeaderSearch from "./HeaderSearch";
+import DashboardSidebar from "./DashboardSidebar";
+import { CardGridSkeleton, ListSkeleton } from "./LoadingSkeletons";
 import { useConfirm } from "./ConfirmDialog";
 import { getNpoColor } from "../../lib/npoColor";
 import EmailVerificationBanner from "./EmailVerificationBanner";
-import ImageUploadField from "./ImageUploadField";
 import DocumentUploadField from "./DocumentUploadField";
 import PostDetailModal from "./PostDetailModal";
 import ImageCropField from "./ImageCropField";
 import { parseProvince, SA_PROVINCES, PROVINCE_OTHER, NPO_FOCUS_AREAS, OPPORTUNITY_CATEGORIES, VOLUNTEER_SKILLS, TIME_COMMITMENTS, DURATIONS, OTHER } from "../../lib/registrationOptions";
 import NpoReportsPanel from "./reports/NpoReportsPanel";
 import { resolveMediaUrl } from "../../lib/api";
+import { formatZar } from "../../lib/money";
 import { npoService, getErrorMessage } from "../../services/npoService";
 import type { PostItem, CommentItem, ProjectItem, VolunteerApplicationItem, VerificationItem, TransactionItem, VolunteerOpportunityItem, NpoDiscoverItem, FollowerItem, DonorItem, FollowedNpoItem } from "../../services/npoService";
 import { Button } from "./ui/button";
 import { Card } from "./ui/card";
 import { Carousel, CarouselContent, CarouselItem, CarouselPrevious, CarouselNext } from "./ui/carousel";
 import { Badge } from "./ui/badge";
+import { Skeleton } from "./ui/skeleton";
+import type { CarouselApi } from "./ui/carousel";
+import { useCarouselAutoplay } from "./useCarouselAutoplay";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "./ui/tabs";
 import { Input } from "./ui/input";
 import { Label } from "./ui/label";
@@ -30,7 +38,9 @@ import {
   Settings, LogOut, BarChart3, Upload, DollarSign, UserPlus, X, Check,
   Clock, Calendar, Wallet, ArrowDownToLine, ArrowUpRight, Edit, Trash2,
   MessageSquare, Loader2, RefreshCw, Send, FolderOpen, Shield, Search,
-  MapPin, ArrowUpFromLine, Eye, UserCheck, Target, Menu
+  MapPin, ArrowUpFromLine, Eye, UserCheck, Target, Menu,
+  LayoutDashboard, Megaphone, Newspaper, ChevronLeft, ChevronRight, ChevronDown,
+  ArrowRight, ArrowLeft
 } from "lucide-react";
 
 /** Human-readable deadline label for an NPO's own fundraiser card. */
@@ -44,13 +54,31 @@ function fundraiserDeadlineLabel(endDate: string | null | undefined): { text: st
   return { text: `${days} day${days === 1 ? "" : "s"} left · closes ${end.toLocaleDateString()}`, ended: false };
 }
 
+/** Preset reasons an NPO picks from when withdrawing — gives admins clean,
+ *  groupable audit categories instead of raw free text. */
+const WITHDRAWAL_REASONS = [
+  "Program / project costs",
+  "Salaries & stipends",
+  "Equipment & supplies",
+  "Beneficiary disbursement",
+  "Operational costs",
+  "Other",
+];
+
 export default function NPODashboard() {
-  const { logout, userId } = useAuth();
+  const { logout, userId, email } = useAuth();
   const confirm = useConfirm();
   const navigate = useNavigate();
   const [activeTab, setActiveTab] = useState("overview");
   const [sidebarOpen, setSidebarOpen] = useState(false);
   const selectTab = (id: string) => { setActiveTab(id); setSidebarOpen(false); };
+  // Overview fundraisers carousel — auto-advances (pauses on hover).
+  const [overviewCarouselApi, setOverviewCarouselApi] = useState<CarouselApi | undefined>();
+  useCarouselAutoplay(overviewCarouselApi, { delay: 4000 });
+  const reduceMotion = useReducedMotion();
+  // Profile Settings accordion — which section is expanded (Branding open by default).
+  const [openSetting, setOpenSetting] = useState<string | null>("branding");
+  const toggleSetting = (key: string) => setOpenSetting(prev => prev === key ? null : key);
 
   // Posts
   const [posts, setPosts] = useState<PostItem[]>([]);
@@ -77,6 +105,9 @@ export default function NPODashboard() {
   // Projects (Fundraisers)
   const [projects, setProjects] = useState<ProjectItem[]>([]);
   const [projectsLoading, setProjectsLoading] = useState(false);
+  // Platform-wide fundraisers for the overview discovery strip.
+  const [allFundraisers, setAllFundraisers] = useState<ProjectItem[]>([]);
+  const [allFundraisersLoading, setAllFundraisersLoading] = useState(false);
   const [showCreateProject, setShowCreateProject] = useState(false);
   const [editingProject, setEditingProject] = useState<ProjectItem | null>(null);
 
@@ -113,7 +144,10 @@ export default function NPODashboard() {
   const [transactions, setTransactions] = useState<TransactionItem[]>([]);
   const [walletLoading, setWalletLoading] = useState(false);
   const [showWithdrawModal, setShowWithdrawModal] = useState(false);
+  const [withdrawStep, setWithdrawStep] = useState<1 | 2>(1);
   const [withdrawAmount, setWithdrawAmount] = useState("");
+  const [withdrawReason, setWithdrawReason] = useState("");
+  const [withdrawNote, setWithdrawNote] = useState("");
   const [withdrawing, setWithdrawing] = useState(false);
 
   // Profile
@@ -194,6 +228,9 @@ export default function NPODashboard() {
 
   const loadProjects = useCallback(async () => { setProjectsLoading(true); try { const r = await npoService.getMyProjects(); setProjects(r.data); } catch (e) { toast.error(getErrorMessage(e)); } finally { setProjectsLoading(false); } }, []);
 
+  // All fundraisers across the platform (for the overview discovery strip).
+  const loadAllFundraisers = useCallback(async () => { setAllFundraisersLoading(true); try { const r = await npoService.getAllProjects(); setAllFundraisers(r.data); } catch { /* non-critical */ } finally { setAllFundraisersLoading(false); } }, []);
+
   const loadApplications = useCallback(async () => { setApplicationsLoading(true); try { const r = await npoService.getAllApplications(); setApplications(r.data); } catch (e) { toast.error(getErrorMessage(e)); } finally { setApplicationsLoading(false); } }, []);
 
   const loadOpportunities = useCallback(async () => { if (!npoProfile) return; setOpportunitiesLoading(true); try { const r = await npoService.getMyOpportunities(npoProfile.npoId); setOpportunities(r.data); } catch (e) { toast.error(getErrorMessage(e)); } finally { setOpportunitiesLoading(false); } }, [npoProfile]);
@@ -208,6 +245,7 @@ export default function NPODashboard() {
 
   useEffect(() => { loadProfile(); loadPosts(); loadWallet(); }, [loadProfile, loadPosts, loadWallet]);
   useEffect(() => {
+    if (activeTab === "overview") { loadProjects(); loadApplications(); loadSupporters(); loadAllFundraisers(); }
     if (activeTab === "projects") loadProjects();
     if (activeTab === "volunteers") { loadApplications(); loadOpportunities(); }
     if (activeTab === "verification") loadVerification();
@@ -215,12 +253,12 @@ export default function NPODashboard() {
     if (activeTab === "discover") loadDiscoverNpos();
     if (activeTab === "supporters") loadSupporters();
     if (activeTab === "editprofile" && !editProfileLoaded) loadEditProfile();
-  }, [activeTab, loadProjects, loadApplications, loadOpportunities, loadVerification, loadCommunityPosts, loadDiscoverNpos, loadSupporters, editProfileLoaded, loadEditProfile]);
+  }, [activeTab, loadProjects, loadApplications, loadOpportunities, loadVerification, loadCommunityPosts, loadDiscoverNpos, loadSupporters, loadAllFundraisers, editProfileLoaded, loadEditProfile]);
 
   // ═══ HANDLERS ═══
   const handleCreatePost = async (e: React.FormEvent) => { e.preventDefault(); const fd = new FormData(e.currentTarget as HTMLFormElement); try { const r = await npoService.createPost({ postTitle: fd.get("title") as string, content: fd.get("content") as string, mediaUrl: (fd.get("mediaUrl") as string) || undefined }); setPosts(p => [r.data, ...p]); setShowCreatePost(false); toast.success("Post created!"); } catch (e) { toast.error(getErrorMessage(e)); } };
   const handleUpdatePost = async (e: React.FormEvent) => { e.preventDefault(); if (!editingPost) return; const fd = new FormData(e.currentTarget as HTMLFormElement); try { await npoService.updatePost(editingPost.postId, { postTitle: fd.get("title") as string, content: fd.get("content") as string, mediaUrl: (fd.get("mediaUrl") as string) || undefined }); setPosts(p => p.map(x => x.postId === editingPost.postId ? { ...x, postTitle: fd.get("title") as string, content: fd.get("content") as string, mediaUrl: (fd.get("mediaUrl") as string) || x.mediaUrl } : x)); setEditingPost(null); toast.success("Post updated!"); } catch (e) { toast.error(getErrorMessage(e)); } };
-  const handleDeletePost = async (id: number) => { if (!confirm("Delete this post?")) return; try { await npoService.deletePost(id); setPosts(p => p.filter(x => x.postId !== id)); setSelectedPost(null); toast.success("Deleted."); } catch (e) { toast.error(getErrorMessage(e)); } };
+  const handleDeletePost = async (id: number) => { const ok = await confirm({ title: "Delete this post?", description: "The post will be permanently removed for all supporters. This cannot be undone.", confirmText: "Delete", destructive: true }); if (!ok) return; try { await npoService.deletePost(id); setPosts(p => p.filter(x => x.postId !== id)); setSelectedPost(null); toast.success("Deleted."); } catch (e) { toast.error(getErrorMessage(e)); } };
 
   const handleLikePost = async (postId: number) => {
     const isLiked = likedPostIds.has(postId);
@@ -231,15 +269,15 @@ export default function NPODashboard() {
 
   const loadComments = async (postId: number) => { setCommentsLoading(p => ({ ...p, [postId]: true })); try { const r = await npoService.getComments(postId); setComments(p => ({ ...p, [postId]: r.data })); } catch (e) { toast.error(getErrorMessage(e)); } finally { setCommentsLoading(p => ({ ...p, [postId]: false })); } };
   const handleAddComment = async (postId: number) => { const c = newComment[postId]?.trim(); if (!c) return; setCommentSubmitting(true); try { const r = await npoService.createComment(postId, c); setComments(p => ({ ...p, [postId]: [r.data, ...(p[postId] || [])] })); setNewComment(p => ({ ...p, [postId]: "" })); toast.success("Comment added!"); } catch (e) { toast.error(getErrorMessage(e)); } finally { setCommentSubmitting(false); } };
-  const handleDeleteComment = async (cId: number, pId: number) => { try { await npoService.deleteComment(cId); setComments(p => ({ ...p, [pId]: (p[pId] || []).filter(c => c.commentId !== cId) })); } catch (e) { toast.error(getErrorMessage(e)); } };
+  const handleDeleteComment = async (cId: number, pId: number) => { const ok = await confirm({ title: "Delete this comment?", description: "The comment will be permanently removed. This cannot be undone.", confirmText: "Delete", destructive: true }); if (!ok) return; try { await npoService.deleteComment(cId); setComments(p => ({ ...p, [pId]: (p[pId] || []).filter(c => c.commentId !== cId) })); } catch (e) { toast.error(getErrorMessage(e)); } };
 
   const handleCreateProject = async (e: React.FormEvent) => { e.preventDefault(); const fd = new FormData(e.currentTarget as HTMLFormElement); try { const durRaw = (fd.get("durationDays") as string) || ""; const durationDays = durRaw ? parseInt(durRaw, 10) : undefined; const r = await npoService.createProject({ projectName: fd.get("projectName") as string, projectDesc: (fd.get("projectDesc") as string) || undefined, projectStatus: (fd.get("projectStatus") as string) || "Active", projectProgress: 0, targetAmount: parseFloat(fd.get("targetAmount") as string) || 0, images: (fd.get("images") as string) || undefined, durationDays: durationDays && durationDays > 0 ? durationDays : undefined }); setProjects(p => [r.data, ...p]); setShowCreateProject(false); toast.success("Fundraiser created!"); } catch (e) { toast.error(getErrorMessage(e)); } };
   const handleUpdateProject = async (e: React.FormEvent) => { e.preventDefault(); if (!editingProject) return; const fd = new FormData(e.currentTarget as HTMLFormElement); try { const endRaw = (fd.get("endDate") as string) || ""; const r = await npoService.updateProject(editingProject.projectId, { projectName: fd.get("projectName") as string, projectDesc: (fd.get("projectDesc") as string) || undefined, projectStatus: fd.get("projectStatus") as string, targetAmount: parseFloat(fd.get("targetAmount") as string) || undefined, images: (fd.get("images") as string) || undefined, endDate: endRaw ? new Date(endRaw).toISOString() : undefined }); setProjects(p => p.map(x => x.projectId === editingProject.projectId ? r.data : x)); setEditingProject(null); toast.success("Updated!"); } catch (e) { toast.error(getErrorMessage(e)); } };
-  const handleDeleteProject = async (id: number) => { if (!confirm("Delete?")) return; try { await npoService.deleteProject(id); setProjects(p => p.filter(x => x.projectId !== id)); toast.success("Deleted."); } catch (e) { toast.error(getErrorMessage(e)); } };
+  const handleDeleteProject = async (id: number) => { const p0 = projects.find(x => x.projectId === id); const ok = await confirm({ title: `Delete ${p0 ? `"${p0.projectName}"` : "this fundraiser"}?`, description: "The fundraiser will be permanently removed. Donations already received are not affected. This cannot be undone.", confirmText: "Delete", destructive: true }); if (!ok) return; try { await npoService.deleteProject(id); setProjects(p => p.filter(x => x.projectId !== id)); toast.success("Deleted."); } catch (e) { toast.error(getErrorMessage(e)); } };
 
-  const handleAcceptApplication = async (id: number) => { try { await npoService.acceptApplication(id); setApplications(p => p.map(a => a.applicationId === id ? { ...a, status: "Accepted" } : a)); toast.success("Accepted!"); } catch (e) { toast.error(getErrorMessage(e)); } };
-  const handleRejectApplication = async (id: number) => { try { await npoService.rejectApplication(id); setApplications(p => p.map(a => a.applicationId === id ? { ...a, status: "Rejected" } : a)); toast.success("Rejected."); } catch (e) { toast.error(getErrorMessage(e)); } };
-  const handleCompleteApplication = async (id: number) => { if (!confirm("Mark this volunteer as completed? Their logged hours are kept.")) return; try { await npoService.completeApplication(id); setApplications(p => p.map(a => a.applicationId === id ? { ...a, status: "Completed" } : a)); toast.success("Volunteer marked as completed."); } catch (e) { toast.error(getErrorMessage(e)); } };
+  const handleAcceptApplication = async (id: number) => { const a = applications.find(x => x.applicationId === id); const who = a ? `${a.firstName} ${a.lastName}` : "this volunteer"; const ok = await confirm({ title: `Accept ${who}?`, description: `${who} will be accepted as a volunteer${a?.roleTitle ? ` for "${a.roleTitle}"` : ""} and notified.`, confirmText: "Accept" }); if (!ok) return; try { await npoService.acceptApplication(id); setApplications(p => p.map(a => a.applicationId === id ? { ...a, status: "Accepted" } : a)); toast.success("Accepted!"); } catch (e) { toast.error(getErrorMessage(e)); } };
+  const handleRejectApplication = async (id: number) => { const a = applications.find(x => x.applicationId === id); const who = a ? `${a.firstName} ${a.lastName}` : "this volunteer"; const ok = await confirm({ title: `Reject ${who}?`, description: `${who} will be notified that their application${a?.roleTitle ? ` for "${a.roleTitle}"` : ""} was not accepted.`, confirmText: "Reject", destructive: true }); if (!ok) return; try { await npoService.rejectApplication(id); setApplications(p => p.map(a => a.applicationId === id ? { ...a, status: "Rejected" } : a)); toast.success("Rejected."); } catch (e) { toast.error(getErrorMessage(e)); } };
+  const handleCompleteApplication = async (id: number) => { const a = applications.find(x => x.applicationId === id); const who = a ? `${a.firstName} ${a.lastName}` : "this volunteer"; const ok = await confirm({ title: `Mark ${who} as completed?`, description: "Their logged hours are kept. This closes out the volunteering." , confirmText: "Mark completed" }); if (!ok) return; try { await npoService.completeApplication(id); setApplications(p => p.map(a => a.applicationId === id ? { ...a, status: "Completed" } : a)); toast.success("Volunteer marked as completed."); } catch (e) { toast.error(getErrorMessage(e)); } };
   const openLogHours = (a: VolunteerApplicationItem) => {
     setLogHoursApp(a);
     setLogHoursValue("");
@@ -274,7 +312,7 @@ export default function NPODashboard() {
       setIdentityFor(null);
     }
   };
-  const handleDeleteApplication = async (id: number) => { if (!confirm("Delete?")) return; try { await npoService.deleteApplication(id); setApplications(p => p.filter(a => a.applicationId !== id)); toast.success("Deleted."); } catch (e) { toast.error(getErrorMessage(e)); } };
+  const handleDeleteApplication = async (id: number) => { const a = applications.find(x => x.applicationId === id); const who = a ? `${a.firstName} ${a.lastName}` : "this application"; const ok = await confirm({ title: `Delete ${who}'s application?`, description: "The volunteer application and its logged hours will be permanently removed. This cannot be undone.", confirmText: "Delete", destructive: true }); if (!ok) return; try { await npoService.deleteApplication(id); setApplications(p => p.filter(a => a.applicationId !== id)); toast.success("Deleted."); } catch (e) { toast.error(getErrorMessage(e)); } };
   // Resolve a select value against its "Other" free-text companion.
   const resolveOther = (value: string, other: string) => value === OTHER ? other.trim() : value;
   // Serialize the opportunity form's structured fields into the API shape.
@@ -339,7 +377,7 @@ export default function NPODashboard() {
     } catch (e) { toast.error(getErrorMessage(e)); }
     finally { setSavingOpportunity(false); }
   };
-  const handleDeleteOpportunity = async (id: number) => { if (!confirm("Delete?")) return; try { await npoService.deleteOpportunity(id); setOpportunities(p => p.filter(o => o.opportunityId !== id)); toast.success("Deleted."); } catch (e) { toast.error(getErrorMessage(e)); } };
+  const handleDeleteOpportunity = async (id: number) => { const o = opportunities.find(x => x.opportunityId === id); const ok = await confirm({ title: `Delete ${o ? `"${o.roleTitle}"` : "this opportunity"}?`, description: "The volunteer opportunity will be permanently removed. This cannot be undone.", confirmText: "Delete", destructive: true }); if (!ok) return; try { await npoService.deleteOpportunity(id); setOpportunities(p => p.filter(o => o.opportunityId !== id)); toast.success("Deleted."); } catch (e) { toast.error(getErrorMessage(e)); } };
   const handleUpdateOpportunity = async (e: React.FormEvent) => {
     e.preventDefault();
     if (!editingOpportunity) return;
@@ -368,7 +406,33 @@ export default function NPODashboard() {
 
   const handleSubmitVerification = async (e: React.FormEvent) => { e.preventDefault(); if (!npoCertUrl && !npoTaxCertUrl) { toast.error("Please upload at least one document (PDF)."); return; } try { await npoService.submitVerification({ npoCertificate: npoCertUrl || undefined, npoTaxCertificate: npoTaxCertUrl || undefined }); setShowVerificationForm(false); setNpoCertUrl(null); setNpoTaxCertUrl(null); loadVerification(); toast.success("Documents submitted for verification!"); } catch (e) { toast.error(getErrorMessage(e)); } };
 
-  const handleWithdraw = async (e: React.FormEvent) => { e.preventDefault(); const amt = parseFloat(withdrawAmount); if (!amt || amt <= 0) { toast.error("Enter a valid withdrawal amount greater than R 0."); return; } if (amt > walletBalance) { toast.error(`Insufficient balance. Your wallet has R ${walletBalance.toLocaleString()}, so you can't withdraw R ${amt.toLocaleString()}.`); return; } const ok = await confirm({ title: `Withdraw R ${amt.toLocaleString()}?`, description: `R ${amt.toLocaleString()} will be withdrawn from your wallet (current balance R ${walletBalance.toLocaleString()}). This cannot be undone.`, confirmText: `Withdraw R ${amt.toLocaleString()}` }); if (!ok) return; setWithdrawing(true); try { await npoService.withdraw(amt); setWalletBalance(p => p - amt); setTransactions(p => [{ transactionId: Date.now(), senderUserId: userId, receiverUserId: null, amount: amt, transactionType: "Withdrawal", status: "Completed", timestamp: new Date().toISOString() }, ...p]); setShowWithdrawModal(false); setWithdrawAmount(""); toast.success(`R ${amt.toLocaleString()} withdrawn!`); } catch (e) { toast.error(getErrorMessage(e)); } finally { setWithdrawing(false); } };
+  // Join the chosen preset reason with an optional free-text note into the
+  // single string the API stores (e.g. "Equipment & supplies — 20 tablets").
+  const buildWithdrawReason = () => {
+    const note = withdrawNote.trim();
+    if (!withdrawReason) return note;
+    return note ? `${withdrawReason} — ${note}` : withdrawReason;
+  };
+  const handleWithdraw = async (e: React.FormEvent) => {
+    e.preventDefault();
+    const amt = parseFloat(withdrawAmount);
+    if (!amt || amt <= 0) { toast.error("Enter a valid withdrawal amount greater than R 0."); return; }
+    if (amt > walletBalance) { toast.error(`Insufficient balance. Your wallet has ${formatZar(walletBalance)}, so you can't withdraw ${formatZar(amt)}.`); return; }
+    const reason = buildWithdrawReason();
+    if (!reason) { toast.error("Please choose a reason for this withdrawal."); return; }
+    const ok = await confirm({ title: `Withdraw ${formatZar(amt)}?`, description: `${formatZar(amt)} will be withdrawn from your wallet (current balance ${formatZar(walletBalance)}) for "${reason}". This cannot be undone.`, confirmText: `Withdraw ${formatZar(amt)}` });
+    if (!ok) return;
+    setWithdrawing(true);
+    try {
+      await npoService.withdraw(amt, reason);
+      setWalletBalance(p => p - amt);
+      setTransactions(p => [{ transactionId: Date.now(), senderUserId: userId, receiverUserId: null, amount: amt, transactionType: "Withdrawal", status: "Completed", timestamp: new Date().toISOString(), reason }, ...p]);
+      setShowWithdrawModal(false);
+      setWithdrawAmount(""); setWithdrawReason(""); setWithdrawNote("");
+      toast.success(`${formatZar(amt)} withdrawn!`);
+    } catch (e) { toast.error(getErrorMessage(e)); }
+    finally { setWithdrawing(false); }
+  };
 
   const handleFollowNpo = async (npoId: number) => { if (followedNpoIds.has(npoId)) { setFollowedNpoIds(p => { const n = new Set(p); n.delete(npoId); return n; }); try { await npoService.unfollowNpo(npoId); } catch (e) { setFollowedNpoIds(p => new Set(p).add(npoId)); toast.error(getErrorMessage(e)); } } else { setFollowedNpoIds(p => new Set(p).add(npoId)); try { await npoService.followNpo(npoId); toast.success("Following!"); } catch (e) { setFollowedNpoIds(p => { const n = new Set(p); n.delete(npoId); return n; }); toast.error(getErrorMessage(e)); } } };
 
@@ -414,35 +478,43 @@ export default function NPODashboard() {
 
   // ═══ RENDER ═══
   return (
-    <div className="min-h-screen bg-neutral-50">
-      <header className="bg-white border-b border-neutral-200 py-4 px-6 sticky top-0 z-40"><div className="container mx-auto max-w-7xl flex items-center justify-between"><div className="flex items-center gap-3"><button onClick={() => setSidebarOpen(true)} className="lg:hidden text-neutral-600"><Menu className="w-6 h-6" /></button><button onClick={() => setActiveTab("overview")} className="text-xl text-neutral-900 font-bold">UbuntuConnect</button></div><div className="flex items-center gap-4"><button onClick={() => setActiveTab("editprofile")} className="text-neutral-600 hover:text-orange-600 transition-colors hidden sm:inline cursor-pointer" title="Go to Profile Settings">{npoProfile?.organizationName || "NPO"}</button>{npoProfile && <Button asChild variant="outline" size="sm" className="hidden sm:inline-flex"><Link to={`/npo/${npoProfile.npoId}`}><Eye className="w-4 h-4 mr-2" /> Public Profile</Link></Button>}<NotificationBell /><Button variant="outline" size="sm" onClick={logout}><LogOut className="w-4 h-4 mr-2" /> Logout</Button></div></div></header>
+    <div className="h-screen w-full flex flex-col overflow-hidden bg-neutral-50">
+      <header className="bg-white border-b border-neutral-200 py-4 px-6 z-40 shrink-0"><div className="w-full flex items-center justify-between"><div className="flex items-center gap-3"><button onClick={() => setSidebarOpen(true)} className="lg:hidden text-neutral-600"><Menu className="w-6 h-6" /></button><BrandMark onClick={() => setActiveTab("overview")} /></div><HeaderSearch placeholder="Search NPOs by name, cause, or location..." onSubmit={(q) => { setActiveTab("discover"); setNpoSearchQuery(q); }} /><div className="flex items-center gap-3"><span className="hidden md:inline-flex items-center rounded-full bg-primary/10 px-2.5 py-1 text-xs font-medium text-primary">NPO</span><NotificationBell /><ProfileMenu name={npoProfile?.organizationName || "NPO"} subtitle={email || undefined} roleLabel="NPO" onProfile={() => setActiveTab("editprofile")} extraLink={npoProfile ? { to: `/npo/${npoProfile.npoId}`, label: "View Public Profile" } : undefined} onLogout={logout} /></div></div></header>
 
-      <div className="flex">
+      <div className="flex flex-1 min-h-0 overflow-hidden">
         {sidebarOpen && <div className="fixed inset-0 bg-black/50 z-30 lg:hidden" onClick={() => setSidebarOpen(false)} />}
-        <aside className={`${sidebarOpen ? "translate-x-0" : "-translate-x-full"} lg:translate-x-0 transition-transform fixed lg:sticky top-0 lg:top-[73px] left-0 z-40 lg:z-30 w-64 bg-white border-r border-neutral-200 h-screen lg:h-[calc(100vh-73px)] p-6 overflow-y-auto`}>
-          <div className="flex justify-between items-center mb-4 lg:hidden"><span className="font-bold">Menu</span><button onClick={() => setSidebarOpen(false)}><X className="w-5 h-5" /></button></div>
-          <nav className="space-y-2">
-            {[
-              { id: "overview", icon: BarChart3, label: "Overview" },
-              { id: "posts", icon: MessageSquare, label: "Posts & Updates" },
-              { id: "community", icon: Heart, label: "Community Feed" },
+        <DashboardSidebar
+          activeTab={activeTab}
+          onSelect={selectTab}
+          mobileOpen={sidebarOpen}
+          onMobileClose={() => setSidebarOpen(false)}
+          storageKey="npo-sidebar-collapsed"
+          groups={[
+            { heading: "Core", items: [
+              { id: "overview", icon: LayoutDashboard, label: "Overview" },
               { id: "discover", icon: Search, label: "Discover NPOs" },
-              { id: "projects", icon: Target, label: "Fundraisers" },
-              { id: "volunteers", icon: UserPlus, label: "Volunteers" },
+            ]},
+            { heading: "Engagement", items: [
+              { id: "posts", icon: MessageSquare, label: "Posts & Updates" },
+              { id: "community", icon: Newspaper, label: "Community Feed" },
+              { id: "volunteers", icon: UserPlus, label: "Volunteers", badge: pendingApps.length },
               { id: "supporters", icon: Users, label: "Supporters" },
+            ]},
+            { heading: "Management", items: [
+              { id: "projects", icon: Target, label: "Fundraisers" },
+              { id: "campaigns", icon: Megaphone, label: "Campaigns" },
               { id: "finances", icon: Wallet, label: "Finances" },
-              { id: "verification", icon: Shield, label: "Verification" },
-              { id: "campaigns", icon: Target, label: "Campaigns" },
               { id: "reports", icon: BarChart3, label: "Reports" },
-              { id: "editprofile", icon: Settings, label: "Profile Settings" },
-            ].map(item => (
-              <button key={item.id} onClick={() => selectTab(item.id)} className={`w-full flex items-center gap-3 px-4 py-2 rounded-lg transition-colors ${activeTab === item.id ? "bg-orange-50 text-orange-600" : "text-neutral-600 hover:bg-neutral-50"}`}><item.icon className="w-5 h-5" /> {item.label}</button>
-            ))}
-          </nav>
-        </aside>
+            ]},
+          ]}
+          bottomItems={[
+            { id: "verification", icon: Shield, label: "Verification" },
+            { id: "editprofile", icon: Settings, label: "Profile Settings" },
+          ]}
+        />
 
-        <main className="flex-1 p-4 md:p-8 w-full min-w-0">
-          <motion.div key={activeTab} initial={{ opacity: 0, y: 20 }} animate={{ opacity: 1, y: 0 }} transition={{ duration: 0.3 }}>
+        <main className="flex-1 p-4 md:p-8 w-full min-w-0 overflow-y-auto main-scroll">
+          <motion.div key={activeTab} initial={reduceMotion ? false : { opacity: 0, y: 20 }} animate={{ opacity: 1, y: 0 }} transition={{ duration: reduceMotion ? 0 : 0.3 }}>
 
             {/* Verification gate banner — shown on every tab until the NPO is verified. */}
             {npoProfile && !isNpoVerified && activeTab !== "verification" && (
@@ -458,47 +530,186 @@ export default function NPODashboard() {
 
             {/* OVERVIEW */}
             {activeTab === "overview" && (<div>
-              <div className="mb-8"><h1 className="text-2xl font-bold mb-2">Dashboard Overview</h1><p className="text-neutral-600">Welcome back, {npoProfile?.organizationName || "NPO"}</p></div>
-              <div className="grid md:grid-cols-4 gap-6 mb-8">
-                <Card className="p-6 cursor-pointer hover:shadow-md" onClick={() => setActiveTab("finances")}><div className="flex justify-between mb-2"><span className="text-neutral-600 text-sm">Balance</span><Wallet className="w-5 h-5 text-neutral-400" /></div><div className="text-3xl font-bold">R {walletBalance.toLocaleString()}</div></Card>
-                <Card className="p-6 cursor-pointer hover:shadow-md" onClick={() => setActiveTab("posts")}><div className="flex justify-between mb-2"><span className="text-neutral-600 text-sm">Posts</span><MessageSquare className="w-5 h-5 text-neutral-400" /></div><div className="text-3xl font-bold">{posts.length}</div></Card>
-                <Card className="p-6 cursor-pointer hover:shadow-md" onClick={() => setActiveTab("supporters")}><div className="flex justify-between mb-2"><span className="text-neutral-600 text-sm">Followers</span><Users className="w-5 h-5 text-neutral-400" /></div><div className="text-3xl font-bold">{followers.length}</div></Card>
-                <Card className="p-6 cursor-pointer hover:shadow-md" onClick={() => setActiveTab("volunteers")}><div className="flex justify-between mb-2"><span className="text-neutral-600 text-sm">Pending</span><UserPlus className="w-5 h-5 text-neutral-400" /></div><div className="text-3xl font-bold">{pendingApps.length}</div></Card>
+              <div className="mb-6"><h1 className="text-2xl font-bold mb-1">Overview</h1><p className="text-neutral-600">Welcome back, {npoProfile?.organizationName || "NPO"}</p></div>
+              <div className="grid grid-cols-2 lg:grid-cols-4 gap-4 mb-8">
+                <Card className="p-5 cursor-pointer hover:shadow-md transition-shadow" onClick={() => setActiveTab("finances")}><div className="flex items-center gap-3"><div className="w-11 h-11 rounded-full bg-green-100 flex items-center justify-center shrink-0"><Wallet className="w-5 h-5 text-green-600" /></div><div className="min-w-0"><p className="text-xs text-neutral-500">Balance</p><p className="text-2xl font-bold leading-tight">{formatZar(walletBalance)}</p></div></div></Card>
+                <Card className="p-5 cursor-pointer hover:shadow-md transition-shadow" onClick={() => setActiveTab("posts")}><div className="flex items-center gap-3"><div className="w-11 h-11 rounded-full bg-blue-100 flex items-center justify-center shrink-0"><MessageSquare className="w-5 h-5 text-blue-600" /></div><div className="min-w-0"><p className="text-xs text-neutral-500">Posts</p><p className="text-2xl font-bold leading-tight">{posts.length}</p></div></div></Card>
+                <Card className="p-5 cursor-pointer hover:shadow-md transition-shadow" onClick={() => setActiveTab("supporters")}><div className="flex items-center gap-3"><div className="w-11 h-11 rounded-full bg-orange-100 flex items-center justify-center shrink-0"><Users className="w-5 h-5 text-orange-600" /></div><div className="min-w-0"><p className="text-xs text-neutral-500">Followers</p><p className="text-2xl font-bold leading-tight">{followers.length}</p></div></div></Card>
+                <Card className="p-5 cursor-pointer hover:shadow-md transition-shadow" onClick={() => setActiveTab("volunteers")}><div className="flex items-center gap-3"><div className="w-11 h-11 rounded-full bg-purple-100 flex items-center justify-center shrink-0"><UserPlus className="w-5 h-5 text-purple-600" /></div><div className="min-w-0"><p className="text-xs text-neutral-500">Pending</p><p className="text-2xl font-bold leading-tight">{pendingApps.length}</p></div></div></Card>
               </div>
+
+              {/* Quick actions */}
+              <div className="flex flex-wrap gap-2 mb-8">
+                <Button size="sm" className="bg-orange-600 hover:bg-orange-700" onClick={() => { setPostImageUrl(null); setShowCreatePost(true); }}><Plus className="w-4 h-4 mr-1" /> Create Post</Button>
+                <Button size="sm" variant="outline" onClick={() => isNpoVerified ? setShowCreateProject(true) : toast.error(verifyGateMessage)}><Target className="w-4 h-4 mr-1" /> New Fundraiser</Button>
+                <Button size="sm" variant="outline" onClick={() => setActiveTab("volunteers")}><UserPlus className="w-4 h-4 mr-1" /> Review Volunteers</Button>
+              </div>
+
+              {/* Fundraisers across the platform — sliding discovery strip */}
+              <div className="mb-8">
+                <div className="flex items-center justify-between mb-3">
+                  <h3 className="font-semibold">Fundraisers Across UbuntuConnect</h3>
+                  <div className="flex items-center gap-1">
+                    <Button variant="ghost" size="sm" onClick={() => setActiveTab("projects")}>Mine</Button>
+                    <Button variant="outline" size="icon" className="size-8 rounded-full" aria-label="Previous" onClick={() => overviewCarouselApi?.scrollPrev()}><ChevronLeft className="w-4 h-4" /></Button>
+                    <Button variant="outline" size="icon" className="size-8 rounded-full" aria-label="Next" onClick={() => overviewCarouselApi?.scrollNext()}><ChevronRight className="w-4 h-4" /></Button>
+                  </div>
+                </div>
+                {allFundraisersLoading ? (
+                  <div className="grid md:grid-cols-3 gap-4">{[1,2,3].map(i => <Card key={i} className="p-4"><Skeleton className="h-28 w-full mb-3" /><Skeleton className="h-4 w-2/3 mb-2" /><Skeleton className="h-2 w-full" /></Card>)}</div>
+                ) : allFundraisers.length === 0 ? (
+                  <Card className="p-8 text-center"><p className="text-sm text-neutral-500">No fundraisers on the platform yet.</p></Card>
+                ) : (
+                  <Carousel opts={{ align: "start", loop: true }} setApi={setOverviewCarouselApi} className="w-full">
+                    <CarouselContent>
+                      {[...allFundraisers]
+                        .sort((a, b) => (b.projectStatus === "Active" ? 1 : 0) - (a.projectStatus === "Active" ? 1 : 0))
+                        .map(p => {
+                          const pct = p.targetAmount > 0 ? Math.min(100, Math.round((p.raisedAmount / p.targetAmount) * 100)) : 0;
+                          const mine = p.npoId === npoProfile?.npoId;
+                          return (
+                            <CarouselItem key={p.projectId} className="basis-4/5 sm:basis-1/2 lg:basis-[30%]">
+                              <Card className="overflow-hidden h-full cursor-pointer hover:shadow-md transition-shadow" onClick={() => mine ? setActiveTab("projects") : navigate(`/npo/${p.npoId}`)}>
+                                {p.images
+                                  ? <img src={resolveMediaUrl(p.images.split(",")[0].trim())} alt={p.projectName} className="w-full h-28 object-cover" onError={(e) => { (e.currentTarget as HTMLImageElement).style.display = "none"; }} />
+                                  : <div className={`w-full h-28 bg-gradient-to-br ${getNpoColor(p.npoName || p.projectName)} flex items-center justify-center`}><Target className="w-8 h-8 text-white/80" /></div>}
+                                <div className="p-4">
+                                  <div className="flex items-center justify-between gap-2 mb-1">
+                                    <h4 className="font-medium truncate">{p.projectName}</h4>
+                                    <Badge variant="outline" className="shrink-0 text-xs">{p.projectStatus}</Badge>
+                                  </div>
+                                  <p className="text-xs text-neutral-500 truncate mb-2">{mine ? "Your fundraiser" : (p.npoName || "NPO")}</p>
+                                  <p className="text-xs text-neutral-500 mb-2">{formatZar(p.raisedAmount)} of {formatZar(p.targetAmount)}</p>
+                                  <div className="h-2 w-full rounded-full bg-neutral-100 overflow-hidden"><div className="h-full rounded-full bg-orange-500" style={{ width: `${pct}%` }} /></div>
+                                </div>
+                              </Card>
+                            </CarouselItem>
+                          );
+                        })}
+                    </CarouselContent>
+                  </Carousel>
+                )}
+              </div>
+
+              {/* Suggested next steps — colourful, only real actionable items */}
+              {(() => {
+                type Suggestion = { key: string; title: string; desc: string; cta: string; action: () => void; icon: typeof Target; tint: string; iconColor: string };
+                const items: Suggestion[] = [];
+                if (npoProfile && !isNpoVerified) items.push({ key: "verify", title: "Get verified", desc: "Unlock fundraisers, campaigns and withdrawals.", cta: "Verify now", action: () => setActiveTab("verification"), icon: Shield, tint: "bg-amber-50 border-amber-100", iconColor: "bg-amber-100 text-amber-600" });
+                if (pendingApps.length > 0) items.push({ key: "apps", title: `${pendingApps.length} volunteer${pendingApps.length === 1 ? "" : "s"} waiting`, desc: "Review and respond to new applications.", cta: "Review", action: () => setActiveTab("volunteers"), icon: UserPlus, tint: "bg-purple-50 border-purple-100", iconColor: "bg-purple-100 text-purple-600" });
+                if (!projectsLoading && projects.length === 0) items.push({ key: "fund", title: "Start a fundraiser", desc: "Raise funds for your first project.", cta: "Create one", action: () => isNpoVerified ? setShowCreateProject(true) : toast.error(verifyGateMessage), icon: Target, tint: "bg-orange-50 border-orange-100", iconColor: "bg-orange-100 text-orange-600" });
+                else if (!projectsLoading && projects.filter(p => p.projectStatus === "Active").length === 0) items.push({ key: "activate", title: "Activate a fundraiser", desc: "None of your fundraisers are active yet.", cta: "Manage", action: () => setActiveTab("projects"), icon: Target, tint: "bg-orange-50 border-orange-100", iconColor: "bg-orange-100 text-orange-600" });
+                if (posts.length === 0) items.push({ key: "post", title: "Share an update", desc: "Post your first update to supporters.", cta: "Post", action: () => { setPostImageUrl(null); setShowCreatePost(true); }, icon: MessageSquare, tint: "bg-blue-50 border-blue-100", iconColor: "bg-blue-100 text-blue-600" });
+                if (isNpoVerified && walletBalance > 0) items.push({ key: "withdraw", title: "Withdraw your funds", desc: `You have ${formatZar(walletBalance)} available to withdraw.`, cta: "Withdraw", action: () => { setWithdrawStep(1); setWithdrawAmount(""); setWithdrawReason(""); setWithdrawNote(""); setShowWithdrawModal(true); }, icon: Wallet, tint: "bg-green-50 border-green-100", iconColor: "bg-green-100 text-green-600" });
+                items.push({ key: "discover", title: "Connect with other NPOs", desc: "Discover organizations and grow the community.", cta: "Explore", action: () => setActiveTab("discover"), icon: Search, tint: "bg-neutral-50 border-neutral-200", iconColor: "bg-neutral-200 text-neutral-700" });
+                if (items.length === 0) return null;
+                return (
+                  <div>
+                    <h3 className="font-semibold mb-3">Suggested for you</h3>
+                    <div className="grid sm:grid-cols-2 lg:grid-cols-3 gap-4">
+                      {items.map(it => (
+                        <button key={it.key} onClick={it.action} className={`text-left rounded-xl border ${it.tint} p-4 transition-all hover:shadow-md hover:-translate-y-0.5`}>
+                          <div className={`w-10 h-10 rounded-full ${it.iconColor} flex items-center justify-center mb-3`}><it.icon className="w-5 h-5" /></div>
+                          <p className="font-semibold text-neutral-800">{it.title}</p>
+                          <p className="text-sm text-neutral-600 mt-0.5 mb-3">{it.desc}</p>
+                          <span className="inline-flex items-center gap-1 text-sm font-medium text-orange-600">{it.cta} <ArrowUpRight className="w-4 h-4" /></span>
+                        </button>
+                      ))}
+                    </div>
+                  </div>
+                );
+              })()}
             </div>)}
 
             {/* PROFILE SETTINGS */}
-            {activeTab === "editprofile" && (<div className="max-w-2xl">
-              <div className="mb-8"><h1 className="text-2xl font-bold mb-2">Profile Settings</h1><p className="text-neutral-600">Manage how your organization appears to supporters.</p></div>
+            {activeTab === "editprofile" && (<div className="max-w-4xl mx-auto">
+              <div className="mb-6"><h1 className="text-2xl font-bold mb-1">Profile Settings</h1><p className="text-neutral-600">Manage how your organization appears to supporters.</p></div>
               {!editProfileLoaded ? <div className="flex justify-center py-12"><Loader2 className="w-8 h-8 animate-spin text-orange-600" /></div> : (
-                <form onSubmit={handleSaveProfile} className="space-y-6">
-                  <Card className="p-6 space-y-5">
-                    <ImageCropField label="Banner / Cover Image" value={editBackgroundImage} onChange={setEditBackgroundImage} aspect={16 / 5} rounded="lg" disabled={savingProfile} />
-                    <ImageCropField label="Profile Picture" value={editProfileImage} onChange={setEditProfileImage} aspect={1} rounded="full" disabled={savingProfile} />
-                    <div><Label>Bio</Label><Textarea value={editBio} onChange={e => setEditBio(e.target.value)} rows={4} placeholder="Tell supporters about your organization..." className="mt-1" maxLength={1000} disabled={savingProfile} /></div>
-                    <div>
-                      <Label>Focus Areas</Label>
-                      <p className="text-xs text-neutral-500 mt-1">Select all that apply.</p>
-                      <div className="mt-2 grid grid-cols-2 gap-2">
-                        {NPO_FOCUS_AREAS.filter(f => f !== "Other").map(area => {
-                          const checked = editFocusSet.includes(area);
-                          return (
-                            <label key={area} className="flex items-center gap-2 text-sm text-neutral-700 cursor-pointer">
-                              <Checkbox checked={checked} disabled={savingProfile} onCheckedChange={(v) => setEditFocusSet(prev => v === true ? [...prev, area] : prev.filter(a => a !== area))} />
-                              <span>{area}</span>
-                            </label>
-                          );
-                        })}
+                <>
+                  {/* Identity header: logo + org name + verification */}
+                  <Card className="p-5 mb-6">
+                    <div className="flex items-center gap-4">
+                      <div className="w-14 h-14 rounded-full overflow-hidden shrink-0 flex items-center justify-center bg-orange-100 text-orange-700 text-lg font-bold">
+                        {editProfileImage
+                          ? <img src={resolveMediaUrl(editProfileImage)} alt="" className="w-full h-full object-cover" onError={(e) => { (e.currentTarget as HTMLImageElement).style.display = "none"; }} />
+                          : (npoProfile?.organizationName || "N").charAt(0).toUpperCase()}
                       </div>
-                      <Input placeholder="Other focus areas (optional)" className="mt-3" value={editFocusOther} onChange={e => setEditFocusOther(e.target.value)} disabled={savingProfile} />
+                      <div className="min-w-0 flex-1">
+                        <div className="flex items-center gap-2">
+                          <p className="text-lg font-semibold text-neutral-900 truncate">{npoProfile?.organizationName || "NPO"}</p>
+                          {isNpoVerified && <Badge className="bg-green-100 text-green-700 gap-1 shrink-0"><CheckCircle className="w-3.5 h-3.5" /> Verified</Badge>}
+                        </div>
+                        <p className="text-sm text-neutral-500 truncate">{email}</p>
+                      </div>
+                      {npoProfile && <Button asChild type="button" variant="outline" size="sm" className="shrink-0"><Link to={`/npo/${npoProfile.npoId}`}><Eye className="w-4 h-4 mr-2" /> Public Profile</Link></Button>}
                     </div>
-                    <div><Label>Mission</Label><Textarea value={editMission} onChange={e => setEditMission(e.target.value)} rows={3} placeholder="Your mission statement..." className="mt-1" disabled={savingProfile} /></div>
                   </Card>
-                  <div className="flex gap-3">
-                    <Button type="submit" className="bg-orange-600 hover:bg-orange-700" disabled={savingProfile}>{savingProfile && <Loader2 className="w-4 h-4 mr-2 animate-spin" />}Save Changes</Button>
-                    {npoProfile && <Button asChild type="button" variant="outline"><Link to={`/npo/${npoProfile.npoId}`}><Eye className="w-4 h-4 mr-2" /> View Public Profile</Link></Button>}
-                  </div>
-                </form>
+
+                  <form onSubmit={handleSaveProfile}>
+                    {/* Section: Branding */}
+                    <Card className="mb-4 overflow-hidden">
+                      <button type="button" onClick={() => toggleSetting("branding")} className="w-full flex items-center justify-between gap-3 p-5 text-left hover:bg-neutral-50 transition-colors">
+                        <div className="flex items-center gap-3">
+                          <div className="w-9 h-9 rounded-lg bg-orange-100 text-orange-600 flex items-center justify-center shrink-0"><Settings className="w-4 h-4" /></div>
+                          <div><h3 className="font-semibold leading-tight">Branding</h3><p className="text-xs text-neutral-500">Your banner and profile picture.</p></div>
+                        </div>
+                        <ChevronDown className={`w-5 h-5 text-neutral-400 shrink-0 transition-transform ${openSetting === "branding" ? "rotate-180" : ""}`} />
+                      </button>
+                      {openSetting === "branding" && (
+                        <div className="px-5 pb-5 border-t border-neutral-100 pt-5 space-y-5">
+                          <ImageCropField label="Banner / Cover Image" value={editBackgroundImage} onChange={setEditBackgroundImage} aspect={16 / 5} rounded="lg" disabled={savingProfile} />
+                          <ImageCropField label="Profile Picture" value={editProfileImage} onChange={setEditProfileImage} aspect={1} rounded="full" disabled={savingProfile} />
+                        </div>
+                      )}
+                    </Card>
+
+                    {/* Section: About */}
+                    <Card className="mb-4 overflow-hidden">
+                      <button type="button" onClick={() => toggleSetting("about")} className="w-full flex items-center justify-between gap-3 p-5 text-left hover:bg-neutral-50 transition-colors">
+                        <div className="flex items-center gap-3">
+                          <div className="w-9 h-9 rounded-lg bg-blue-100 text-blue-600 flex items-center justify-center shrink-0"><MessageSquare className="w-4 h-4" /></div>
+                          <div><h3 className="font-semibold leading-tight">About</h3><p className="text-xs text-neutral-500">Bio and mission statement.</p></div>
+                        </div>
+                        <ChevronDown className={`w-5 h-5 text-neutral-400 shrink-0 transition-transform ${openSetting === "about" ? "rotate-180" : ""}`} />
+                      </button>
+                      {openSetting === "about" && (
+                        <div className="px-5 pb-5 border-t border-neutral-100 pt-5 space-y-5">
+                          <div><Label>Bio</Label><Textarea value={editBio} onChange={e => setEditBio(e.target.value)} rows={4} placeholder="Tell supporters about your organization..." className="mt-1" maxLength={1000} disabled={savingProfile} /></div>
+                          <div><Label>Mission</Label><Textarea value={editMission} onChange={e => setEditMission(e.target.value)} rows={3} placeholder="Your mission statement..." className="mt-1" disabled={savingProfile} /></div>
+                        </div>
+                      )}
+                    </Card>
+
+                    {/* Section: Focus Areas */}
+                    <Card className="mb-4 overflow-hidden">
+                      <button type="button" onClick={() => toggleSetting("focus")} className="w-full flex items-center justify-between gap-3 p-5 text-left hover:bg-neutral-50 transition-colors">
+                        <div className="flex items-center gap-3">
+                          <div className="w-9 h-9 rounded-lg bg-green-100 text-green-600 flex items-center justify-center shrink-0"><Target className="w-4 h-4" /></div>
+                          <div><h3 className="font-semibold leading-tight">Focus Areas</h3><p className="text-xs text-neutral-500">The causes your organization works on.</p></div>
+                        </div>
+                        <ChevronDown className={`w-5 h-5 text-neutral-400 shrink-0 transition-transform ${openSetting === "focus" ? "rotate-180" : ""}`} />
+                      </button>
+                      {openSetting === "focus" && (
+                        <div className="px-5 pb-5 border-t border-neutral-100 pt-5">
+                          <p className="text-xs text-neutral-500 mb-2">Select all that apply.</p>
+                          <div className="flex flex-wrap gap-2">
+                            {NPO_FOCUS_AREAS.filter(f => f !== "Other").map(area => {
+                              const active = editFocusSet.includes(area);
+                              return (
+                                <button key={area} type="button" disabled={savingProfile} aria-pressed={active} onClick={() => setEditFocusSet(prev => active ? prev.filter(a => a !== area) : [...prev, area])} className={`px-3 py-1.5 rounded-full border text-sm transition-colors ${active ? "bg-orange-600 border-orange-600 text-white" : "bg-white border-neutral-200 text-neutral-700 hover:border-orange-300 hover:bg-orange-50"}`}>{area}</button>
+                              );
+                            })}
+                          </div>
+                          <Input placeholder="Other focus areas (optional)" className="mt-3" value={editFocusOther} onChange={e => setEditFocusOther(e.target.value)} disabled={savingProfile} />
+                        </div>
+                      )}
+                    </Card>
+
+                    <div className="flex justify-end mt-6">
+                      <Button type="submit" className="bg-orange-600 hover:bg-orange-700" disabled={savingProfile}>{savingProfile && <Loader2 className="w-4 h-4 mr-2 animate-spin" />}Save Changes</Button>
+                    </div>
+                  </form>
+                </>
               )}
             </div>)}
 
@@ -546,8 +757,8 @@ export default function NPODashboard() {
                 </div>
                 <p className="text-sm text-neutral-600">Showing {filteredNpos.length} organization{filteredNpos.length !== 1 ? "s" : ""}</p>
               </div>
-              {discoverLoading ? <div className="flex justify-center py-12"><Loader2 className="w-8 h-8 animate-spin text-orange-600" /></div> : filteredNpos.length === 0 ? <Card className="p-12 text-center"><p className="text-neutral-600">No NPOs found.</p></Card> : (
-                <div className="grid md:grid-cols-2 gap-6">{filteredNpos.map(npo => (
+              {discoverLoading ? <CardGridSkeleton /> : filteredNpos.length === 0 ? <Card className="p-12 text-center"><p className="text-neutral-600">No NPOs found.</p></Card> : (
+                <div className="grid grid-cols-1 md:grid-cols-2 xl:grid-cols-3 gap-6">{filteredNpos.map(npo => (
                   <Card key={npo.npoId} className="overflow-hidden hover:shadow-lg transition-shadow cursor-pointer" onClick={() => navigate(`/npo/${npo.npoId}`)}>
                     <div className={`h-40 bg-gradient-to-br ${getNpoColor(npo.organizationName)} flex items-center justify-center overflow-hidden`}>
                       {npo.profileImage
@@ -575,7 +786,7 @@ export default function NPODashboard() {
             {/* SUPPORTERS */}
             {activeTab === "supporters" && (<div>
               <div className="flex items-center justify-between mb-6"><div><h1 className="text-2xl font-bold mb-2">Supporters</h1><p className="text-neutral-600">Your followers and donors</p></div><Button variant="outline" size="sm" onClick={loadSupporters}><RefreshCw className="w-4 h-4" /></Button></div>
-              {supportersLoading ? <div className="flex justify-center py-12"><Loader2 className="w-8 h-8 animate-spin text-orange-600" /></div> : (
+              {supportersLoading ? <ListSkeleton /> : (
                 <Tabs defaultValue="followers"><TabsList className="mb-6"><TabsTrigger value="followers">Followers ({followers.length})</TabsTrigger><TabsTrigger value="donors">Donors ({donors.length})</TabsTrigger></TabsList>
                   <TabsContent value="followers">{followers.length === 0 ? <Card className="p-12 text-center"><p className="text-neutral-600">No followers yet.</p></Card> : <div className="space-y-3">{followers.map(f => (
                     <Card key={f.userId} className="p-4"><div className="flex items-center justify-between"><div className="flex items-center gap-3"><div className="w-10 h-10 rounded-full bg-orange-100 flex items-center justify-center"><span className="text-sm font-bold">{f.name.charAt(0)}</span></div><div><p className="font-semibold text-sm">{f.name}</p><p className="text-xs text-neutral-500">{f.userType} • Since {new Date(f.followDate).toLocaleDateString()}</p></div></div></div></Card>
@@ -590,8 +801,8 @@ export default function NPODashboard() {
             {/* POSTS */}
             {activeTab === "posts" && (<div>
               <div className="flex items-center justify-between mb-8"><div><h1 className="text-2xl font-bold mb-2">Posts & Updates</h1></div><div className="flex gap-2"><Button variant="outline" size="sm" onClick={loadPosts}><RefreshCw className="w-4 h-4" /></Button><Button className="bg-orange-600 hover:bg-orange-700" onClick={() => { setPostImageUrl(null); setShowCreatePost(true); }}><Plus className="w-4 h-4 mr-2" /> Create Post</Button></div></div>
-              {postsLoading ? <div className="flex justify-center py-12"><Loader2 className="w-8 h-8 animate-spin text-orange-600" /></div> : posts.length === 0 ? <Card className="p-12 text-center"><MessageSquare className="w-12 h-12 text-neutral-400 mx-auto mb-3" /><p className="text-neutral-600">No posts yet.</p><Button onClick={() => { setPostImageUrl(null); setShowCreatePost(true); }} className="mt-4">Create Post</Button></Card> : (
-                <div className="grid md:grid-cols-2 gap-6">{posts.map(post => (
+              {postsLoading ? <CardGridSkeleton /> : posts.length === 0 ? <Card className="p-12 text-center"><MessageSquare className="w-12 h-12 text-neutral-400 mx-auto mb-3" /><p className="text-neutral-600">No posts yet.</p><Button onClick={() => { setPostImageUrl(null); setShowCreatePost(true); }} className="mt-4">Create Post</Button></Card> : (
+                <div className="grid grid-cols-1 md:grid-cols-2 xl:grid-cols-3 gap-6">{posts.map(post => (
                   <Card key={post.postId} className="overflow-hidden hover:shadow-lg transition-shadow">
                     {post.mediaUrl && <img src={resolveMediaUrl(post.mediaUrl)} alt="" className="w-full h-48 object-cover cursor-pointer" onClick={() => { setSelectedPost(post); loadComments(post.postId); }} />}
                     <div className="p-6"><div className="flex items-start justify-between mb-3"><h3 className="font-semibold flex-1 cursor-pointer hover:text-orange-600" onClick={() => { setSelectedPost(post); loadComments(post.postId); }}>{post.postTitle}</h3><div className="flex gap-1 ml-2"><Button variant="ghost" size="sm" onClick={() => { setPostImageUrl(post.mediaUrl); setEditingPost(post); }}><Edit className="w-4 h-4" /></Button><Button variant="ghost" size="sm" className="text-red-600" onClick={() => handleDeletePost(post.postId)}><Trash2 className="w-4 h-4" /></Button></div></div>
@@ -605,8 +816,8 @@ export default function NPODashboard() {
             {/* COMMUNITY */}
             {activeTab === "community" && (<div>
               <div className="flex items-center justify-between mb-8"><div><h1 className="text-2xl font-bold mb-2">Community Feed</h1></div><Button variant="outline" size="sm" onClick={loadCommunityPosts}><RefreshCw className="w-4 h-4 mr-2" /> Refresh</Button></div>
-              {communityLoading ? <div className="flex justify-center py-12"><Loader2 className="w-8 h-8 animate-spin" /></div> : communityPosts.length === 0 ? <Card className="p-12 text-center"><p className="text-neutral-600">No posts yet.</p></Card> : (
-                <div className="grid md:grid-cols-2 gap-6">{communityPosts.map(post => (
+              {communityLoading ? <CardGridSkeleton /> : communityPosts.length === 0 ? <Card className="p-12 text-center"><p className="text-neutral-600">No posts yet.</p></Card> : (
+                <div className="grid grid-cols-1 md:grid-cols-2 xl:grid-cols-3 gap-6">{communityPosts.map(post => (
                   <Card key={post.postId} className="overflow-hidden hover:shadow-lg transition-shadow cursor-pointer" onClick={() => { setSelectedPost(post); loadComments(post.postId); }}>
                     {post.mediaUrl && <img src={resolveMediaUrl(post.mediaUrl)} alt="" className="w-full h-48 object-cover" onError={(e) => { (e.currentTarget as HTMLImageElement).style.display = "none"; }} />}
                     <div className="p-6">
@@ -649,8 +860,8 @@ export default function NPODashboard() {
                   </Carousel>
                 </div>
               ); })()}
-              {projectsLoading ? <div className="flex justify-center py-12"><Loader2 className="w-8 h-8 animate-spin text-orange-600" /></div> : projects.length === 0 ? <Card className="p-12 text-center"><Target className="w-12 h-12 text-neutral-400 mx-auto mb-3" /><h3 className="font-semibold mb-2">No fundraisers yet</h3><p className="text-neutral-600 mb-4">Create a fundraiser to collect donations for your projects</p><Button disabled={!isNpoVerified} title={!isNpoVerified ? verifyGateMessage : undefined} onClick={() => isNpoVerified ? setShowCreateProject(true) : toast.error(verifyGateMessage)}>Create Fundraiser</Button></Card> : (
-                <div className="grid md:grid-cols-2 gap-6">{projects.map(project => (
+              {projectsLoading ? <CardGridSkeleton /> : projects.length === 0 ? <Card className="p-12 text-center"><Target className="w-12 h-12 text-neutral-400 mx-auto mb-3" /><h3 className="font-semibold mb-2">No fundraisers yet</h3><p className="text-neutral-600 mb-4">Create a fundraiser to collect donations for your projects</p><Button disabled={!isNpoVerified} title={!isNpoVerified ? verifyGateMessage : undefined} onClick={() => isNpoVerified ? setShowCreateProject(true) : toast.error(verifyGateMessage)}>Create Fundraiser</Button></Card> : (
+                <div className="grid grid-cols-1 md:grid-cols-2 xl:grid-cols-3 gap-6">{projects.map(project => (
                   <Card key={project.projectId} className="overflow-hidden hover:shadow-lg">
                     {project.images && <div className="flex overflow-x-auto gap-1">{project.images.split(",").map((img, i) => <img key={i} src={img.trim()} alt="" className="w-full h-48 object-cover flex-shrink-0" />)}</div>}
                     <div className="p-6">
@@ -684,14 +895,14 @@ export default function NPODashboard() {
 
             {/* FINANCES */}
             {activeTab === "finances" && (<div>
-              <div className="flex items-center justify-between mb-8"><div><h1 className="text-2xl font-bold mb-2">Finances & Wallet</h1></div><div className="flex gap-2"><Button variant="outline" size="sm" onClick={loadWallet}><RefreshCw className="w-4 h-4" /></Button><Button className="bg-green-600 hover:bg-green-700" disabled={!isNpoVerified} title={!isNpoVerified ? verifyGateMessage : undefined} onClick={() => isNpoVerified ? setShowWithdrawModal(true) : toast.error(verifyGateMessage)}><ArrowDownToLine className="w-4 h-4 mr-2" /> Withdraw</Button></div></div>
+              <div className="flex items-center justify-between mb-8"><div><h1 className="text-2xl font-bold mb-2">Finances & Wallet</h1></div><div className="flex gap-2"><Button variant="outline" size="sm" onClick={loadWallet}><RefreshCw className="w-4 h-4" /></Button><Button className="bg-green-600 hover:bg-green-700" disabled={!isNpoVerified} title={!isNpoVerified ? verifyGateMessage : undefined} onClick={() => isNpoVerified ? (setWithdrawStep(1), setWithdrawAmount(""), setWithdrawReason(""), setWithdrawNote(""), setShowWithdrawModal(true)) : toast.error(verifyGateMessage)}><ArrowDownToLine className="w-4 h-4 mr-2" /> Withdraw</Button></div></div>
               {walletLoading ? <div className="flex justify-center py-12"><Loader2 className="w-8 h-8 animate-spin" /></div> : (<>
                 <div className="grid md:grid-cols-3 gap-6 mb-8">
-                  <Card className="p-8 bg-gradient-to-br from-green-500 to-green-600 text-white"><div className="flex items-center gap-3"><div className="w-12 h-12 rounded-full bg-white/20 flex items-center justify-center"><Wallet className="w-6 h-6" /></div><div><p className="text-white/80 text-sm">Balance</p><h2 className="text-2xl font-bold">R {walletBalance.toLocaleString()}</h2></div></div></Card>
-                  <Card className="p-6"><p className="text-neutral-600 text-sm mb-1">Total Received</p><p className="text-3xl font-bold text-green-600">R {transactions.filter(t => t.transactionType !== "Withdrawal" && t.status === "Completed").reduce((s, t) => s + t.amount, 0).toLocaleString()}</p></Card>
-                  <Card className="p-6"><p className="text-neutral-600 text-sm mb-1">Total Withdrawn</p><p className="text-3xl font-bold text-orange-600">R {transactions.filter(t => t.transactionType === "Withdrawal" && t.status === "Completed").reduce((s, t) => s + t.amount, 0).toLocaleString()}</p></Card>
+                  <Card className="p-8 bg-gradient-to-br from-green-500 to-green-600 text-white"><div className="flex items-center gap-3"><div className="w-12 h-12 rounded-full bg-white/20 flex items-center justify-center"><Wallet className="w-6 h-6" /></div><div><p className="text-white/80 text-sm">Balance</p><h2 className="text-2xl font-bold">{formatZar(walletBalance)}</h2></div></div></Card>
+                  <Card className="p-6"><p className="text-neutral-600 text-sm mb-1">Total Received</p><p className="text-3xl font-bold text-green-600">{formatZar(transactions.filter(t => t.transactionType !== "Withdrawal" && t.status === "Completed").reduce((s, t) => s + t.amount, 0))}</p></Card>
+                  <Card className="p-6"><p className="text-neutral-600 text-sm mb-1">Total Withdrawn</p><p className="text-3xl font-bold text-orange-600">{formatZar(transactions.filter(t => t.transactionType === "Withdrawal" && t.status === "Completed").reduce((s, t) => s + t.amount, 0))}</p></Card>
                 </div>
-                <Card className="p-6"><h3 className="font-semibold mb-4">Transactions</h3>{transactions.length === 0 ? <p className="text-neutral-600 text-sm">No transactions yet.</p> : <div className="space-y-3">{transactions.map(tx => (<div key={tx.transactionId} className="flex items-center justify-between p-4 border rounded-lg"><div className="flex items-center gap-4"><div className={`w-10 h-10 rounded-full flex items-center justify-center ${tx.transactionType === "Withdrawal" ? "bg-orange-100" : tx.transactionType === "TopUp" ? "bg-blue-100" : "bg-green-100"}`}>{tx.transactionType === "Withdrawal" ? <ArrowDownToLine className="w-5 h-5 text-orange-600" /> : tx.transactionType === "TopUp" ? <ArrowUpFromLine className="w-5 h-5 text-blue-600" /> : <Heart className="w-5 h-5 text-green-600" />}</div><div><p className="text-sm font-medium">{tx.transactionType}</p><p className="text-xs text-neutral-500">{new Date(tx.timestamp).toLocaleDateString()}</p></div></div><div className="text-right"><p className={`font-semibold ${tx.transactionType === "Withdrawal" ? "text-orange-600" : "text-green-600"}`}>{tx.transactionType === "Withdrawal" ? "-" : "+"}R {tx.amount.toLocaleString()}</p><Badge className={tx.status === "Completed" ? "bg-green-100 text-green-700" : "bg-amber-100 text-amber-700"}>{tx.status}</Badge></div></div>))}</div>}</Card>
+                <Card className="p-6"><h3 className="font-semibold mb-4">Transactions</h3>{transactions.length === 0 ? <p className="text-neutral-600 text-sm">No transactions yet.</p> : <div className="space-y-3">{transactions.map(tx => (<div key={tx.transactionId} className="flex items-center justify-between p-4 border rounded-lg"><div className="flex items-center gap-4"><div className={`w-10 h-10 rounded-full flex items-center justify-center ${tx.transactionType === "Withdrawal" ? "bg-orange-100" : tx.transactionType === "TopUp" ? "bg-blue-100" : "bg-green-100"}`}>{tx.transactionType === "Withdrawal" ? <ArrowDownToLine className="w-5 h-5 text-orange-600" /> : tx.transactionType === "TopUp" ? <ArrowUpFromLine className="w-5 h-5 text-blue-600" /> : <Heart className="w-5 h-5 text-green-600" />}</div><div><p className="text-sm font-medium">{tx.transactionType}</p>{tx.reason && <p className="text-xs text-neutral-600 truncate max-w-[220px]">{tx.reason}</p>}<p className="text-xs text-neutral-500">{new Date(tx.timestamp).toLocaleDateString()}</p></div></div><div className="text-right"><p className={`font-semibold ${tx.transactionType === "Withdrawal" ? "text-orange-600" : "text-green-600"}`}>{tx.transactionType === "Withdrawal" ? "-" : "+"}{formatZar(tx.amount)}</p><Badge className={tx.status === "Completed" ? "bg-green-100 text-green-700" : "bg-amber-100 text-amber-700"}>{tx.status}</Badge></div></div>))}</div>}</Card>
               </>)}
             </div>)}
 
@@ -716,9 +927,9 @@ export default function NPODashboard() {
 
       {/* ═══ MODALS ═══ */}
 
-      {showCreatePost && (<div className="fixed inset-0 bg-black/50 flex items-center justify-center z-50 p-4"><motion.div initial={{ opacity: 0, scale: 0.95 }} animate={{ opacity: 1, scale: 1 }} className="bg-white rounded-lg max-w-2xl w-full p-8 max-h-[90vh] overflow-y-auto"><div className="flex justify-between mb-6"><h3 className="font-semibold text-lg">Create Post</h3><button onClick={() => setShowCreatePost(false)}><X className="w-5 h-5" /></button></div><form className="space-y-4" onSubmit={handleCreatePost}><div><Label>Title</Label><Input name="title" required className="mt-1" /></div><div><Label>Content</Label><Textarea name="content" rows={5} required className="mt-1" /></div><input type="hidden" name="mediaUrl" value={postImageUrl || ""} /><ImageUploadField label="Image (optional)" value={postImageUrl} onChange={setPostImageUrl} /><div className="flex gap-3"><Button type="submit" className="flex-1 bg-orange-600 hover:bg-orange-700">Create</Button><Button type="button" variant="outline" onClick={() => setShowCreatePost(false)}>Cancel</Button></div></form></motion.div></div>)}
+      {showCreatePost && (<div className="fixed inset-0 bg-black/50 flex items-center justify-center z-50 p-4"><motion.div initial={{ opacity: 0, scale: 0.95 }} animate={{ opacity: 1, scale: 1 }} className="bg-white rounded-lg max-w-2xl w-full p-8 max-h-[90vh] overflow-y-auto"><div className="flex justify-between mb-6"><h3 className="font-semibold text-lg">Create Post</h3><button onClick={() => setShowCreatePost(false)}><X className="w-5 h-5" /></button></div><form className="space-y-4" onSubmit={handleCreatePost}><div><Label>Title</Label><Input name="title" required className="mt-1" /></div><div><Label>Content</Label><Textarea name="content" rows={5} required className="mt-1" /></div><input type="hidden" name="mediaUrl" value={postImageUrl || ""} /><ImageCropField label="Image (optional)" value={postImageUrl} onChange={setPostImageUrl} aspect={16 / 9} rounded="lg" /><div className="flex gap-3"><Button type="submit" className="flex-1 bg-orange-600 hover:bg-orange-700">Create</Button><Button type="button" variant="outline" onClick={() => setShowCreatePost(false)}>Cancel</Button></div></form></motion.div></div>)}
 
-      {editingPost && (<div className="fixed inset-0 bg-black/50 flex items-center justify-center z-50 p-4"><motion.div initial={{ opacity: 0, scale: 0.95 }} animate={{ opacity: 1, scale: 1 }} className="bg-white rounded-lg max-w-2xl w-full p-8 max-h-[90vh] overflow-y-auto"><div className="flex justify-between mb-6"><h3 className="font-semibold text-lg">Edit Post</h3><button onClick={() => setEditingPost(null)}><X className="w-5 h-5" /></button></div><form className="space-y-4" onSubmit={handleUpdatePost}><div><Label>Title</Label><Input name="title" defaultValue={editingPost.postTitle} required className="mt-1" /></div><div><Label>Content</Label><Textarea name="content" defaultValue={editingPost.content || ""} rows={5} required className="mt-1" /></div><input type="hidden" name="mediaUrl" value={postImageUrl || ""} /><ImageUploadField label="Image" value={postImageUrl} onChange={setPostImageUrl} /><div className="flex gap-3"><Button type="submit" className="flex-1 bg-orange-600 hover:bg-orange-700">Save</Button><Button type="button" variant="outline" onClick={() => setEditingPost(null)}>Cancel</Button></div></form></motion.div></div>)}
+      {editingPost && (<div className="fixed inset-0 bg-black/50 flex items-center justify-center z-50 p-4"><motion.div initial={{ opacity: 0, scale: 0.95 }} animate={{ opacity: 1, scale: 1 }} className="bg-white rounded-lg max-w-2xl w-full p-8 max-h-[90vh] overflow-y-auto"><div className="flex justify-between mb-6"><h3 className="font-semibold text-lg">Edit Post</h3><button onClick={() => setEditingPost(null)}><X className="w-5 h-5" /></button></div><form className="space-y-4" onSubmit={handleUpdatePost}><div><Label>Title</Label><Input name="title" defaultValue={editingPost.postTitle} required className="mt-1" /></div><div><Label>Content</Label><Textarea name="content" defaultValue={editingPost.content || ""} rows={5} required className="mt-1" /></div><input type="hidden" name="mediaUrl" value={postImageUrl || ""} /><ImageCropField label="Image" value={postImageUrl} onChange={setPostImageUrl} aspect={16 / 9} rounded="lg" /><div className="flex gap-3"><Button type="submit" className="flex-1 bg-orange-600 hover:bg-orange-700">Save</Button><Button type="button" variant="outline" onClick={() => setEditingPost(null)}>Cancel</Button></div></form></motion.div></div>)}
 
       {selectedPost && (
         <PostDetailModal
@@ -825,7 +1036,7 @@ export default function NPODashboard() {
               {oppDuration === OTHER && <Input className="mt-2" placeholder="Specify duration" value={oppDurationOther} onChange={e => setOppDurationOther(e.target.value)} />}
             </div>
           </div>
-          <ImageUploadField label="Image (optional)" value={opportunityImageUrl} onChange={setOpportunityImageUrl} />
+          <ImageCropField label="Image (optional)" value={opportunityImageUrl} onChange={setOpportunityImageUrl} aspect={16 / 9} rounded="lg" />
           <div className="flex gap-3"><Button type="submit" className="flex-1 bg-orange-600 hover:bg-orange-700" disabled={savingOpportunity}>{savingOpportunity && <Loader2 className="w-4 h-4 mr-2 animate-spin" />}Create</Button><Button type="button" variant="outline" onClick={() => setShowCreateOpportunity(false)}>Cancel</Button></div>
         </form></motion.div></div>)}
 
@@ -879,7 +1090,123 @@ export default function NPODashboard() {
 
       {/* NPO Top-Up removed — NPOs receive funds via donations, not top-up */}
 
-      {showWithdrawModal && (<div className="fixed inset-0 bg-black/50 flex items-center justify-center z-50 p-4"><motion.div initial={{ opacity: 0, scale: 0.95 }} animate={{ opacity: 1, scale: 1 }} className="bg-white rounded-lg max-w-md w-full p-8"><div className="flex justify-between mb-6"><h3 className="font-semibold text-lg">Withdraw Funds</h3><button onClick={() => setShowWithdrawModal(false)}><X className="w-5 h-5" /></button></div><form className="space-y-4" onSubmit={handleWithdraw}><div className="bg-neutral-50 p-4 rounded-lg text-center"><span className="text-neutral-600">Available: </span><span className="text-xl font-bold">R {walletBalance.toLocaleString()}</span></div><div><Label>Amount (R)</Label><Input type="number" min="1" max={walletBalance} value={withdrawAmount} onChange={e => setWithdrawAmount(e.target.value)} required className="mt-1" /></div><div className="flex gap-3"><Button type="submit" className="flex-1 bg-green-600 hover:bg-green-700" disabled={withdrawing}>{withdrawing ? <Loader2 className="w-4 h-4 animate-spin mr-2" /> : <ArrowDownToLine className="w-4 h-4 mr-2" />}Withdraw</Button><Button type="button" variant="outline" onClick={() => setShowWithdrawModal(false)}>Cancel</Button></div></form></motion.div></div>)}
+      {showWithdrawModal && (() => {
+        const amtNum = parseFloat(withdrawAmount);
+        const amountValid = !!withdrawAmount && !isNaN(amtNum) && amtNum > 0 && amtNum <= walletBalance;
+        const reasonText = buildWithdrawReason();
+        // "Other" must be described; any other preset stands on its own.
+        const reasonValid = !!withdrawReason && (withdrawReason !== "Other" || !!withdrawNote.trim());
+        const step1Valid = amountValid && reasonValid;
+        return (
+        <div className="fixed inset-0 bg-black/50 backdrop-blur-sm flex items-center justify-center z-50 p-4" onClick={() => !withdrawing && setShowWithdrawModal(false)}>
+          <motion.div
+            initial={reduceMotion ? false : { opacity: 0, scale: 0.96, y: 10 }}
+            animate={{ opacity: 1, scale: 1, y: 0 }}
+            transition={{ duration: reduceMotion ? 0 : 0.18 }}
+            className="w-full max-w-md"
+            onClick={(e) => e.stopPropagation()}
+          >
+          <Card className="overflow-hidden max-h-[90vh] overflow-y-auto main-scroll p-0">
+            <div className="relative bg-gradient-to-br from-orange-500 to-orange-600 text-white p-6">
+              <button onClick={() => setShowWithdrawModal(false)} disabled={withdrawing} className="absolute top-4 right-4 text-white/80 hover:text-white transition-colors"><X className="w-5 h-5" /></button>
+              <div className="flex items-center gap-3 mb-4">
+                <div className="w-11 h-11 rounded-full bg-white/20 flex items-center justify-center shrink-0"><Wallet className="w-5 h-5" /></div>
+                <div>
+                  <h2 className="text-lg font-bold leading-tight">Withdraw Funds</h2>
+                  <p className="text-white/80 text-sm">Balance: {formatZar(walletBalance)}</p>
+                </div>
+              </div>
+              <div className="flex items-center gap-2">
+                <div className="flex items-center gap-2 text-sm font-medium"><span className={`w-6 h-6 rounded-full grid place-items-center text-xs ${withdrawStep >= 1 ? "bg-white text-orange-600" : "bg-white/30"}`}>1</span> Amount</div>
+                <div className={`flex-1 h-0.5 rounded ${withdrawStep === 2 ? "bg-white" : "bg-white/30"}`} />
+                <div className="flex items-center gap-2 text-sm font-medium"><span className={`w-6 h-6 rounded-full grid place-items-center text-xs ${withdrawStep >= 2 ? "bg-white text-orange-600" : "bg-white/30"}`}>2</span> Confirm</div>
+              </div>
+            </div>
+
+            <div className="p-6">
+              {withdrawStep === 1 && (
+                <motion.div initial={reduceMotion ? false : { opacity: 0, x: 12 }} animate={{ opacity: 1, x: 0 }} transition={{ duration: reduceMotion ? 0 : 0.18 }} className="space-y-5">
+                  <div>
+                    <Label htmlFor="npo-withdraw">How much would you like to withdraw?</Label>
+                    <div className="relative mt-2">
+                      <span className="absolute left-3 top-1/2 -translate-y-1/2 text-neutral-500 font-semibold">R</span>
+                      <Input id="npo-withdraw" type="number" placeholder="0.00" className="pl-8 h-12 text-xl font-semibold" value={withdrawAmount} onChange={(e) => setWithdrawAmount(e.target.value)} min="1" max={walletBalance} step="any" autoFocus />
+                    </div>
+                    <p className="text-xs text-neutral-500 mt-1">Available: {formatZar(walletBalance)}</p>
+                  </div>
+                  <div className="grid grid-cols-2 gap-2">
+                    {["100", "250", "500", "1000"].map((amt) => {
+                      const disabled = parseFloat(amt) > walletBalance;
+                      return (
+                        <button key={amt} type="button" disabled={disabled} onClick={() => setWithdrawAmount(amt)} className={`py-2.5 rounded-xl border text-sm font-semibold transition-colors disabled:opacity-40 disabled:cursor-not-allowed ${withdrawAmount === amt ? "bg-orange-600 border-orange-600 text-white" : "bg-white border-neutral-200 text-neutral-700 hover:border-orange-300 hover:bg-orange-50"}`}>R {amt}</button>
+                      );
+                    })}
+                  </div>
+                  <div>
+                    <Label htmlFor="npo-withdraw-reason">Reason for withdrawal <span className="text-red-500">*</span></Label>
+                    <select
+                      id="npo-withdraw-reason"
+                      className="w-full mt-2 px-3 py-2 border border-neutral-300 rounded-md text-sm"
+                      value={withdrawReason}
+                      onChange={(e) => setWithdrawReason(e.target.value)}
+                    >
+                      <option value="" disabled>Select a reason…</option>
+                      {WITHDRAWAL_REASONS.map(r => <option key={r} value={r}>{r}</option>)}
+                    </select>
+                    <Input
+                      className="mt-2"
+                      placeholder={withdrawReason === "Other" ? "Describe the reason (required)" : "Add a note (optional)"}
+                      value={withdrawNote}
+                      onChange={(e) => setWithdrawNote(e.target.value)}
+                      maxLength={200}
+                    />
+                    <p className="text-xs text-neutral-500 mt-1">Admins can see this to understand what the funds are for.</p>
+                  </div>
+                  <Button type="button" className="w-full bg-orange-600 hover:bg-orange-700" disabled={!step1Valid} onClick={() => setWithdrawStep(2)}>
+                    Continue <ArrowRight className="w-4 h-4 ml-1" />
+                  </Button>
+                </motion.div>
+              )}
+
+              {withdrawStep === 2 && (
+                <motion.div initial={reduceMotion ? false : { opacity: 0, x: 12 }} animate={{ opacity: 1, x: 0 }} transition={{ duration: reduceMotion ? 0 : 0.18 }}>
+                  <div className="rounded-2xl p-5 mb-5 bg-gradient-to-br from-neutral-800 to-neutral-900 text-white shadow-md">
+                    <div className="flex items-center justify-between mb-6">
+                      <ArrowDownToLine className="w-7 h-7 text-white/70" />
+                      <span className="text-xs text-white/60">To bank account</span>
+                    </div>
+                    <p className="text-white/70 text-sm">Withdrawing</p>
+                    <p className="text-3xl font-bold tracking-tight">{amountValid ? formatZar(amtNum) : formatZar(0)}</p>
+                    <div className="mt-6 pt-4 border-t border-white/15 space-y-2 text-sm text-white/80">
+                      <div className="flex items-start justify-between gap-3">
+                        <span className="shrink-0">Reason</span>
+                        <span className="font-medium text-white text-right">{reasonText || "—"}</span>
+                      </div>
+                      <div className="flex items-center justify-between">
+                        <span>Balance after</span>
+                        <span className="font-semibold text-white">{formatZar(Math.max(0, walletBalance - (amountValid ? amtNum : 0)))}</span>
+                      </div>
+                    </div>
+                  </div>
+
+                  <form className="space-y-4" onSubmit={handleWithdraw}>
+                    <p className="text-xs text-neutral-500 -mt-1">Funds are paid out to your registered bank account.</p>
+                    <div className="flex gap-3 pt-1">
+                      <Button type="button" variant="outline" onClick={() => setWithdrawStep(1)} disabled={withdrawing}><ArrowLeft className="w-4 h-4 mr-1" /> Back</Button>
+                      <Button type="submit" className="flex-1 bg-orange-600 hover:bg-orange-700" disabled={withdrawing}>
+                        {withdrawing && <Loader2 className="w-4 h-4 mr-2 animate-spin" />}
+                        Withdraw {amountValid ? formatZar(amtNum) : ""}
+                      </Button>
+                    </div>
+                  </form>
+                </motion.div>
+              )}
+            </div>
+          </Card>
+          </motion.div>
+        </div>
+        );
+      })()}
 
       {showVerificationForm && (<div className="fixed inset-0 bg-black/50 flex items-center justify-center z-50 p-4"><motion.div initial={{ opacity: 0, scale: 0.95 }} animate={{ opacity: 1, scale: 1 }} className="bg-white rounded-lg max-w-lg w-full p-8"><div className="flex justify-between mb-6"><h3 className="font-semibold text-lg">Submit Verification</h3><button onClick={() => setShowVerificationForm(false)}><X className="w-5 h-5" /></button></div><form className="space-y-4" onSubmit={handleSubmitVerification}><DocumentUploadField label="NPO Registration Certificate (PDF)" value={npoCertUrl} onChange={setNpoCertUrl} /><DocumentUploadField label="Tax Clearance Certificate (PDF)" value={npoTaxCertUrl} onChange={setNpoTaxCertUrl} /><p className="text-xs text-neutral-500">At least one required.</p><div className="flex gap-3"><Button type="submit" className="flex-1 bg-orange-600 hover:bg-orange-700">Submit</Button><Button type="button" variant="outline" onClick={() => setShowVerificationForm(false)}>Cancel</Button></div></form></motion.div></div>)}
 

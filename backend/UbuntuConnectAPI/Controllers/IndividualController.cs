@@ -309,29 +309,57 @@ public class IndividualController : BaseApiController
         if (opportunity == null)
             return NotFound("Volunteer opportunity not found.");
 
-        var alreadyApplied = await _context.VolunteerApplications
-            .AnyAsync(a => a.UserId == userId && a.OpportunityId == opportunityId);
-        if (alreadyApplied)
+        // Look at the applicant's existing application for this opportunity (if any).
+        // Active statuses (Pending/Accepted/Completed) block a re-apply; a previously
+        // Cancelled or Rejected one is reactivated in place instead of leaving a stale
+        // row behind or creating a duplicate.
+        var existing = await _context.VolunteerApplications
+            .FirstOrDefaultAsync(a => a.UserId == userId && a.OpportunityId == opportunityId);
+
+        var activeStatuses = new[] { "Pending", "Accepted", "Completed" };
+        if (existing != null && activeStatuses.Contains(existing.Status))
             return BadRequest("You have already applied to this opportunity.");
 
-        var application = new VolunteerApplication
+        VolunteerApplication application;
+        if (existing != null)
         {
-            UserId = userId,
-            OpportunityId = opportunityId,
-            FirstName = dto.FirstName,
-            LastName = dto.LastName,
-            Email = dto.Email,
-            PhoneNum = dto.PhoneNum,
-            Skills = dto.Skills,
-            Availability = dto.Availability,
-            WhyVolunteer = dto.WhyVolunteer,
-            Address = dto.Address,
-            Idnumber = dto.Idnumber,
-            Status = "Pending",
-            ApplicationDate = DateTime.UtcNow
-        };
+            // Reactivate the previously Cancelled/Rejected application: refresh the
+            // submitted details and move it back to Pending with a new date so it
+            // surfaces as a fresh application in "My Volunteering".
+            existing.FirstName = dto.FirstName;
+            existing.LastName = dto.LastName;
+            existing.Email = dto.Email;
+            existing.PhoneNum = dto.PhoneNum;
+            existing.Skills = dto.Skills;
+            existing.Availability = dto.Availability;
+            existing.WhyVolunteer = dto.WhyVolunteer;
+            existing.Address = dto.Address;
+            existing.Idnumber = dto.Idnumber;
+            existing.Status = "Pending";
+            existing.ApplicationDate = DateTime.UtcNow;
+            application = existing;
+        }
+        else
+        {
+            application = new VolunteerApplication
+            {
+                UserId = userId,
+                OpportunityId = opportunityId,
+                FirstName = dto.FirstName,
+                LastName = dto.LastName,
+                Email = dto.Email,
+                PhoneNum = dto.PhoneNum,
+                Skills = dto.Skills,
+                Availability = dto.Availability,
+                WhyVolunteer = dto.WhyVolunteer,
+                Address = dto.Address,
+                Idnumber = dto.Idnumber,
+                Status = "Pending",
+                ApplicationDate = DateTime.UtcNow
+            };
+            _context.VolunteerApplications.Add(application);
+        }
 
-        _context.VolunteerApplications.Add(application);
         await _context.SaveChangesAsync();
 
         // Best-effort: tell the NPO a new volunteer applied.
@@ -519,6 +547,7 @@ public class IndividualController : BaseApiController
             .Select(a => new
             {
                 applicationId = a.ApplicationId,
+                opportunityId = a.OpportunityId,
                 roleTitle = a.Opportunity.RoleTitle,
                 npoName = a.Opportunity.Npo.OrganizationName,
                 status = a.Status,

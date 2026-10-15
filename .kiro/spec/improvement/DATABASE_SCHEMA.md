@@ -160,6 +160,7 @@ Amount          : DECIMAL(12,2)          (NN, CHK: Amount > 0)
 TransactionType : NVARCHAR(30)           (NN, CHK: Donation|Withdrawal|CampaignContribution|TopUp)
 Status          : NVARCHAR(20)           (NN, DEF 'Pending', CHK: Pending|Completed|Failed|Reversed)
 Timestamp       : DATETIME               (NN, DEF getdate())
+Reason          : NVARCHAR(255)          (NULL — why funds moved; required for Withdrawal at API level; migration 034)
 ```
 PK: `TransactionId` · FK: `FK_Transactions_Sender` (no cascade), `FK_Transactions_Receiver` (no cascade)
 Dual-FK to Users — see notes (section E).

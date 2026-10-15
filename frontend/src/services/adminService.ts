@@ -18,19 +18,24 @@ export interface PlatformStats {
 export interface UserItem {
   userId: number;
   email: string;
+  name?: string | null;
   userType: string;
   isActive: boolean;
   isVerified: boolean;
+  registrationDate: string;
 }
 
 export interface UserDetail {
   userId: number;
   email: string;
+  name?: string | null;
   contact: string | null;
   location: string | null;
   userType: string;
   isActive: boolean;
   isVerified: boolean;
+  registrationDate: string;
+  profileImage?: string | null;
 }
 
 export interface VerificationItem {
@@ -69,6 +74,7 @@ export interface TransactionItem {
   transactionType: string;
   status: string;
   timestamp: string;
+  reason?: string | null;
 }
 
 // --- Error Utility ---

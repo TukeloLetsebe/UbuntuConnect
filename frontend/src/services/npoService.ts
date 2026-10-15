@@ -109,6 +109,7 @@ export interface TransactionItem {
   transactionType: string;
   status: string;
   timestamp: string;
+  reason?: string | null;
 }
 
 export interface WalletBalance {
@@ -214,7 +215,7 @@ export const npoService = {
   // Wallet & Transactions
   getWalletBalance: (userId: number) => api.get<WalletBalance>(`/api/wallet/user/${userId}/balance`),
   getTransactions: (userId: number) => api.get<TransactionItem[]>(`/api/transaction/user/${userId}`),
-  withdraw: (amount: number) => api.post("/api/transaction/withdraw", { amount }),
+  withdraw: (amount: number, reason: string) => api.post("/api/transaction/withdraw", { amount, reason }),
   // Top-up removed for NPOs — they receive funds via donations, not self top-up
 
   // Volunteer Opportunities (NPO creates these for individuals to apply to)

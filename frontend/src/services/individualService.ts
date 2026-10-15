@@ -66,6 +66,7 @@ export interface VolunteerApplicationDto {
 
 export interface MyVolunteeringItem {
   applicationId: number;
+  opportunityId: number;
   roleTitle: string;
   npoName: string;
   status: string;
