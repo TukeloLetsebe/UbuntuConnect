@@ -17,12 +17,12 @@ public class PaymentSimulationTests
 {
     private static readonly PaymentSimulationService Sim = new();
 
-    // Well-known Luhn-valid test PAN (Visa test number).
+    // Any 13–16 digit number is a valid demo card (no Luhn check).
     private const string ValidCard = "4111 1111 1111 1111";
 
-    // The gateway is a simulation but still validates card SHAPE (no real issuer
-    // check): a Luhn-valid, 13–19 digit, non-expired card with a 3–4 digit CVV
-    // is approved; anything malformed is declined with a specific reason.
+    // The gateway is a simulation that validates card SHAPE only (no real issuer
+    // check): a 13–16 digit, non-expired card with a 3–4 digit CVV is approved;
+    // anything malformed is declined with a specific reason.
     [Fact]
     public void Wellformed_card_is_approved()
     {
@@ -30,12 +30,23 @@ public class PaymentSimulationTests
         Assert.True(r.Approved);
     }
 
+    // Any 13–16 digit number works — demos don't need a special test card.
     [Theory]
-    [InlineData("1", "12/40", "123")]                     // too short / not Luhn
+    [InlineData("1234 5678 9012 3456")]   // arbitrary 16 digits
+    [InlineData("1111 1111 1111 1111")]   // all ones
+    [InlineData("1234567890123")]          // 13 digits
+    public void Any_13_to_16_digit_card_is_approved(string card)
+    {
+        var r = Sim.Charge(card, "12/40", "123");
+        Assert.True(r.Approved);
+    }
+
+    [Theory]
+    [InlineData("1", "12/40", "123")]                     // too short
+    [InlineData("1234 5678 9012 3456 789", "12/40", "123")] // too long (19 digits)
     [InlineData("1234 5678 9012", "99/99", "1")]          // bad expiry + short CVV
     [InlineData("", "", "")]                               // empty
     [InlineData("4111 1111 1111 1111", "01/20", "123")]   // expired
-    [InlineData("4111 1111 1111 1112", "12/40", "123")]   // fails Luhn
     public void Malformed_card_is_declined_with_reason(string card, string expiry, string cvv)
     {
         var r = Sim.Charge(card, expiry, cvv);

@@ -130,7 +130,7 @@ UbuntuConnect/
 │   │   │   │   ├── VerifyEmail.tsx / VerifyIdentity.tsx # KYC + email verification
 │   │   │   │   ├── WebcamCapture.tsx          # Selfie capture for face-scan KYC
 │   │   │   │   ├── ImageUploadField.tsx / DocumentUploadField.tsx # Uploads
-│   │   │   │   ├── CardPaymentFields.tsx      # Simulated card entry (Luhn/expiry)
+│   │   │   │   ├── CardPaymentFields.tsx      # Simulated card entry (13–16 digits/expiry)
 │   │   │   │   ├── NotificationBell.tsx       # In-app notifications
 │   │   │   │   ├── ReportPostButton.tsx       # Report a post
 │   │   │   │   ├── reports/                   # NPO/Business/Admin report panels (recharts)

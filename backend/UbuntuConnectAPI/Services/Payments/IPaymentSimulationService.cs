@@ -1,8 +1,8 @@
 namespace UbuntuConnectAPI.Services.Payments;
 
 /// <summary>
-/// Simulated card payment gateway. Validates card details (Luhn + expiry) and,
-/// for any structurally valid card, always approves — there is no real charge.
+/// Simulated card payment gateway. Validates card shape (13–16 digits + expiry)
+/// and, for any correctly-shaped card, always approves — there is no real charge.
 /// Kept behind an interface so a real gateway could replace it later.
 /// </summary>
 public interface IPaymentSimulationService

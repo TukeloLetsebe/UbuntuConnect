@@ -843,7 +843,7 @@ public class IndividualController : BaseApiController
             return BadRequest($"Maximum top-up is R {_limits.MaxTopUp:0.##}.");
 
         // Simulated card charge. A card is always required and must be
-        // well-formed (Luhn + non-expired expiry + CVV); no real issuer check.
+        // well-formed (13–16 digits + non-expired expiry + CVV); no real issuer check.
         if (_payments != null)
         {
             var charge = _payments.Charge(dto.CardNumber, dto.CardExpiry, dto.CardCvv);

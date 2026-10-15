@@ -320,7 +320,7 @@ export default function BusinessDashboard() {
     e.preventDefault();
     const amt = parseFloat(topUpAmount);
     if (!amt || amt <= 0) { toast.error("Enter a valid top-up amount greater than R 0."); return; }
-    // Card fields are required; the server validates the card shape (Luhn/expiry/CVV).
+    // Card fields are required; the server validates the card shape (13–16 digits/expiry/CVV).
     if (!topUpCard.cardNumber) { setTopUpError("Please enter your card number."); return; }
     if (!topUpCard.cardExpiry) { setTopUpError("Please enter the card expiry date (MM/YY)."); return; }
     if (!topUpCard.cardCvv) { setTopUpError("Please enter the card CVV (the 3–4 digit code)."); return; }
@@ -1156,7 +1156,7 @@ export default function BusinessDashboard() {
                       <Label htmlFor="biz-card-number">Card Number</Label>
                       <Input id="biz-card-number" inputMode="numeric" autoComplete="off" placeholder="4111 1111 1111 1111" className="mt-1" disabled={toppingUp}
                         value={topUpCard.cardNumber}
-                        onChange={(e) => { const d = e.target.value.replace(/\D/g, "").slice(0, 19); setTopUpCard({ ...topUpCard, cardNumber: d.replace(/(.{4})/g, "$1 ").trim() }); }} />
+                        onChange={(e) => { const d = e.target.value.replace(/\D/g, "").slice(0, 16); setTopUpCard({ ...topUpCard, cardNumber: d.replace(/(.{4})/g, "$1 ").trim() }); }} />
                     </div>
                     <div className="grid grid-cols-2 gap-3">
                       <div>

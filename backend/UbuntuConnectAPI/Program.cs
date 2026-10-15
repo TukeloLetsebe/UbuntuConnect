@@ -71,8 +71,8 @@ else
     builder.Services.AddScoped<IFaceVerificationService, NoOpFaceVerificationService>();
 
 // ── Payments & wallet limits (Task 19) ─────────────────────
-// Simulated card gateway (Luhn + expiry validation, always approves valid
-// cards) + server-side wallet top-up/withdrawal limits.
+// Simulated card gateway (13–16 digit + expiry validation, always approves
+// well-formed cards) + server-side wallet top-up/withdrawal limits.
 builder.Services.Configure<WalletLimitsOptions>(builder.Configuration.GetSection(WalletLimitsOptions.SectionName));
 builder.Services.AddSingleton<IPaymentSimulationService, PaymentSimulationService>();
 

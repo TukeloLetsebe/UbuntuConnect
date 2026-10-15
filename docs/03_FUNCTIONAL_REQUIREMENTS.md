@@ -499,7 +499,7 @@ green; frontend `npm run build` clean). Detailed per-task notes live in
 ## Phase 5 — Fundraisers & Payments
 - Donations update fundraiser progress atomically + individual-facing detail view.
 - Timed fundraisers (StartDate/EndDate/duration) + auto-close (deadline or target) with NPO notification.
-- Simulated card top-up (Luhn + expiry + CVV; always approves a valid card) + server-side wallet top-up/withdrawal limits (incl. rolling-24h cap).
+- Simulated card top-up (13–16 digit number + expiry + CVV; always approves a well-formed card) + server-side wallet top-up/withdrawal limits (incl. rolling-24h cap).
 
 ## Phase 6 — Volunteering
 - Volunteer accept/reject sends notification + email; richer applicant card.

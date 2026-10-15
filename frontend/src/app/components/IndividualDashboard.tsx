@@ -2709,7 +2709,7 @@ export default function IndividualDashboard() {
                       <Label htmlFor="card-number">Card Number</Label>
                       <Input id="card-number" inputMode="numeric" autoComplete="off" placeholder="4111 1111 1111 1111" className="mt-1" disabled={toppingUp}
                         value={topUpCard.cardNumber}
-                        onChange={(e) => { const d = e.target.value.replace(/\D/g, "").slice(0, 19); setTopUpCard({ ...topUpCard, cardNumber: d.replace(/(.{4})/g, "$1 ").trim() }); }} />
+                        onChange={(e) => { const d = e.target.value.replace(/\D/g, "").slice(0, 16); setTopUpCard({ ...topUpCard, cardNumber: d.replace(/(.{4})/g, "$1 ").trim() }); }} />
                     </div>
                     <div className="grid grid-cols-2 gap-3">
                       <div>

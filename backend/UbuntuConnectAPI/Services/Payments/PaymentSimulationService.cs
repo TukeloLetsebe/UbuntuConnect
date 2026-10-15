@@ -4,23 +4,22 @@ namespace UbuntuConnectAPI.Services.Payments;
 
 /// <summary>
 /// Mock card gateway for demos. It never contacts a real issuer and never moves
-/// real money, but it DOES validate that the entered card is well-formed so junk
-/// like "1" is rejected: Luhn-valid 13–19 digit number, a non-expired MM/YY
-/// expiry, and a 3–4 digit CVV. Any structurally valid card is approved.
+/// real money. It only checks the card is roughly well-formed so junk like "1"
+/// is rejected: a 13–16 digit number, a non-expired MM/YY expiry, and a 3–4
+/// digit CVV. Any card of the right shape is approved — ANY 13–16 digit number
+/// works (no Luhn check), so demos don't need a special test card.
 /// Each failure returns a specific, user-facing decline reason.
 /// </summary>
 public class PaymentSimulationService : IPaymentSimulationService
 {
     public PaymentSimulationResult Charge(string? cardNumber, string? expiry, string? cvv)
     {
-        // ── Card number: digits only, 13–19 long, Luhn-valid ──
+        // ── Card number: digits only, 13–16 long (any digits accepted) ──
         var digits = new string((cardNumber ?? "").Where(char.IsDigit).ToArray());
         if (digits.Length == 0)
             return PaymentSimulationResult.Decline("Please enter a card number.");
-        if (digits.Length < 13 || digits.Length > 19)
-            return PaymentSimulationResult.Decline("Card number must be between 13 and 19 digits.");
-        if (!PassesLuhn(digits))
-            return PaymentSimulationResult.Decline("That card number is invalid. Please check the digits and try again.");
+        if (digits.Length < 13 || digits.Length > 16)
+            return PaymentSimulationResult.Decline("Card number must be between 13 and 16 digits.");
 
         // ── Expiry: parseable MM/YY (or MM/YYYY) and not in the past ──
         if (string.IsNullOrWhiteSpace(expiry))
@@ -37,25 +36,6 @@ public class PaymentSimulationService : IPaymentSimulationService
 
         // Well-formed — approve (no real charge).
         return PaymentSimulationResult.Approve();
-    }
-
-    /// <summary>Standard Luhn checksum.</summary>
-    public static bool PassesLuhn(string digits)
-    {
-        var sum = 0;
-        var alternate = false;
-        for (var i = digits.Length - 1; i >= 0; i--)
-        {
-            var n = digits[i] - '0';
-            if (alternate)
-            {
-                n *= 2;
-                if (n > 9) n -= 9;
-            }
-            sum += n;
-            alternate = !alternate;
-        }
-        return sum % 10 == 0;
     }
 
     /// <summary>
