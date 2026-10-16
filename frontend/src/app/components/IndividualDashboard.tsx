@@ -34,6 +34,7 @@ import { Card } from "./ui/card";
 import { Badge } from "./ui/badge";
 import { Skeleton } from "./ui/skeleton";
 import { Carousel, CarouselContent, CarouselItem, CarouselPrevious, CarouselNext, type CarouselApi } from "./ui/carousel";
+import { AreaChart, Area, BarChart, Bar, XAxis, YAxis, Tooltip, ResponsiveContainer, CartesianGrid } from "recharts";
 import { useCarouselAutoplay } from "./useCarouselAutoplay";
 import { Input } from "./ui/input";
 import { Label } from "./ui/label";
@@ -121,6 +122,9 @@ export default function IndividualDashboard() {
   const [selectedOpportunity, setSelectedOpportunity] = useState<number | null>(null);
   const [appliedOpportunities, setAppliedOpportunities] = useState<number[]>([]);
   const [postSearchQuery, setPostSearchQuery] = useState("");
+  // Community Updates: sort order + quick source filter (client-side).
+  const [postSort, setPostSort] = useState<"newest" | "oldest" | "liked">("newest");
+  const [postFilter, setPostFilter] = useState<"all" | "following">("all");
 
   // Liked posts state
   const [likedPostIds, setLikedPostIds] = useState<Set<number>>(new Set());
@@ -193,6 +197,8 @@ export default function IndividualDashboard() {
 
   // Volunteer Opportunities state
   const [oppSearch, setOppSearch] = useState("");
+  // Sort order for the opportunities list (client-side).
+  const [oppSort, setOppSort] = useState<"newest" | "role" | "positions">("newest");
   const [oppCategory, setOppCategory] = useState("All");
   const [detailOpp, setDetailOpp] = useState<VolunteerOpportunity | null>(null);
   const [opportunities, setOpportunities] = useState<VolunteerOpportunity[]>([]);
@@ -520,6 +526,15 @@ export default function IndividualDashboard() {
       loadMyImpact();
     }
   }, [impactLoaded, loadMyImpact]);
+
+  // The My Impact charts are derived from the transaction history. That is only
+  // loaded by the Wallet tab, so ensure it's fetched when Impact opens too —
+  // otherwise the charts would be missing until the user visits Wallet first.
+  useEffect(() => {
+    if (activeTab === "impact" && !txData) {
+      loadTransactions();
+    }
+  }, [activeTab, txData, loadTransactions]);
 
   // Load community updates
   const loadCommunityUpdates = useCallback(async () => {
@@ -1585,8 +1600,13 @@ export default function IndividualDashboard() {
                         <option value="All">All categories</option>
                         {cats.map(c => <option key={c} value={c}>{c}</option>)}
                       </select>
-                      {(oppSearch || oppCategory !== "All") && (
-                        <Button variant="outline" onClick={() => { setOppSearch(""); setOppCategory("All"); }}>Clear</Button>
+                      <select className="px-3 py-2 border border-neutral-300 rounded-md sm:w-48 bg-white" value={oppSort} onChange={(e) => setOppSort(e.target.value as "newest" | "role" | "positions")}>
+                        <option value="newest">Newest first</option>
+                        <option value="role">Role (A–Z)</option>
+                        <option value="positions">Most positions</option>
+                      </select>
+                      {(oppSearch || oppCategory !== "All" || oppSort !== "newest") && (
+                        <Button variant="outline" onClick={() => { setOppSearch(""); setOppCategory("All"); setOppSort("newest"); }}>Clear</Button>
                       )}
                     </div>
                   );
@@ -1643,22 +1663,28 @@ export default function IndividualDashboard() {
                 {/* Opportunities Grid */}
                 {!oppsLoading && !oppsError && opportunities.length > 0 && (() => {
                   const q = oppSearch.trim().toLowerCase();
-                  const filteredOpps = opportunities.filter((opp) => {
-                    const matchesCategory = oppCategory === "All" || opp.category === oppCategory;
-                    const matchesSearch = !q
-                      || opp.roleTitle.toLowerCase().includes(q)
-                      || (opp.npoName || "").toLowerCase().includes(q)
-                      || (opp.description || "").toLowerCase().includes(q)
-                      || (opp.skillsRequired || "").toLowerCase().includes(q);
-                    return matchesCategory && matchesSearch;
-                  });
+                  const filteredOpps = opportunities
+                    .filter((opp) => {
+                      const matchesCategory = oppCategory === "All" || opp.category === oppCategory;
+                      const matchesSearch = !q
+                        || opp.roleTitle.toLowerCase().includes(q)
+                        || (opp.npoName || "").toLowerCase().includes(q)
+                        || (opp.description || "").toLowerCase().includes(q)
+                        || (opp.skillsRequired || "").toLowerCase().includes(q);
+                      return matchesCategory && matchesSearch;
+                    })
+                    .sort((a, b) => {
+                      if (oppSort === "role") return a.roleTitle.localeCompare(b.roleTitle);
+                      if (oppSort === "positions") return b.numOfPositions - a.numOfPositions;
+                      return b.opportunityId - a.opportunityId; // newest first (higher id)
+                    });
                   if (filteredOpps.length === 0) {
                     return (
                       <Card className="p-12 text-center">
                         <Search className="w-12 h-12 text-neutral-400 mx-auto mb-3" />
                         <h3 className="mb-2">No matching opportunities</h3>
                         <p className="text-neutral-600 mb-4">Try a different search or clear the filters.</p>
-                        <Button variant="outline" onClick={() => { setOppSearch(""); setOppCategory("All"); }}>Clear filters</Button>
+                        <Button variant="outline" onClick={() => { setOppSearch(""); setOppCategory("All"); setOppSort("newest"); }}>Clear filters</Button>
                       </Card>
                     );
                   }
@@ -2023,9 +2049,9 @@ export default function IndividualDashboard() {
                   <p className="text-neutral-600">See what's happening across all NPOs</p>
                 </div>
 
-                {/* Search */}
-                <div className="mb-8">
-                  <div className="md:w-1/2">
+                {/* Search + sort + filter */}
+                <div className="mb-8 flex flex-col lg:flex-row lg:items-end gap-4">
+                  <div className="flex-1">
                     <Label>Search Posts</Label>
                     <Input
                       placeholder="Search by title, author, or keyword..."
@@ -2033,6 +2059,29 @@ export default function IndividualDashboard() {
                       value={postSearchQuery}
                       onChange={(e) => setPostSearchQuery(e.target.value)}
                     />
+                  </div>
+                  <div className="w-full sm:w-auto">
+                    <Label>Sort by</Label>
+                    <select
+                      className="mt-2 w-full sm:w-48 px-3 py-2 border border-neutral-300 rounded-md text-sm bg-white"
+                      value={postSort}
+                      onChange={(e) => setPostSort(e.target.value as "newest" | "oldest" | "liked")}
+                    >
+                      <option value="newest">Newest first</option>
+                      <option value="oldest">Oldest first</option>
+                      <option value="liked">Most liked</option>
+                    </select>
+                  </div>
+                  <div className="w-full sm:w-auto">
+                    <Label>Show</Label>
+                    <select
+                      className="mt-2 w-full sm:w-48 px-3 py-2 border border-neutral-300 rounded-md text-sm bg-white"
+                      value={postFilter}
+                      onChange={(e) => setPostFilter(e.target.value as "all" | "following")}
+                    >
+                      <option value="all">All NPOs</option>
+                      <option value="following">NPOs I follow</option>
+                    </select>
                   </div>
                 </div>
 
@@ -2077,15 +2126,26 @@ export default function IndividualDashboard() {
                 {!postsLoading && !postsError && (
                   <>
                     {(() => {
-                      const filteredPosts = communityPosts.filter((post) => {
-                        if (!postSearchQuery) return true;
-                        const query = postSearchQuery.toLowerCase();
-                        return (
-                          post.postTitle.toLowerCase().includes(query) ||
-                          post.authorName.toLowerCase().includes(query) ||
-                          (post.content && post.content.toLowerCase().includes(query))
-                        );
-                      });
+                      const filteredPosts = communityPosts
+                        .filter((post) => {
+                          // Source filter: all posts, or only NPOs the user follows.
+                          if (postFilter === "following" && !(post.authorNpoId != null && followedNpoIds.has(post.authorNpoId))) {
+                            return false;
+                          }
+                          // Text search across title, author, and content.
+                          if (!postSearchQuery) return true;
+                          const query = postSearchQuery.toLowerCase();
+                          return (
+                            post.postTitle.toLowerCase().includes(query) ||
+                            post.authorName.toLowerCase().includes(query) ||
+                            (post.content && post.content.toLowerCase().includes(query))
+                          );
+                        })
+                        .sort((a, b) => {
+                          if (postSort === "liked") return b.likeCount - a.likeCount;
+                          const diff = new Date(a.timestamp).getTime() - new Date(b.timestamp).getTime();
+                          return postSort === "oldest" ? diff : -diff;
+                        });
 
                       if (filteredPosts.length === 0) {
                         return (
@@ -2094,12 +2154,16 @@ export default function IndividualDashboard() {
                             <h3 className="mb-2">
                               {communityPosts.length === 0
                                 ? "No community posts yet"
-                                : "No posts match your search"}
+                                : postFilter === "following"
+                                ? "No posts from NPOs you follow"
+                                : "No posts match your filters"}
                             </h3>
                             <p className="text-neutral-600">
                               {communityPosts.length === 0
                                 ? "Posts from NPOs will appear here"
-                                : "Try adjusting your search terms"}
+                                : postFilter === "following"
+                                ? "Follow more NPOs or switch to \"All NPOs\""
+                                : "Try adjusting your search or filters"}
                             </p>
                           </Card>
                         );
@@ -2298,6 +2362,82 @@ export default function IndividualDashboard() {
                         <div className="text-sm text-neutral-600">Volunteer roles</div>
                       </Card>
                     </div>
+
+                    {/* Charts — derived from completed outgoing donations (txData). */}
+                    {(txLoading && !txData) && (
+                      <div className="grid grid-cols-1 lg:grid-cols-2 gap-6 mb-8">
+                        <Skeleton className="h-[300px] w-full rounded-lg" />
+                        <Skeleton className="h-[300px] w-full rounded-lg" />
+                      </div>
+                    )}
+                    {(() => {
+                      const donations = (txData?.transactions ?? []).filter(
+                        (t) => t.type === "Donation" && t.direction === "out" && t.status === "Completed"
+                      );
+                      if (donations.length === 0) return null;
+
+                      // Donations grouped by month (chronological).
+                      const monthMap = new Map<string, { key: string; label: string; total: number }>();
+                      for (const d of donations) {
+                        const dt = new Date(d.timestamp);
+                        if (isNaN(dt.getTime())) continue;
+                        const key = `${dt.getFullYear()}-${String(dt.getMonth() + 1).padStart(2, "0")}`;
+                        const label = dt.toLocaleDateString(undefined, { month: "short", year: "2-digit" });
+                        const row = monthMap.get(key) ?? { key, label, total: 0 };
+                        row.total += d.amount;
+                        monthMap.set(key, row);
+                      }
+                      const byMonth = Array.from(monthMap.values()).sort((a, b) => a.key.localeCompare(b.key));
+
+                      // Donations grouped by recipient NPO (top 6 by amount).
+                      const npoMap = new Map<string, number>();
+                      for (const d of donations) {
+                        const name = d.counterpartyName || "NPO";
+                        npoMap.set(name, (npoMap.get(name) ?? 0) + d.amount);
+                      }
+                      const byNpo = Array.from(npoMap.entries())
+                        .map(([name, total]) => ({ name, total }))
+                        .sort((a, b) => b.total - a.total)
+                        .slice(0, 6);
+
+                      const zar = (n: number) => formatZar(n);
+
+                      return (
+                        <div className="grid grid-cols-1 lg:grid-cols-2 gap-6 mb-8">
+                          <Card className="p-5">
+                            <h3 className="font-semibold mb-4">Your donations over time</h3>
+                            <ResponsiveContainer width="100%" height={260}>
+                              <AreaChart data={byMonth} margin={{ left: 4, right: 8, top: 4, bottom: 0 }}>
+                                <defs>
+                                  <linearGradient id="impactDonations" x1="0" y1="0" x2="0" y2="1">
+                                    <stop offset="5%" stopColor="#ea580c" stopOpacity={0.3} />
+                                    <stop offset="95%" stopColor="#ea580c" stopOpacity={0} />
+                                  </linearGradient>
+                                </defs>
+                                <CartesianGrid strokeDasharray="3 3" />
+                                <XAxis dataKey="label" fontSize={12} />
+                                <YAxis fontSize={12} />
+                                <Tooltip formatter={(v: number) => zar(v)} />
+                                <Area type="monotone" dataKey="total" stroke="#ea580c" strokeWidth={2} fill="url(#impactDonations)" name="Donated" />
+                              </AreaChart>
+                            </ResponsiveContainer>
+                          </Card>
+
+                          <Card className="p-5">
+                            <h3 className="font-semibold mb-4">Where your donations went</h3>
+                            <ResponsiveContainer width="100%" height={260}>
+                              <BarChart data={byNpo} layout="vertical" margin={{ left: 8, right: 8, top: 4, bottom: 0 }}>
+                                <CartesianGrid strokeDasharray="3 3" horizontal={false} />
+                                <XAxis type="number" fontSize={12} />
+                                <YAxis type="category" dataKey="name" width={110} fontSize={11} />
+                                <Tooltip formatter={(v: number) => zar(v)} />
+                                <Bar dataKey="total" fill="#ea580c" radius={[0, 4, 4, 0]} name="Donated" />
+                              </BarChart>
+                            </ResponsiveContainer>
+                          </Card>
+                        </div>
+                      );
+                    })()}
 
                     {/* CTA if no impact */}
                     {(myImpact?.totalDonated || 0) === 0 && (myImpact?.totalHoursVolunteered || 0) === 0 && (
@@ -3055,7 +3195,7 @@ export default function IndividualDashboard() {
               </button>
             </div>
             <form className="space-y-6" onSubmit={handleVolunteerSubmit}>
-              <div className="grid grid-cols-2 gap-4">
+              <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
                 <div>
                   <Label htmlFor="vol-first-name">First Name</Label>
                   <Input

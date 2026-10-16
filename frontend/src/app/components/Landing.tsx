@@ -7,12 +7,18 @@ export default function Landing() {
   return (
     <div className="min-h-screen">
       {/* Header */}
-      <header className="absolute top-0 left-0 right-0 z-20 py-4 px-6">
-        <div className="container mx-auto max-w-7xl flex items-center justify-between">
-          <Link to="/" className="text-xl text-white">
-            UbuntuConnect
+      <header className="absolute top-0 left-0 right-0 z-20 py-4 px-4 sm:px-6">
+        <div className="container mx-auto max-w-7xl flex items-center justify-between gap-3">
+          {/* Brand: UC tile + wordmark (white, for the dark hero). Wordmark hides on the smallest screens. */}
+          <Link to="/" aria-label="UbuntuConnect home" className="group flex items-center gap-2.5 shrink-0">
+            <span className="grid h-9 w-9 place-items-center rounded-xl bg-white text-orange-600 font-bold text-sm leading-none shadow-sm transition-transform group-hover:scale-105">
+              UC
+            </span>
+            <span className="hidden sm:inline text-xl font-bold tracking-tight text-white">
+              Ubuntu<span className="text-orange-400">Connect</span>
+            </span>
           </Link>
-          <div className="flex items-center gap-3">
+          <div className="flex items-center gap-2 sm:gap-3 shrink-0">
             <Link to="/login">
               <Button size="sm" variant="outline" className="border-white text-white bg-transparent hover:bg-white hover:text-orange-600">
                 Sign In
@@ -45,8 +51,8 @@ export default function Landing() {
               animate={{ opacity: 1, y: 0 }}
               transition={{ duration: 0.6 }}
             >
-              <h1 className="text-white mb-6">UbuntuConnect</h1>
-              <p className="text-white/90 text-xl lg:text-2xl mb-4 max-w-xl">
+              <h1 className="text-white mb-6 text-4xl sm:text-5xl lg:text-6xl font-bold tracking-tight">UbuntuConnect</h1>
+              <p className="text-white/90 text-lg sm:text-xl lg:text-2xl mb-4 max-w-xl">
                 Bridging grassroots impact with transparent support
               </p>
               <p className="text-white/80 text-lg mb-8 max-w-lg">

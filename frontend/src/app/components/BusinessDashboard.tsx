@@ -730,11 +730,11 @@ export default function BusinessDashboard() {
                     <div className="px-5 pb-5 border-t border-neutral-100 pt-5 space-y-5">
                       <div><Label>Email Address</Label><Input type="email" value={profile?.email || ""} className="mt-1 bg-neutral-100" readOnly /><p className="text-xs text-neutral-500 mt-1">Email cannot be changed.</p></div>
                       <div><Label>Bio</Label><Textarea value={editBio} onChange={e => setEditBio(e.target.value)} rows={4} placeholder="Tell NPOs about your business..." className="mt-1" maxLength={1000} disabled={savingProfile} /></div>
-                      <div className="grid grid-cols-2 gap-4">
+                      <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
                         <div><Label>Industry</Label><Input value={editIndustry} onChange={e => setEditIndustry(e.target.value)} className="mt-1" disabled={savingProfile} /></div>
                         <div><Label>CSR Goal</Label><Input value={editCsrGoal} onChange={e => setEditCsrGoal(e.target.value)} className="mt-1" disabled={savingProfile} /></div>
                       </div>
-                      <div className="grid grid-cols-2 gap-4">
+                      <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
                         <div><Label>Contact Person</Label><Input value={editContactName} onChange={e => setEditContactName(e.target.value)} className="mt-1" disabled={savingProfile} /></div>
                         <div><Label>Contact Title</Label><Input value={editContactTitle} onChange={e => setEditContactTitle(e.target.value)} className="mt-1" disabled={savingProfile} /></div>
                       </div>
@@ -977,9 +977,9 @@ export default function BusinessDashboard() {
         <form onSubmit={handleCreateCampaign} className="space-y-4">
           <div><Label>Title *</Label><Input name="title" required /></div>
           <div><Label>Description</Label><Textarea name="description" /></div>
-          <div className="grid grid-cols-2 gap-4"><div><Label>Category</Label><Input name="category" placeholder="e.g. Education" /></div><div><Label>Budget per Partner (R)</Label><Input name="budgetPerPartner" type="number" step="0.01" /></div></div>
+          <div className="grid grid-cols-1 sm:grid-cols-2 gap-4"><div><Label>Category</Label><Input name="category" placeholder="e.g. Education" /></div><div><Label>Budget per Partner (R)</Label><Input name="budgetPerPartner" type="number" step="0.01" /></div></div>
           <div><Label>Requirements</Label><Textarea name="requirements" placeholder="What you expect from partner NPOs..." /></div>
-          <div className="grid grid-cols-2 gap-4"><div><Label>Start Date *</Label><Input name="startDate" type="date" required /></div><div><Label>End Date</Label><Input name="endDate" type="date" /></div></div>
+          <div className="grid grid-cols-1 sm:grid-cols-2 gap-4"><div><Label>Start Date *</Label><Input name="startDate" type="date" required /></div><div><Label>End Date</Label><Input name="endDate" type="date" /></div></div>
           <ImageCropField label="Campaign Image (optional)" value={campaignImageUrl} onChange={setCampaignImageUrl} aspect={16 / 9} rounded="lg" />
           <Button type="submit" className="w-full bg-orange-600 hover:bg-orange-700">Create Campaign</Button>
         </form>
@@ -991,9 +991,9 @@ export default function BusinessDashboard() {
         <form onSubmit={handleUpdateCampaign} className="space-y-4">
           <div><Label>Title</Label><Input name="title" defaultValue={editingCampaign.title} required /></div>
           <div><Label>Description</Label><Textarea name="description" defaultValue={editingCampaign.description || ""} /></div>
-          <div className="grid grid-cols-2 gap-4"><div><Label>Category</Label><Input name="category" defaultValue={editingCampaign.category || ""} placeholder="e.g. Education" /></div><div><Label>Budget per Partner (R)</Label><Input name="budgetPerPartner" type="number" step="0.01" defaultValue={editingCampaign.budgetPerPartner ?? ""} /></div></div>
+          <div className="grid grid-cols-1 sm:grid-cols-2 gap-4"><div><Label>Category</Label><Input name="category" defaultValue={editingCampaign.category || ""} placeholder="e.g. Education" /></div><div><Label>Budget per Partner (R)</Label><Input name="budgetPerPartner" type="number" step="0.01" defaultValue={editingCampaign.budgetPerPartner ?? ""} /></div></div>
           <div><Label>Requirements</Label><Textarea name="requirements" defaultValue={editingCampaign.requirements || ""} placeholder="What you expect from partner NPOs..." /></div>
-          <div className="grid grid-cols-2 gap-4"><div><Label>Start Date</Label><Input name="startDate" type="date" defaultValue={editingCampaign.startDate ? editingCampaign.startDate.slice(0, 10) : ""} /></div><div><Label>End Date</Label><Input name="endDate" type="date" defaultValue={editingCampaign.endDate ? editingCampaign.endDate.slice(0, 10) : ""} /><p className="text-xs text-neutral-500 mt-1">Leave blank for open-ended.</p></div></div>
+          <div className="grid grid-cols-1 sm:grid-cols-2 gap-4"><div><Label>Start Date</Label><Input name="startDate" type="date" defaultValue={editingCampaign.startDate ? editingCampaign.startDate.slice(0, 10) : ""} /></div><div><Label>End Date</Label><Input name="endDate" type="date" defaultValue={editingCampaign.endDate ? editingCampaign.endDate.slice(0, 10) : ""} /><p className="text-xs text-neutral-500 mt-1">Leave blank for open-ended.</p></div></div>
           <ImageCropField label="Campaign Image (optional)" value={editCampaignImageUrl} onChange={setEditCampaignImageUrl} aspect={16 / 9} rounded="lg" />
           <div className="flex gap-3"><Button type="submit" className="flex-1 bg-orange-600 hover:bg-orange-700">Save Changes</Button><Button type="button" variant="outline" onClick={() => setEditingCampaign(null)}>Cancel</Button></div>
         </form>
